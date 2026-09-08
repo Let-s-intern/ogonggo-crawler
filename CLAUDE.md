@@ -69,6 +69,7 @@ detail.
 │   ├── architecture.md       Structure, pipeline stages, folder layout
 │   ├── data-model.md         Tables, content hash, state transitions
 │   ├── api-contract.md       The delivery API the job board consumes
+│   ├── spring-delivery.md    Sending to the ogonggo backend. Design only, not built
 │   ├── tech-stack.md         What is used, and what is deliberately not
 │   └── ocr-benchmark.md      Measured cost of the four collection paths
 │
@@ -89,6 +90,7 @@ detail.
 | Writing or changing a model API call | `rules/llm.md`, then that provider's current docs |
 | Changing a table or writing a migration | `rules/data-safety.md`, `docs/data-model.md` |
 | Changing what the job board receives | `docs/api-contract.md` |
+| Sending postings to the ogonggo backend | `docs/spring-delivery.md` |
 | A data question ("did it actually store it") | `skills/db-inspect/SKILL.md` |
 | Normalization rules producing wrong values | `docs/data-model.md`, `agents/api-worker.md` |
 | Building a screen | `agents/ui-worker.md` |
