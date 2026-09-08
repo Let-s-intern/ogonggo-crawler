@@ -57,7 +57,6 @@ Content-Type: application/json
 | `requirements` | `qualifications` | 선택 | |
 | `preferred` | `preferredQualifications` | 선택 | |
 | `hiring_process` | `hiringProcess` | 선택 | |
-| `job_major`, `job_minor` | `tags` | 선택 | 배열로 합친다 |
 
 ### 보낼 곳이 없는 것
 
@@ -65,7 +64,20 @@ Content-Type: application/json
 |---|---|
 | `body` | 오공고가 본문을 일곱 칸으로 나눠 받는다. 통짜 본문을 담을 칸이 없다 |
 | `etc_info` | 같은 이유 |
-| `job_role` | 오공고에 직무 칸이 없다. 자유 텍스트라 `tags` 에 넣기도 맞지 않는다 |
+| `job_role` | 오공고에 직무 칸이 없다 |
+| `job_major`, `job_minor` | `tags` 에 넣지 않기로 했다(2026-09-08 결정). 아래 참고 |
+
+### tags 는 비운다
+
+`tags` 는 오공고가 "AI가 생성한 태그 목록" 으로 받는 칸이고, 우리에게 `job_major`·`job_minor`
+라는 분류 결과가 있다. **그래도 보내지 않는다**(2026-09-08 결정).
+
+`job_major`·`job_minor` 는 `job_taxonomy` 표에서 고르는 닫힌 목록이고, 그 목록은 우리 DB 에
+있어 배포 없이 바뀐다. 태그로 흘려보내면 오공고에 우리 분류 체계가 문자열로 복제되고, 목록을
+고칠 때마다 이미 보낸 것과 어긋난다. 분류 체계를 넘기려면 태그가 아니라 그 목적의 필드가
+있어야 한다.
+
+`tags` 는 항상 빈 배열이다.
 
 ### 우리가 채울 수 없는 것
 
@@ -219,11 +231,15 @@ publicationStatus 항상 PUBLISHED — 받는 즉시 공개된다
 **60% 채운 공고만 보낸다**(2026-09-08 결정). 비어 있는 칸이 많은 공고를 내보내면 사용자가
 열어 보고 아무것도 없는 화면을 만난다.
 
-세는 대상은 **위 대응표에서 실제로 채울 수 있는 14칸**이다. 오공고가 받지만 우리가 못 채우는
-넷(`companyAndTeamIntroduction`, `compensation`, `benefits`, `educationLevel`)은 빼고 센다 —
-넣으면 아무리 잘 뽑아도 상한이 78% 라 기준이 뜻을 잃는다.
+세는 대상은 **위 대응표에서 실제로 채울 수 있는 13칸**이다. 오공고가 받지만 우리가 채우지
+않는 다섯(`companyAndTeamIntroduction`, `compensation`, `benefits`, `educationLevel`, `tags`)은
+빼고 센다 — 넣으면 아무리 잘 뽑아도 상한이 72% 라 기준이 뜻을 잃는다.
 
-필수 4칸은 없으면 어차피 못 보내므로, 실질적으로는 **선택 10칸 중 5칸 이상**이라는 뜻이다.
+13칸의 60% 는 7.8 이므로 **8칸 이상**이다. 필수 4칸은 없으면 어차피 못 보내므로, 실질적으로는
+**선택 9칸 중 4칸 이상**이라는 뜻이다.
+
+`career_level` 을 보낼지가 아직 정해지지 않았다(위 절). 보내지 않기로 하면 세는 칸이 12개로
+줄고 기준은 8칸 그대로다 — 선택 8칸 중 4칸이 된다.
 
 이 기준은 값이 있는지만 본다. 내용이 쓸 만한지는 판단하지 않는다.
 
