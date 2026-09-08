@@ -8,6 +8,7 @@
 | [architecture.md](architecture.md) | 전체 구조, 파이프라인 단계, 폴더 배치 |
 | [data-model.md](data-model.md) | 테이블 정의, 중복 감지 hash, 상태 전이 |
 | [api-contract.md](api-contract.md) | 채용공고 사이트가 소비하는 제공 API |
+| [spring-delivery.md](spring-delivery.md) | 오공고 백엔드로 보내는 전달 설계. 아직 구현 전이다 |
 | [tech-stack.md](tech-stack.md) | 기술 선택과 그 이유, 쓰지 않기로 한 것 |
 | [ocr-benchmark.md](ocr-benchmark.md) | 수집 방식 네 가지의 시간·토큰 실측 (2026-08-24) |
 
