@@ -195,8 +195,8 @@ SQLite 파일 하나. 경로는 `DATABASE_PATH` 가 정하고 Docker named volum
 | job_role | 직무. 제목에서 뽑는 자유 텍스트다. 닫힌 목록이 아니다 |
 | deadline | 정규화된 모집 마감일 |
 | start_date | 정규화된 모집 시작일. `deadline` 의 짝이다 |
-| employment_type | 고용형태. 정규직 / 인턴 / 기간제 |
-| career_level | 경력 구분. 신입 / 경력 |
+| employment_type | 고용형태. 정규직 / 계약직 / 인턴 / 기타. 고르지 못하면 NULL |
+| career_level | 경력 구분. 신입 / 경력 / 무관. 고르지 못하면 NULL |
 | work_location | 근무지 |
 | duties | 주요 업무 |
 | preferred | 우대 조건 |
