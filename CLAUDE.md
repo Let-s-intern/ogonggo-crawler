@@ -66,11 +66,19 @@ detail.
 │
 ├── docs/                     Project documentation (Korean)
 │   ├── README.md             Index
-│   ├── architecture.md       Structure, pipeline stages, folder layout
+│   ├── architecture.md       Structure, process layout, module map, where settings live
+│   ├── tech-stack.md         What is used, what is deliberately not, env vars
 │   ├── data-model.md         Tables, content hash, state transitions
+│   ├── registration.md       One list URL to a registered crawler
+│   ├── fetching.md           The shared fetch client, three collect modes, deadline skip
+│   ├── crawl-run.md          What one run does, failure classes, auto-stop
+│   ├── scheduling.md         APScheduler, two workflow tables, concurrency cap
+│   ├── normalization.md      Rule engine, two company columns, renormalize
+│   ├── classification.md     Splitting the body into nine fields, grounding, taxonomy
+│   ├── llm-providers.md      Five providers, per-feature choice, call logging
+│   ├── integrations.md       Notification, logo storage, delivery settings
 │   ├── api-contract.md       The delivery API the job board consumes
 │   ├── spring-delivery.md    Sending to the ogonggo backend. Design only, not built
-│   ├── tech-stack.md         What is used, and what is deliberately not
 │   └── ocr-benchmark.md      Measured cost of the four collection paths
 │
 ├── site-recipes/             One file per site: rendering, pagination, past failures
@@ -83,16 +91,19 @@ detail.
 
 | Situation | Read first |
 |---|---|
-| Registering a new site | `commands/new-site.md`, `skills/selector-generate/SKILL.md` |
+| Registering a new site | `commands/new-site.md`, `docs/registration.md` |
 | A selector stopped matching | `site-recipes/<domain>.md`, `skills/crawl-test/SKILL.md` |
-| A workflow is failing | `commands/fix-workflow.md`, `skills/workflow-ops/SKILL.md` |
-| Changing the fetch client, retry or scheduler | `rules/crawling.md`, `docs/architecture.md` |
-| Writing or changing a model API call | `rules/llm.md`, then that provider's current docs |
+| A workflow is failing | `commands/fix-workflow.md`, `docs/crawl-run.md` |
+| Changing the fetch client or a collect mode | `rules/crawling.md`, `docs/fetching.md` |
+| Changing the scheduler or a side workflow | `rules/crawling.md`, `docs/scheduling.md` |
+| Writing or changing a model API call | `rules/llm.md`, `docs/llm-providers.md`, then that provider's current docs |
+| Changing what the classifier extracts | `docs/classification.md` |
 | Changing a table or writing a migration | `rules/data-safety.md`, `docs/data-model.md` |
 | Changing what the job board receives | `docs/api-contract.md` |
 | Sending postings to the ogonggo backend | `docs/spring-delivery.md` |
+| Notification, logo storage or delivery settings | `docs/integrations.md` |
 | A data question ("did it actually store it") | `skills/db-inspect/SKILL.md` |
-| Normalization rules producing wrong values | `docs/data-model.md`, `agents/api-worker.md` |
+| Normalization rules producing wrong values | `docs/normalization.md`, `agents/api-worker.md` |
 | Building a screen | `agents/ui-worker.md` |
 | Running anything locally | `skills/local-env/SKILL.md` |
 | Format, lint, typecheck, test before commit | `skills/quality-check/SKILL.md` |
