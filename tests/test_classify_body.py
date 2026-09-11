@@ -37,11 +37,11 @@ from app.classify.schema import (
     EXTRACT_FIELDS,
     JUDGE_CHOICES,
     JUDGE_FIELDS,
-    RESPONSE_FIELDS,
 )
 from app.config import Settings
 from app.crawler.parser import parse_detail
 from app.selector.schema import validate_selectors
+from tests.classify_fakes import response
 from tests.test_selector_generator import FakeClient
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
@@ -66,10 +66,6 @@ TITLE = "카카오비즈니스 파트너 플랫폼 PM (경력)"
 # (`tests/test_job_role_source.py`)
 DOOSAN_BODY = body_of("두산", "doosan-detail-1000361539-20260826.html")
 DOOSAN_TITLE = "스튜디오셀위팀 광고영업 경력사원 채용"
-
-
-def response(**fields: str) -> str:
-    return json.dumps({name: fields.get(name, "") for name in RESPONSE_FIELDS})
 
 
 def settings_with_key() -> Settings:
@@ -134,24 +130,33 @@ async def test_a_value_that_is_not_in_the_body_is_thrown_away() -> None:
     assert "버린 칸" in " ".join(result.notes)
 
 
-async def test_a_column_is_dropped_whole_when_one_of_its_lines_is_invented() -> None:
-    """절반만 사실인 값은 읽는 쪽이 어디까지 믿어야 할지 알 수 없다."""
+async def test_only_the_invented_line_is_left_out_of_a_column() -> None:
+    """한 줄이 원문에 없다고 제대로 옮긴 줄까지 버리지 않는다 (2026-09-10).
+
+    조각이 가리키는 줄이 없으면(`tests/classify_fakes.py` 의 `NOWHERE`) 원문 어디에도 없는
+    줄은 옮길 것이 없어 그 줄만 빠진다.
+    """
     result, _ = await classify(
         response(preferred="POS(포스), 키오스크, 테이블오더 등 오프라인 로컬 솔루션\n영어 능통자")
     )
 
-    assert result.dropped == ["preferred"]
-    assert result.fields["preferred"] == ""
+    assert result.dropped == []
+    assert "키오스크" in result.fields["preferred"]
+    assert "영어 능통자" not in result.fields["preferred"]
+    assert any("찾지 못한 조각" in note for note in result.notes)
 
 
 async def test_a_reflowed_quote_still_counts_as_being_in_the_body() -> None:
-    """줄바꿈과 글머리표가 달라진 것을 지어냈다고 하면 멀쩡한 값이 버려진다."""
+    """줄바꿈과 글머리표가 달라진 것을 지어냈다고 하면 멀쩡한 값이 버려진다.
+
+    저장하는 글자는 모델이 적은 `-` 가 아니라 원문 글자다 (`app/classify/pieces.py`).
+    """
     result, _ = await classify(
         response(duties="- 카카오비즈니스와 외부 제휴사 간 사업자 데이터 연동 구조 기획 및 설계")
     )
 
     assert result.dropped == []
-    assert result.fields["duties"].startswith("- 카카오비즈니스")
+    assert result.fields["duties"].startswith("카카오비즈니스")
 
 
 async def test_a_column_the_schema_does_not_have_is_refused() -> None:
@@ -206,7 +211,9 @@ async def test_only_the_title_and_the_body_are_sent() -> None:
     _, client = await classify(response())
 
     prompt = client.calls[0]["contents"]
-    assert BODY in prompt
+    for line in BODY.splitlines():
+        if line.strip():
+            assert line.strip() in prompt
     assert TITLE in prompt
     assert "<html" not in prompt
 

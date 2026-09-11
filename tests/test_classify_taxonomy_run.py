@@ -18,6 +18,7 @@ from app import db, taxonomy
 from app.classify.classifier import classify_body
 from app.classify.schema import RESPONSE_FIELDS, build_classification_model
 from app.config import Settings
+from tests.classify_fakes import response_body
 from tests.test_selector_generator import FakeClient
 
 BODY = "당근마켓에서 서버 개발자를 찾습니다. 백엔드 API 를 설계하고 운영합니다."
@@ -28,7 +29,7 @@ def settings_with_key() -> Settings:
 
 
 def response(**fields: str) -> str:
-    base = {name: fields.get(name, "") for name in RESPONSE_FIELDS}
+    base = response_body(**fields)
     base.update(
         {
             "job_major": fields.get("job_major", ""),

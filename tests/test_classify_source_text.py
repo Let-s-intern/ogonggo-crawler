@@ -27,7 +27,6 @@ from app import db
 from app.classify.batch import ClassifyProgress, classify_ids
 from app.classify.classifier import MAX_BODY_CHARS, classify_body
 from app.classify.grounding import NO_EVIDENCE, NOT_IN_SOURCE, ground
-from app.classify.schema import RESPONSE_FIELDS
 from app.classify.store import (
     pending_count,
     pending_ids,
@@ -35,6 +34,7 @@ from app.classify.store import (
     read_source,
 )
 from app.config import Settings
+from tests.classify_fakes import response
 from tests.test_selector_generator import FakeClient
 from tests.test_source_text import HTML_DETAIL, parsed
 
@@ -53,10 +53,6 @@ SOURCE = f"{ONLY_IN_SOURCE}\n{EVIDENCE_IN_SOURCE}\n{BODY}"
 
 def settings_with_key() -> Settings:
     return Settings(gemini_api_key="테스트키", gemini_model="gemini-3.5-flash")
-
-
-def response(**fields: str) -> str:
-    return json.dumps({name: fields.get(name, "") for name in RESPONSE_FIELDS})
 
 
 ANSWER = response(duties="제휴사 데이터 연동 구조 기획")

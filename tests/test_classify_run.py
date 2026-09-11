@@ -23,9 +23,9 @@ from app.classify.batch import (
     classify_pending,
     remaining,
 )
-from app.classify.schema import RESPONSE_FIELDS
 from app.classify.store import pending_ids, read_classification, read_evidence
 from app.config import Settings
+from tests.classify_fakes import response
 from tests.test_selector_generator import FakeClient
 
 BODY = (
@@ -36,10 +36,6 @@ BODY = (
 
 def settings_with_key() -> Settings:
     return Settings(gemini_api_key="테스트키", gemini_model="gemini-3.5-flash")
-
-
-def response(**fields: str) -> str:
-    return json.dumps({name: fields.get(name, "") for name in RESPONSE_FIELDS})
 
 
 GOOD = response(

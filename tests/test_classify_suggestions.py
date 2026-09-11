@@ -10,14 +10,12 @@ Gemini 를 실제로 부르지 않는다. 확인하는 것은 셋이다 — 이�
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from app.classify.classifier import build_prompt, classify_body
 from app.classify.grounding import NOT_IN_SOURCE
-from app.classify.schema import RESPONSE_FIELDS
 from app.config import Settings
+from tests.classify_fakes import response
 from tests.test_selector_generator import FakeClient
 
 BODY = (
@@ -30,10 +28,6 @@ TITLE = "마케팅 기획 경력직 채용"
 
 def settings_with_key() -> Settings:
     return Settings(gemini_api_key="테스트키", gemini_model="gemini-3.5-flash")
-
-
-def response(**fields: str) -> str:
-    return json.dumps({name: fields.get(name, "") for name in RESPONSE_FIELDS})
 
 
 GOOD = response(duties="제휴사 데이터 연동 구조 기획", requirements="관련 경험 5년 이상이신 분")

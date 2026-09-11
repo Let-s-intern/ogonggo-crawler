@@ -11,8 +11,8 @@
 
 ## 칸이 두 가지다
 
-**뽑는 칸**은 원문에 있는 글자를 그대로 가져온다. 옮긴 값은 원문에서 그대로 찾을 수 있어야
-하고, 없으면 빈 칸이다.
+**뽑는 칸**은 원문에 있는 글자를 그대로 가져온다. 모델은 글자를 쓰지 않고 몇 번 줄의 어느
+부분인지를 조각으로 답하고, 저장하는 글자는 원문에서 잘라 온다 (`app/classify/pieces.py`).
 
 `job_role` 만 원문이 본문이 아니라 **제목**이다. 열한 사이트 픽스처에서 제목이 직무를 말하는
 곳이 아홉이고 그중 본문이 같은 글자를 되풀이하는 곳은 셋뿐이었다
@@ -54,7 +54,7 @@ import sqlite3
 from collections.abc import Mapping
 from typing import Any, Final, Literal, get_args
 
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, Field, create_model
 
 from app import taxonomy
 
@@ -71,10 +71,24 @@ from app import taxonomy
 UNDECIDED: Final = "판단불가"
 
 
+# 뽑는 칸의 조각 하나를 코드 안에서 들고 다니는 모양. (줄 번호, 그 줄에서 가져올 부분)
+Piece = tuple[int, str]
+
+
+class LinePiece(BaseModel):
+    """뽑는 칸의 조각 하나. 몇 번 줄의 어느 부분인지를 모델이 답한다.
+
+    저장하는 글자는 이 `text` 가 아니라 원문에서 잘라 온 것이다 (`app/classify/pieces.py`).
+    """
+
+    line: int
+    text: str
+
+
 class Classification(BaseModel):
     """공고 하나를 나눈 아홉 칸과, 판정 칸 둘의 근거 문장.
 
-    뽑는 칸은 자유 문자열이고 원문에 없으면 빈 문자열이다. 판정 칸은 `Literal` 이라 목록에
+    뽑는 칸은 조각 목록이고 원문에 없으면 빈 목록이다. 판정 칸은 `Literal` 이라 목록에
     없는 값이 애초에 응답에 담기지 못한다. `판단불가` 가 목록에 있는 것은 "본문만으로는 고를
     수 없다" 를 답할 자리가 있어야 하기 때문이다 — 자리가 없으면 모델은 아무거나 고른다.
     """
@@ -86,14 +100,15 @@ class Classification(BaseModel):
     career_level: Literal["판단불가", "신입", "경력", "무관"] = UNDECIDED
     career_level_evidence: str = ""
 
-    # 뽑는 칸. 원문에 있는 글자를 그대로 옮긴다. `job_role` 만 원문이 제목이다
-    job_role: str = ""
-    work_location: str = ""
-    duties: str = ""
-    preferred: str = ""
-    hiring_process: str = ""
-    requirements: str = ""
-    etc_info: str = ""
+    # 뽑는 칸. 모델은 글자를 쓰지 않고 몇 번 줄의 어느 부분인지를 조각으로 답한다. 저장은
+    # 원문에서 잘라 온 글자다 (`app/classify/pieces.py`). `job_role` 만 0 번 줄(제목)에서 온다
+    job_role: list[LinePiece] = Field(default_factory=list)
+    work_location: list[LinePiece] = Field(default_factory=list)
+    duties: list[LinePiece] = Field(default_factory=list)
+    preferred: list[LinePiece] = Field(default_factory=list)
+    hiring_process: list[LinePiece] = Field(default_factory=list)
+    requirements: list[LinePiece] = Field(default_factory=list)
+    etc_info: list[LinePiece] = Field(default_factory=list)
 
     # 수집이 이미 채운 칸을 원문과 견줘 다르면 낸다 (Push 11, PRD 6절). 값이 같거나 판단할
     # 근거가 없으면 둘 다 빈 문자열이다 — 이 칸이 채워진다고 그 값이 그대로 저장되지 않는다.
@@ -234,8 +249,8 @@ class ClassifySchemaError(ValueError):
 
 def validate_classification(
     data: Any, response_fields: tuple[str, ...] = RESPONSE_FIELDS
-) -> dict[str, str]:
-    """파싱된 응답을 검증해 이름별 문자열로 돌려준다. 없는 키는 빈 문자열이다.
+) -> tuple[dict[str, str], dict[str, list[Piece]]]:
+    """파싱된 응답을 검증해 글자 칸과 뽑는 칸의 조각을 따로 돌려준다. 없는 키는 빈 값이다.
 
     스키마에 없는 칸 이름이 오면 무엇을 말하려던 것인지 추측해서 고치지 않는다. 조용히 고친
     값은 나중에 왜 그 칸에 그 값이 들어갔는지 아무도 설명하지 못한다.
@@ -256,8 +271,12 @@ def validate_classification(
         raise ClassifySchemaError("unknown_field", f"스키마에 없는 칸이 있다: {', '.join(unknown)}")
 
     result: dict[str, str] = {}
+    pieces: dict[str, list[Piece]] = {}
     for name in response_fields:
         raw = data.get(name, "")
+        if name in EXTRACT_FIELDS:
+            pieces[name] = _pieces(name, raw)
+            continue
         if raw is None:
             raw = ""
         if not isinstance(raw, str):
@@ -265,13 +284,41 @@ def validate_classification(
                 "unparsable", f"`{name}` 이 문자열이 아니다: {type(raw).__name__}"
             )
         result[name] = raw.strip()
-    return result
+    return result, pieces
+
+
+def _pieces(name: str, raw: Any) -> list[Piece]:
+    """뽑는 칸 하나의 조각 목록. 빈 문자열과 None 은 조각이 없는 것으로 읽는다."""
+    if raw is None or raw == "":
+        return []
+    if not isinstance(raw, list):
+        raise ClassifySchemaError(
+            "unparsable", f"`{name}` 이 조각 목록이 아니다: {type(raw).__name__}"
+        )
+    pieces: list[Piece] = []
+    for item in raw:
+        if not isinstance(item, Mapping):
+            raise ClassifySchemaError(
+                "unparsable", f"`{name}` 의 조각이 객체가 아니다: {type(item).__name__}"
+            )
+        line = item.get("line")
+        text = item.get("text", "")
+        if isinstance(line, bool) or not isinstance(line, int):
+            raise ClassifySchemaError("unparsable", f"`{name}` 의 조각에 줄 번호가 없다: {line!r}")
+        if text is None:
+            text = ""
+        if not isinstance(text, str):
+            raise ClassifySchemaError(
+                "unparsable", f"`{name}` 의 조각 글자가 문자열이 아니다: {type(text).__name__}"
+            )
+        pieces.append((line, text))
+    return pieces
 
 
 def parse_classification(
     text: str, response_fields: tuple[str, ...] = RESPONSE_FIELDS
-) -> dict[str, str]:
-    """모델 응답 문자열을 파싱하고 검증한다."""
+) -> tuple[dict[str, str], dict[str, list[Piece]]]:
+    """모델 응답 문자열을 파싱하고 검증한다. 글자 칸과 뽑는 칸의 조각을 따로 돌려준다."""
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:

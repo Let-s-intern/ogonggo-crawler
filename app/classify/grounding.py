@@ -103,6 +103,23 @@ def loose(text: str) -> str:
     return _NOISE.sub("", text).lower()
 
 
+def loose_with_positions(text: str) -> tuple[str, list[int]]:
+    """`loose()` 와 같은 비교용 모양에, 남은 글자마다 원문에서의 위치를 붙인다.
+
+    찾기는 느슨하게 하고 저장은 원문 그대로 하려고 쓴다 (`app/classify/pieces.py`). 느슨한
+    모양에서 찾은 구간을 원문 구간으로 되돌리려면 글자마다 어디서 왔는지 알아야 한다.
+    """
+    chars: list[str] = []
+    positions: list[int] = []
+    for index, char in enumerate(text):
+        if _NOISE.fullmatch(char):
+            continue
+        for lowered in char.lower():
+            chars.append(lowered)
+            positions.append(index)
+    return "".join(chars), positions
+
+
 def drop_exact_repeat(value: str) -> str:
     """모델이 옮긴 문단 전체를 한 칸 안에서 통째로 두 번 반복해 낸 것을 한 번으로 접는다.
 

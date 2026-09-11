@@ -47,11 +47,13 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.classify.grounding import ground, loose, missing_lines
+from app.classify.grounding import NOT_IN_SOURCE, ground, loose, missing_lines
+from app.classify.pieces import Resolved, number_lines, render, resolve, strip_line_marks
 from app.classify.schema import (
     CLASSIFY_FIELDS,
     COLLECTED_REVIEW_FIELDS,
     COLLECTED_REVIEW_LABELS,
+    EXTRACT_FIELDS,
     JOB_MAJOR,
     JOB_MINOR,
     JUDGE_CHOICES,
@@ -89,19 +91,22 @@ MAX_ATTEMPTS = 2
 MAX_BODY_CHARS = 12000
 
 _SYSTEM_INSTRUCTION = (
-    "너는 채용공고를 정해진 칸으로 나눈다. "
-    "뽑는 칸에는 공고에 있는 글자만 그대로 옮기고, 판정하는 칸은 본문을 읽고 주어진 목록에서 "
-    "고른 뒤 그렇게 고른 근거 문장을 본문에서 그대로 옮겨 적는다. "
-    "요약하지 않고, 다듬지 않고, 없는 것을 지어내지 않는다."
+    "너는 채용공고를 정해진 칸으로 나눈다. 제목과 본문의 줄마다 앞에 [번호] 가 붙어 있다. "
+    "뽑는 칸은 그 내용이 몇 번 줄의 어느 부분인지를 조각으로 답하고, 조각의 글자는 그 줄에 "
+    "적힌 그대로 옮긴다. 판정하는 칸은 본문을 읽고 주어진 목록에서 고른 뒤 "
+    "그렇게 고른 근거 문장을 본문에서 그대로 옮겨 적는다. "
+    "요약하지 않고, 다듬지 않고, 줄이지 않고, 없는 것을 지어내지 않는다."
 )
 
-_PROMPT = """아래는 채용공고의 제목과 본문이다. 이것을 정해진 칸으로 나눈다.
+_PROMPT = """아래는 채용공고의 제목과 본문이다. 줄마다 앞에 [번호] 가 붙어 있다.
+[0] 이 제목이고 [1] 부터가 본문이다. 이것을 정해진 칸으로 나눈다.
 
-# 뽑는 칸 — 있는 글자를 그대로 옮긴다
+# 뽑는 칸 — 어느 줄의 어느 부분인지를 조각으로 답한다
 
-- job_role: 직무. **제목에서만 옮긴다.** 그 공고가 어떤 일을 할 사람을 뽑는지 제목이 말하는
-  부분이다. 회사명·연도·`경력사원 채용`·`영입` 같은 말은 빼고 직무를 가리키는 부분만 남긴다.
-  제목이 직무를 말하지 않으면(`전 직군 채용`, `신입사원 채용`) 빈 문자열로 둔다
+- job_role: 직무. **제목([0])에서만 가져온다.** 그 공고가 어떤 일을 할 사람을
+  뽑는지 제목이 말하는 부분이다. 회사명·연도·`경력사원 채용`·`영입` 같은 말은 빼고 직무를
+  가리키는 부분만 남긴다. 제목이 직무를 말하지 않으면(`전 직군 채용`, `신입사원 채용`) 빈
+  목록으로 둔다
 - duties: 주요 업무·담당 업무
 - requirements: 자격요건·지원자격
 - preferred: 우대사항
@@ -110,12 +115,19 @@ _PROMPT = """아래는 채용공고의 제목과 본문이다. 이것을 정해�
 - etc_info: 위 어디에도 맞지 않는, **이 공고만의** 안내(전형 유의사항, 제출 서류, 보훈·장애인
   우대 문구 등)
 
-규칙:
-- **있는 글자를 그대로 옮긴다.** 말을 바꾸거나 요약하거나 정리하지 않는다. 옮긴 값은
-  원문에서 그대로 찾을 수 있어야 한다 — `job_role` 은 제목에서, 나머지 여섯은 본문에서.
-- **원문에 없는 칸은 빈 문자열로 둔다.** 짐작해서 채우지 않는다.
-- 여러 줄이면 본문의 줄 그대로 줄바꿈으로 잇는다. 한 칸에 들어갈 내용이 본문 여러 곳에
-  흩어져 있으면 그 조각들을 줄바꿈으로 잇되, 없는 연결 문장을 지어내 붙이지 않는다.
+답하는 모양:
+- 칸마다 조각 목록으로 답한다. 조각 하나는 {{"line": 줄 번호, "text": 그 줄에서 이 칸에
+  해당하는 부분}} 이다. 원문에 없는 칸은 빈 목록([])으로 둔다. 짐작해서 채우지 않는다.
+- **text 는 그 줄에 적힌 글자 그대로 옮긴다.** 단어를 바꾸거나, 요약하거나, 줄이거나,
+  오타를 고치지 않는다. 줄 앞의 [번호] 는 text 에 넣지 않는다.
+- 공고의 소제목이 칸 이름과 달라도 된다. `지원자격`·`필수요건`·`이런 분을 찾아요` 아래
+  내용은 requirements 다. 소제목 자체는 조각에 넣지 않는다.
+- 한 줄에 소제목과 내용이 같이 있으면(`주요업무 : 결제 서버 개발`) 내용 부분만 옮긴다
+  (`결제 서버 개발`).
+- 한 줄에 여러 칸이 섞여 있으면(`근무지: 성남 | 고용형태: 정규직`) 그 칸에 해당하는
+  부분만 옮긴다(근무지라면 `성남`).
+- 내용이 여러 줄이면 줄마다 조각을 하나씩 낸다. 본문 여러 곳에 흩어져 있으면 그 줄들을
+  모두 조각으로 낸다.
 - 어느 칸에도 맞지 않는 내용만 etc_info 에 모은다. 본문 전체를 etc_info 에 넣지 않는다.
 - **회사 소개 문구·슬로건·화면 UI 문구는 어느 칸에도 옮기지 않는다.** "간편하면서도 안전한
   금융을 만든다" 같은 회사 소개, "N개 계열사·N개의 포지션이 열려 있어요"·"1개 포지션" 같은
@@ -134,7 +146,7 @@ _PROMPT = """아래는 채용공고의 제목과 본문이다. 이것을 정해�
   않으면 목록의 기타를, 본문만으로는 판단할 수 없으면 판단불가 를 쓴다.
 - 고른 칸마다 `employment_type_evidence` 처럼 `_evidence` 가 붙은 자리에 **그렇게 판단한
   근거가 되는 본문 문장을 그대로 옮겨 적는다.** 한 문장이면 된다. 본문에 없는 문장을 적지
-  않는다. 근거를 적을 수 없으면 그 칸을 판단불가 로 둔다.
+  않는다. 줄 앞의 [번호] 는 넣지 않는다. 근거를 적을 수 없으면 그 칸을 판단불가 로 둔다.
 - 회사명·모집 시작일·마감일은 위 칸 어디에도 넣지 않는다. 그 셋을 원문과 견주는 자리는
   값이 이미 있을 때만 아래에 따로 나온다. 제목도 `job_role` 말고는 어느 칸에도 넣지 않는다.
 {taxonomy_block}{current_values_block}
@@ -306,13 +318,16 @@ def build_prompt(
     if len(text) > MAX_BODY_CHARS:
         notes.append(f"보낸 글이 {len(text)}자라 앞 {MAX_BODY_CHARS}자만 보냈다")
         text = text[:MAX_BODY_CHARS]
+    # 번호는 자른 글에 붙인다. 자른 자리까지는 자르기 전 글과 줄이 같아서, 받은 번호를 자르기
+    # 전 글에서 찾아도 같은 줄이다 (`classify_body`)
+    lines = number_lines(title, text)
     choices = {name: " / ".join((*values, UNDECIDED)) for name, values in JUDGE_CHOICES.items()}
     block = _current_values_block(current_values or {})
     taxonomy = _taxonomy_block(taxonomy_tree)
     return (
         _PROMPT.format(
-            body=text,
-            title=title.strip(),
+            body=render(lines[1:], start=1),
+            title=render(lines[:1]),
             current_values_block=block,
             taxonomy_block=taxonomy,
             **choices,
@@ -347,6 +362,23 @@ def _extract_suggestions(
         suggestions[name] = value
         reasons[name] = fields.get(suggestion_reason_field(name), "").strip()
     return suggestions, reasons
+
+
+def _piece_notes(resolved: Mapping[str, Resolved]) -> list[str]:
+    """조각을 옮기며 생긴 일. 줄 전체로 대신한 조각과 찾지 못한 조각을 칸마다 센다.
+
+    값이 통째로 빈 칸은 여기 적지 않는다 — 버린 칸으로 `dropped` 에 들어간다.
+    """
+    whole = [f"{name}({item.whole_lines})" for name, item in resolved.items() if item.whole_lines]
+    partial = [
+        f"{name}({item.lost})" for name, item in resolved.items() if item.lost and item.value
+    ]
+    notes: list[str] = []
+    if whole:
+        notes.append("글자가 달라 짚은 줄 전체를 남긴 칸: " + ", ".join(whole))
+    if partial:
+        notes.append("찾지 못한 조각을 뺀 칸: " + ", ".join(partial))
+    return notes
 
 
 async def classify_body(
@@ -400,7 +432,7 @@ async def classify_body(
         if on_call is not None:
             on_call(usage)
         try:
-            fields = parse_classification(text, response_fields)
+            fields, pieces = parse_classification(text, response_fields)
         except ClassifySchemaError as exc:
             logger.warning(
                 "분류 응답 거절 model=%s attempt=%d reason=%s message=%s",
@@ -415,6 +447,15 @@ async def classify_body(
             last_error = exc
             continue
 
+        # 근거 문장과 제안에 번호까지 옮겨 왔으면 먼저 뗀다. 그다음 뽑는 칸은 조각을 원문에서
+        # 옮겨 글자로 만든다. 자르기 전 글의 줄을 쓴다 — 번호는 모델이 본 글과 같고, 번호가
+        # 틀렸을 때 찾는 범위만 넓어진다 (`app/classify/pieces.py`)
+        for name, value in fields.items():
+            fields[name] = strip_line_marks(value).strip()
+        lines = number_lines(title, body)
+        extracted = {name: resolve(pieces.get(name, []), lines) for name in EXTRACT_FIELDS}
+        fields.update({name: item.value for name, item in extracted.items()})
+
         # 받은 값을 그 자리에서 **보낸 그 글**에 돌려 본다. 못 찾은 칸은 버린다. 보낸 것과
         # 다른 값에 돌려 보면 옳게 뽑은 칸이 버려진다 — 원문으로 물어 놓고 본문에 돌려 보면
         # 본문 밖 이름표에서 온 근무지가 통째로 사라진다. 제목까지 보는 것은 `job_role` 이
@@ -423,11 +464,24 @@ async def classify_body(
         # 넘기는 것은 자르기 전 값이다. 모델이 본 것은 앞 `MAX_BODY_CHARS` 자뿐이라, 전체에
         # 돌려 보면 검사가 넓어질 뿐 좁아지지 않는다
         grounded = ground(fields, body, title, taxonomy_choices=taxonomy_choices)
+        # 조각을 냈는데 하나도 옮기지 못한 칸은 버린 칸이다. 짚은 줄도 없고 그 글자도 원문
+        # 어디에도 없었다 — 원문에 없는 값을 버리던 자리와 같은 이유로 센다
+        for name, item in extracted.items():
+            if item.lost and not item.value and name not in grounded.dropped:
+                grounded.dropped.append(name)
+                grounded.reasons[name] = NOT_IN_SOURCE
         if grounded.dropped:
             logger.warning(
                 "분류가 근거 없는 값을 냈다 model=%s 버린 칸=%s",
                 model,
                 ", ".join(f"{name}({grounded.reasons[name]})" for name in grounded.dropped),
+            )
+        piece_notes = _piece_notes(extracted)
+        if piece_notes:
+            logger.warning(
+                "분류 조각을 원문에서 그대로 찾지 못했다 model=%s %s",
+                model,
+                "; ".join(piece_notes),
             )
         # 같은 응답에서 제안도 같이 추린다. 두 번째 호출을 만들면 토큰이 두 배다
         suggestions, suggestion_reasons = _extract_suggestions(
@@ -444,6 +498,7 @@ async def classify_body(
             suggestion_reasons=suggestion_reasons,
             notes=[
                 *notes,
+                *piece_notes,
                 *(
                     [
                         "근거가 없어 버린 칸: "
