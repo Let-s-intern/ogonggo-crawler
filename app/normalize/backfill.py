@@ -10,7 +10,7 @@
 
 `raw_jobs` 는 읽기만 한다. `delivered_at` 도 그대로 둔다 — 소비 측이 이미 가져간 표시를
 지우면 같은 데이터가 다시 넘어간다 (`.claude/rules/data-safety.md`). 아래 UPDATE 문이
-규칙이 만드는 컬럼과 `parent_company`, `normalized_at` 만 적는 것이 그 보장이다.
+규칙이 만드는 컬럼과 `parent_company`, `source_url`, `normalized_at` 만 적는 것이 그 보장이다.
 
 `job_field_overrides` 도 읽기만 한다. 재정규화는 규칙을 다시 태우는 동작이지 사람이 검수한
 값을 지우는 동작이 아니다. 규칙 위에 보정을 덮는 순서는 `app/normalize/engine.py` 가 정한다.
@@ -55,6 +55,7 @@ from app.normalize.engine import (
     insert_normalized,
     load_rules,
     normalized_values,
+    posting_parts,
 )
 from app.normalize.rules import NORMALIZED_FIELDS, Rule
 
@@ -186,7 +187,8 @@ def renormalize(conn: sqlite3.Connection, progress: BackfillProgress) -> Backfil
 def rewrite_one(conn: sqlite3.Connection, raw_job_id: int, rules: list[Rule]) -> None:
     """한 건을 다시 정규화한다. 행이 없으면 새로 넣는다.
 
-    UPDATE 가 적는 컬럼은 `NORMALIZED_FIELDS` 와 `parent_company`, `normalized_at` 뿐이다.
+    UPDATE 가 적는 컬럼은 `NORMALIZED_FIELDS` 와 `parent_company`, `source_url`, `normalized_at`
+    뿐이다. 주소는 분류가 공고를 나누면 번호가 붙어 달라진다.
     `delivered_at` 은 목록에 없고, 그래서 소비 측이 가져간 표시는 재정규화를 몇 번 돌려도
     그대로다.
 
@@ -204,22 +206,26 @@ def rewrite_one(conn: sqlite3.Connection, raw_job_id: int, rules: list[Rule]) ->
     사람이 고친 필드는 규칙을 다시 태워도 사람 값으로 남는다. 규칙이 좋아지는 것은 보정하지
     않은 필드뿐이고, 그것이 검수가 살아남는 유일한 순서다.
     """
-    _, fields = normalized_values(conn, raw_job_id, rules)
-    companies.register(conn, fields["company"], fields[PARENT_COMPANY])
     # 컬럼 이름은 이 모듈이 임포트한 상수에서만 온다. 밖에서 오는 값이 들어오지 않는다
     columns = (*NORMALIZED_FIELDS, PARENT_COMPANY)
-    cursor = conn.execute(
-        f"""
-        UPDATE normalized_jobs
-           SET {", ".join(f"{name} = ?" for name in columns)},
-               normalized_at = datetime('now')
-         WHERE raw_job_id = ?
-        """,
-        (*(fields[name] for name in columns), raw_job_id),
-    )
-    if cursor.rowcount == 0:
-        # 적재는 됐는데 정규화에 실패했던 건이다. 규칙을 고친 뒤 이 경로로 복구된다
-        insert_normalized(conn, raw_job_id, rules)
+    # 분류가 공고를 나눴으면 번호마다 한 행이다. 같은 번호의 행을 고친다 — 나누기 전의 1번 행은
+    # 그대로 1번 공고가 되고, 그 행의 전달 표시도 따라간다
+    for part in posting_parts(conn, raw_job_id):
+        source_url, fields = normalized_values(conn, raw_job_id, rules, part)
+        companies.register(conn, fields["company"], fields[PARENT_COMPANY])
+        cursor = conn.execute(
+            f"""
+            UPDATE normalized_jobs
+               SET {", ".join(f"{name} = ?" for name in columns)},
+                   source_url = ?,
+                   normalized_at = datetime('now')
+             WHERE raw_job_id = ? AND part = ?
+            """,
+            (*(fields[name] for name in columns), source_url, raw_job_id, part.number),
+        )
+        if cursor.rowcount == 0:
+            # 적재는 됐는데 정규화에 실패했던 건이거나, 분류가 새로 나눈 공고다
+            insert_normalized(conn, raw_job_id, rules, part)
 
 
 def _now() -> str:
