@@ -245,6 +245,7 @@ async def classify_ids(
                 evidence=posting.evidence,
                 part=part,
                 part_role=(role or None) if result.split else None,
+                part_lines=posting.sent_lines,
             )
             progress.dropped += len(posting.dropped)
             # 같은 호출의 다른 갈래다. 값이 있는 칸에 원문이 다른 값을 낸 것은 여기로 간다 —

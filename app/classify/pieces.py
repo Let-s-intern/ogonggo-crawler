@@ -29,7 +29,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from app.classify.grounding import loose_with_positions
@@ -62,6 +62,22 @@ def number_lines(title: str, body: str) -> list[str]:
 def render(lines: Sequence[str], start: int = 0) -> str:
     """줄마다 `[번호]` 를 붙인 글. `start` 는 첫 줄의 번호다."""
     return "\n".join(f"[{start + offset}] {line}" for offset, line in enumerate(lines))
+
+
+def render_numbers(lines: Sequence[str], numbers: Iterable[int]) -> str:
+    """고른 줄만 원래 번호를 붙여 적는다. 긴 공고에서 한 직무의 줄만 보낼 때 쓴다."""
+    return "\n".join(f"[{number}] {lines[number]}" for number in numbers)
+
+
+def to_ranges(numbers: Iterable[int]) -> list[list[int]]:
+    """줄 번호들을 이어진 범위로 묶는다. `[1, 2, 3, 7]` 은 `[[1, 3], [7, 7]]` 이다."""
+    ranges: list[list[int]] = []
+    for number in sorted(set(numbers)):
+        if ranges and number == ranges[-1][1] + 1:
+            ranges[-1][1] = number
+        else:
+            ranges.append([number, number])
+    return ranges
 
 
 def strip_line_marks(text: str) -> str:

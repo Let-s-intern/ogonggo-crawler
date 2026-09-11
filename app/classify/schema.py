@@ -152,15 +152,8 @@ class CommonFields(BaseModel):
     recruitment_headcount: list[LinePiece] = Field(default_factory=list)
 
 
-class Classification(BaseModel):
-    """응답 전체. 직무마다 하나인 `postings` 와 모든 직무에 공통인 `common`.
-
-    직무가 하나인 공고는 `postings` 가 하나다. 제안 칸은 공고 한 건 전체에 대한 것이라 맨
-    위에 한 번만 온다.
-    """
-
-    common: CommonFields = Field(default_factory=CommonFields)
-    postings: list[Posting] = Field(default_factory=list)
+class SuggestionFields(BaseModel):
+    """수집이 이미 채운 칸을 원문과 견줘 낸 제안. 공고 한 건 전체의 것이라 응답 맨 위에 온다."""
 
     # 수집이 이미 채운 칸을 원문과 견줘 다르면 낸다 (Push 11, PRD 6절). 값이 같거나 판단할
     # 근거가 없으면 둘 다 빈 문자열이다 — 이 칸이 채워진다고 그 값이 그대로 저장되지 않는다.
@@ -172,6 +165,42 @@ class Classification(BaseModel):
     deadline_suggestion_reason: str = ""
     start_date_suggestion: str = ""
     start_date_suggestion_reason: str = ""
+
+
+class Classification(SuggestionFields):
+    """응답 전체. 직무마다 하나인 `postings` 와 모든 직무에 공통인 `common`.
+
+    직무가 하나인 공고는 `postings` 가 하나다. 제안 칸은 공고 한 건 전체에 대한 것이라 맨
+    위에 한 번만 온다.
+    """
+
+    common: CommonFields = Field(default_factory=CommonFields)
+    postings: list[Posting] = Field(default_factory=list)
+
+
+class LineRange(BaseModel):
+    """이어진 줄 범위. 끝 줄도 들어간다."""
+
+    start: int
+    end: int
+
+
+class OutlineRole(BaseModel):
+    """긴 공고에서 직무 하나가 차지하는 줄들."""
+
+    lines: list[LineRange] = Field(default_factory=list)
+
+
+class Outline(SuggestionFields):
+    """긴 공고의 짜임. 직무마다 그 직무의 줄 범위와, 모든 직무에 공통인 줄 범위.
+
+    칸은 여기서 뽑지 않는다. 직무마다 공통 줄과 그 직무의 줄만 다시 보내 `Classification` 으로
+    받는다 — 직무가 서른 개인 공고를 한 번에 나누게 하면 응답이 잘린다 (2026-09-11 결정).
+    제안 칸은 공고 전체를 보는 이 호출에서만 받는다.
+    """
+
+    roles: list[OutlineRole] = Field(default_factory=list)
+    common_lines: list[LineRange] = Field(default_factory=list)
 
 
 # 본문을 읽고 정해진 값 중에서 고르는 칸
@@ -230,6 +259,9 @@ RESPONSE_FIELDS: tuple[str, ...] = tuple(Classification.model_fields)
 # 나눈 공고 하나에 올 수 있는 이름과, 공통 묶음에 올 수 있는 이름
 POSTING_FIELDS: tuple[str, ...] = tuple(Posting.model_fields)
 COMMON_FIELDS: tuple[str, ...] = tuple(CommonFields.model_fields)
+# 제안 칸과, 긴 공고의 짜임 응답에 올 수 있는 이름
+SUGGESTION_FIELDS: tuple[str, ...] = tuple(SuggestionFields.model_fields)
+OUTLINE_FIELDS: tuple[str, ...] = tuple(Outline.model_fields)
 # 응답 맨 위의 두 묶음. 나머지 맨 위 칸은 제안이다
 COMMON: Final = "common"
 POSTINGS: Final = "postings"
@@ -452,6 +484,73 @@ def _pieces(name: str, raw: Any) -> list[Piece]:
             )
         pieces.append((line, text))
     return pieces
+
+
+@dataclass(frozen=True)
+class ParsedOutline:
+    """긴 공고의 짜임. 줄 번호는 범위를 풀어 정렬한 것이다."""
+
+    fields: dict[str, str]
+    roles: list[list[int]]
+    common: list[int]
+
+
+def parse_outline(text: str, line_count: int) -> ParsedOutline:
+    """짜임 응답을 파싱하고 검증한다. 글에 없는 줄 번호는 버린다.
+
+    0 번(제목)은 남기지 않는다 — 직무마다 보낼 때 늘 붙는다. 줄이 하나도 남지 않은 직무는
+    버린다. 번호가 틀린 범위 하나 때문에 공고 전체를 실패로 만들지 않는다.
+    """
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ClassifySchemaError("unparsable", f"JSON 으로 읽을 수 없다: {exc}") from exc
+    if not isinstance(data, Mapping):
+        raise ClassifySchemaError("unparsable", f"응답이 객체가 아니다: {type(data).__name__}")
+    _reject_unknown(data, OUTLINE_FIELDS, "")
+
+    roles_raw = data.get("roles")
+    if roles_raw is None or roles_raw == "":
+        roles_raw = []
+    if not isinstance(roles_raw, list):
+        raise ClassifySchemaError(
+            "unparsable", f"`roles` 가 목록이 아니다: {type(roles_raw).__name__}"
+        )
+    roles: list[list[int]] = []
+    for index, raw in enumerate(roles_raw):
+        where = f"roles[{index}]"
+        role = _object(where, raw)
+        _reject_unknown(role, ("lines",), f"{where} ")
+        numbers = _line_numbers(f"{where}.lines", role.get("lines"), line_count)
+        if numbers:
+            roles.append(numbers)
+
+    common = _line_numbers("common_lines", data.get("common_lines"), line_count)
+    fields = {name: _text(name, data.get(name)) for name in SUGGESTION_FIELDS}
+    return ParsedOutline(fields=fields, roles=roles, common=common)
+
+
+def _line_numbers(name: str, raw: Any, line_count: int) -> list[int]:
+    """줄 범위 목록을 줄 번호로 푼다. 1 번부터 `line_count - 1` 번까지만 남는다."""
+    if raw is None or raw == "":
+        return []
+    if not isinstance(raw, list):
+        raise ClassifySchemaError("unparsable", f"`{name}` 이 목록이 아니다: {type(raw).__name__}")
+    numbers: set[int] = set()
+    for item in raw:
+        if not isinstance(item, Mapping):
+            raise ClassifySchemaError(
+                "unparsable", f"`{name}` 의 범위가 객체가 아니다: {type(item).__name__}"
+            )
+        bounds = (item.get("start"), item.get("end"))
+        for value in bounds:
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ClassifySchemaError(
+                    "unparsable", f"`{name}` 의 범위에 줄 번호가 없다: {value!r}"
+                )
+        low, high = sorted(cast(tuple[int, int], bounds))
+        numbers.update(range(max(low, 1), min(high, line_count - 1) + 1))
+    return sorted(numbers)
 
 
 def parse_classification(

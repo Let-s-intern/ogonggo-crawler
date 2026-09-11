@@ -45,10 +45,17 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeVar
 
 from app.classify.grounding import NOT_IN_SOURCE, ground, loose, missing_lines
-from app.classify.pieces import Resolved, number_lines, render, resolve, strip_line_marks
+from app.classify.pieces import (
+    Resolved,
+    number_lines,
+    render,
+    render_numbers,
+    resolve,
+    strip_line_marks,
+)
 from app.classify.schema import (
     CLASSIFY_FIELDS,
     COLLECTED_REVIEW_FIELDS,
@@ -60,9 +67,12 @@ from app.classify.schema import (
     UNDECIDED,
     Classification,
     ClassifySchemaError,
+    Outline,
+    ParsedClassification,
     ParsedPosting,
     Piece,
     parse_classification,
+    parse_outline,
     suggestion_field,
     suggestion_reason_field,
 )
@@ -72,6 +82,8 @@ from app.llm.log import CLASSIFY
 from app.llm.providers import for_feature
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 # `llm_calls.feature` 와 로그에 같이 쓰는 이름
 FEATURE = "classify"
@@ -88,9 +100,18 @@ MAX_ATTEMPTS = 2
 # (`.claude/site-recipes/source-text-container.md`).
 #
 # 상한을 넘는 것은 LG 다. 상세 API 응답 전체를 편 원문이 33,225자이고(2026-09-11), 삼성은
-# 9,791자로 상한 안이다. 그 하나를 위해 상한을 세 배로 올리지 않는다. 지금은 잘리고 잘린
-# 사실이 `notes` 에 남는다
+# 9,791자로 상한 안이다. 그 하나를 위해 상한을 세 배로 올리지 않는다. 상한을 넘는 글은 한 번에
+# 나누지 않고 짜임을 먼저 물은 뒤 직무마다 부른다 (`_classify_long`)
 MAX_BODY_CHARS = 12000
+
+# 긴 공고의 첫 호출(짜임 묻기)에 보내는 글의 상한 (2026-09-11 결정). LG 33,225자가 여유 있게
+# 들어간다. 넘으면 앞부분만 보내고 잘린 사실을 남긴다 — 상한이 없으면 페이지 전체를 담기
+# 시작한 사이트가 그대로 나간다
+MAX_OUTLINE_CHARS = 50000
+
+# 호출 로그와 `llm_calls` 에서 호출을 가르는 이름
+CLASSIFY_KIND = "본문 분류"
+OUTLINE_KIND = "긴 공고 짜임"
 
 _SYSTEM_INSTRUCTION = (
     "너는 채용공고를 정해진 칸으로 나눈다. 공고가 여러 직무를 뽑으면 직무마다 공고 하나로 "
@@ -103,7 +124,7 @@ _SYSTEM_INSTRUCTION = (
 
 _PROMPT = """아래는 채용공고의 제목과 본문이다. 줄마다 앞에 [번호] 가 붙어 있다.
 [0] 이 제목이고 [1] 부터가 본문이다. 이것을 정해진 칸으로 나눈다.
-
+{part_block}
 # 공고 나누기 — postings 와 common
 
 - 이 공고가 뽑는 직무(모집 분야)마다 postings 에 하나씩 낸다. 직무가 하나면 postings 는
@@ -220,6 +241,9 @@ class PostingResult:
     dropped: list[str] = field(default_factory=list)
     # 버린 칸마다 왜 버렸는지. 고칠 자리가 이유마다 다르다
     reasons: dict[str, str] = field(default_factory=dict)
+    # 긴 공고에서 이 공고를 나눌 때 보낸 원문 줄 번호. 다시 분류할 때 같은 줄을 보낸다. 한 번에
+    # 나눈 공고는 비어 있다
+    sent_lines: tuple[int, ...] = ()
 
     @property
     def filled(self) -> list[str]:
@@ -271,6 +295,42 @@ def chosen(settings: Settings) -> tuple[Provider, str]:
         return for_feature(CLASSIFY, settings)
     except LlmCallError as exc:
         raise ClassifyError(exc.reason, str(exc)) from exc
+
+
+# 긴 공고에서 직무 하나만 떼어 보낼 때 프롬프트에 더하는 구역
+_PART_BLOCK = """
+# 긴 공고의 한 직무
+
+이 글은 직무가 여럿인 긴 공고에서 **한 직무**의 줄과 모든 직무에 공통인 줄만 떼어 온 것이다.
+줄 번호는 원래 공고의 번호라 건너뛴 번호가 있다.
+- postings 는 하나만 낸다. 이 직무다.
+- job_role 은 제목이 아니라 본문에서 이 직무의 이름이 적힌 줄에서 가져온다.
+- 공통 줄의 내용도 이 공고의 내용이다. common 에 담아도 되고 posting 에 담아도 된다.
+"""
+
+_OUTLINE_INSTRUCTION = (
+    "너는 긴 채용공고의 짜임을 읽는다. 직무마다 그 직무에만 해당하는 줄의 범위와, 모든 직무에 "
+    "공통인 줄의 범위를 답한다. 줄 번호는 글에 붙은 [번호] 를 그대로 쓰고, 칸은 뽑지 않는다."
+)
+
+_OUTLINE_PROMPT = """아래는 직무가 여럿일 수 있는 긴 채용공고다. 줄마다 앞에 [번호] 가 붙어 있다.
+[0] 이 제목이고 [1] 부터가 본문이다. 칸을 나누기 전에 공고의 짜임만 먼저 답한다.
+
+- roles: 이 공고가 뽑는 직무(모집 분야)마다 하나씩 낸다. 직무 아래에 더 작은 직무가 나뉘어
+  있으면 가장 작은 직무마다 하나다. 직무가 하나면 하나다.
+- roles 의 lines: 그 직무에만 해당하는 줄의 범위를 {{"start": 첫 줄 번호, "end": 끝 줄 번호}}
+  로 적는다. 끝 줄도 들어간다. 직무 이름이 적힌 줄도 넣는다. 흩어져 있으면 범위를 여럿 적는다.
+- common_lines: 모든 직무에 똑같이 해당하는 줄의 범위(공통 자격요건, 복지, 전형 절차, 접수
+  기간, 회사 소개 등).
+- 어느 직무의 내용도 공통 안내도 아닌 줄(다른 글, 인터뷰, 기사, 화면 문구)은 어디에도 넣지
+  않는다.
+{current_values_block}
+[제목]
+{title}
+
+[본문]
+{body}
+"""
 
 
 def _current_values_block(current_values: Mapping[str, str]) -> str:
@@ -366,18 +426,69 @@ def build_prompt(
     # 번호는 자른 글에 붙인다. 자른 자리까지는 자르기 전 글과 줄이 같아서, 받은 번호를 자르기
     # 전 글에서 찾아도 같은 줄이다 (`classify_body`)
     lines = number_lines(title, text)
-    choices = {name: " / ".join((*values, UNDECIDED)) for name, values in JUDGE_CHOICES.items()}
-    block = _current_values_block(current_values or {})
-    taxonomy = _taxonomy_block(taxonomy_tree)
     return (
-        _PROMPT.format(
-            body=render(lines[1:], start=1),
+        _classification_prompt(
             title=render(lines[:1]),
-            current_values_block=block,
-            taxonomy_block=taxonomy,
-            **choices,
+            body=render(lines[1:], start=1),
+            current_values_block=_current_values_block(current_values or {}),
+            taxonomy_tree=taxonomy_tree,
         ),
         notes,
+    )
+
+
+def build_part_prompt(
+    lines: Sequence[str],
+    numbers: Sequence[int],
+    taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]] = (),
+) -> str:
+    """긴 공고에서 직무 하나를 나눌 프롬프트. 제목과 고른 줄만 원래 번호로 보낸다.
+
+    이미 있는 값은 적지 않는다. 제안은 공고 전체를 본 짜임 호출이 이미 받았다.
+    """
+    return _classification_prompt(
+        title=render(lines[:1]),
+        body=render_numbers(lines, numbers),
+        current_values_block="",
+        taxonomy_tree=taxonomy_tree,
+        part_block=_PART_BLOCK,
+    )
+
+
+def build_outline_prompt(
+    body: str, title: str = "", current_values: Mapping[str, str] | None = None
+) -> tuple[str, list[str]]:
+    """긴 공고의 짜임을 물을 프롬프트와 남길 메모. `MAX_OUTLINE_CHARS` 를 넘는 글은 자른다."""
+    notes: list[str] = []
+    text = body
+    if len(text) > MAX_OUTLINE_CHARS:
+        notes.append(f"긴 공고가 {len(text)}자라 짜임을 물을 때 앞 {MAX_OUTLINE_CHARS}자만 보냈다")
+        text = text[:MAX_OUTLINE_CHARS]
+    lines = number_lines(title, text)
+    prompt = _OUTLINE_PROMPT.format(
+        title=render(lines[:1]),
+        body=render(lines[1:], start=1),
+        current_values_block=_current_values_block(current_values or {}),
+    )
+    return prompt, notes
+
+
+def _classification_prompt(
+    *,
+    title: str,
+    body: str,
+    current_values_block: str,
+    taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]],
+    part_block: str = "",
+) -> str:
+    choices = {name: " / ".join((*values, UNDECIDED)) for name, values in JUDGE_CHOICES.items()}
+    return _PROMPT.format(
+        body=body,
+        title=title,
+        current_values_block=current_values_block,
+        taxonomy_block=_taxonomy_block(taxonomy_tree),
+        part_block=part_block,
+        **choices,
     )
 
 
@@ -463,71 +574,260 @@ async def classify_body(
 
     resolved = settings or get_settings()
     provider, model = chosen(resolved)
-    resolved_client = client or build_client(resolved)
+    asker = _Asker(client or build_client(resolved), model, provider, on_call)
+    taxonomy_choices = _taxonomy_choices(taxonomy_tree)
+
+    if len(body) > MAX_BODY_CHARS:
+        return await _classify_long(
+            asker,
+            body,
+            title,
+            current_values or {},
+            taxonomy_tree,
+            response_model,
+            taxonomy_choices,
+        )
+
     prompt, notes = build_prompt(body, title, current_values, taxonomy_tree)
+    parsed, usage, attempts = await asker.ask(
+        prompt,
+        schema=response_model,
+        instruction=_SYSTEM_INSTRUCTION,
+        kind=CLASSIFY_KIND,
+        parse=lambda text: parse_classification(text, response_model),
+    )
+    return _result_of(
+        parsed,
+        body,
+        title,
+        current_values or {},
+        taxonomy_choices,
+        model,
+        usage=usage,
+        attempts=attempts,
+        notes=notes,
+    )
 
-    taxonomy_choices: dict[str, tuple[str, ...]] | None = None
-    if taxonomy_tree:
-        taxonomy_choices = {JOB_MAJOR: tuple(major for major, _ in taxonomy_tree)}
-        minors = tuple(minor for _, minor_list in taxonomy_tree for minor in minor_list)
-        if minors:
-            taxonomy_choices[JOB_MINOR] = minors
 
-    last_error: ClassifySchemaError | None = None
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        text, usage = await _call(resolved_client, model, prompt, attempt, provider, response_model)
-        if on_call is not None:
-            on_call(usage)
-        try:
-            parsed = parse_classification(text, response_model)
-        except ClassifySchemaError as exc:
-            logger.warning(
-                "분류 응답 거절 model=%s attempt=%d reason=%s message=%s",
-                model,
-                attempt,
-                exc.reason,
-                exc,
-            )
-            if exc.reason != "unparsable":
-                # 모양이 아니라 내용의 문제다. 다시 물어도 같은 답이 온다
-                raise ClassifyError(exc.reason, str(exc)) from exc
-            last_error = exc
-            continue
+async def _classify_long(
+    asker: _Asker,
+    body: str,
+    title: str,
+    current_values: Mapping[str, str],
+    taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]],
+    response_model: type[Classification],
+    taxonomy_choices: Mapping[str, tuple[str, ...]] | None,
+) -> ClassificationResult:
+    """긴 공고. 짜임을 먼저 묻고, 직무마다 공통 줄과 그 직무의 줄만 보내 나눈다 (2026-09-11 결정).
 
-        # 자르기 전 글의 줄을 쓴다 — 번호는 모델이 본 글과 같고, 번호가 틀렸을 때 찾는 범위만
-        # 넓어진다 (`app/classify/pieces.py`)
-        lines = number_lines(title, body)
-        # 공고를 하나도 내지 않았으면 공통 칸만으로 공고 하나를 만든다. 공통 칸도 비었으면 빈
-        # 공고 하나이고, 그것은 지금까지 "아무것도 못 뽑았다" 던 결과와 같다
+    한 번에 보내면 앞 `MAX_BODY_CHARS` 자 뒤의 직무를 못 보고, 직무가 서른 개인 공고를 한 번에
+    나누게 하면 응답이 잘린다. 어느 직무의 줄도 공통 줄도 아닌 글(인터뷰·기사)은 직무 호출에
+    실리지 않는다.
+
+    짜임에서 직무를 하나도 읽지 못하면 예전처럼 앞부분만 보내 한 번에 나눈다. 짜임을 물은
+    비용은 그대로 남는다.
+    """
+    lines = number_lines(title, body)
+    outline_prompt, notes = build_outline_prompt(body, title, current_values)
+    outline, usage, attempts = await asker.ask(
+        outline_prompt,
+        schema=Outline,
+        instruction=_OUTLINE_INSTRUCTION,
+        kind=OUTLINE_KIND,
+        parse=lambda text: parse_outline(text, len(lines)),
+    )
+    usages = [usage]
+    total_attempts = attempts
+
+    if not outline.roles:
+        prompt, cut = build_prompt(body, title, current_values, taxonomy_tree)
+        parsed, usage, attempts = await asker.ask(
+            prompt,
+            schema=response_model,
+            instruction=_SYSTEM_INSTRUCTION,
+            kind=CLASSIFY_KIND,
+            parse=lambda text: parse_classification(text, response_model),
+        )
+        return _result_of(
+            parsed,
+            body,
+            title,
+            current_values,
+            taxonomy_choices,
+            asker.model,
+            usage=_total([*usages, usage]),
+            attempts=total_attempts + attempts,
+            notes=[*notes, "긴 공고의 직무를 짜임에서 읽지 못해 한 번에 나눴다", *cut],
+        )
+
+    split = len(outline.roles) > 1
+    results: list[PostingResult] = []
+    posting_notes: list[str] = []
+    for number, role in enumerate(outline.roles, start=1):
+        numbers = sorted({*outline.common, *role})
+        parsed, usage, attempts = await asker.ask(
+            build_part_prompt(lines, numbers, taxonomy_tree),
+            schema=response_model,
+            instruction=_SYSTEM_INSTRUCTION,
+            kind=CLASSIFY_KIND,
+            parse=lambda text: parse_classification(text, response_model),
+        )
+        usages.append(usage)
+        total_attempts += attempts
+        prefix = f"{number}번 공고: " if split else ""
         postings = parsed.postings or [ParsedPosting(fields={}, pieces={})]
-        split = len(postings) > 1
-        results: list[PostingResult] = []
-        posting_notes: list[str] = []
-        for number, posting in enumerate(postings, start=1):
-            result, found = _posting_result(
-                posting, parsed.common, lines, body, title, taxonomy_choices, model
+        if len(postings) > 1:
+            # 직무 하나를 보냈는데 더 잘게 나눴다. 짜임이 정한 목록을 따른다
+            posting_notes.append(
+                f"{prefix}한 직무를 보냈는데 공고 {len(postings)}개가 와 첫 공고만 남겼다"
             )
-            results.append(result)
-            posting_notes.extend(f"{number}번 공고: {note}" if split else note for note in found)
-
-        # 같은 응답에서 제안도 같이 추린다. 두 번째 호출을 만들면 토큰이 두 배다
-        top = {name: strip_line_marks(value).strip() for name, value in parsed.fields.items()}
-        suggestions, suggestion_reasons = _extract_suggestions(
-            top, current_values or {}, f"{title}\n{body}"
+        result, found = _posting_result(
+            postings[0],
+            parsed.common,
+            lines,
+            body,
+            title,
+            taxonomy_choices,
+            asker.model,
+            sent_lines=numbers,
         )
-        return ClassificationResult(
-            postings=results,
-            usage=usage,
-            attempts=attempt,
-            suggestions=suggestions,
-            suggestion_reasons=suggestion_reasons,
-            notes=[*notes, *posting_notes],
-        )
+        results.append(result)
+        posting_notes.extend(prefix + note for note in found)
 
-    assert last_error is not None  # 루프는 최소 한 번 돈다
-    raise ClassifyError(
-        "unparsable", f"{MAX_ATTEMPTS}회 모두 스키마에 맞지 않았다: {last_error}"
-    ) from last_error
+    suggestions, suggestion_reasons = _suggestions_of(outline.fields, current_values, body, title)
+    return ClassificationResult(
+        postings=results,
+        usage=_total(usages),
+        attempts=total_attempts,
+        suggestions=suggestions,
+        suggestion_reasons=suggestion_reasons,
+        notes=[*notes, *posting_notes],
+    )
+
+
+@dataclass(frozen=True)
+class _Asker:
+    """공고 하나를 나누는 동안 같은 클라이언트·모델·제공자로 묻는다. 긴 공고는 여러 번 묻는다."""
+
+    client: Any
+    model: str
+    provider: Provider
+    on_call: Callable[[Usage], None] | None
+
+    async def ask(
+        self,
+        prompt: str,
+        *,
+        schema: Any,
+        instruction: str,
+        kind: str,
+        parse: Callable[[str], T],
+    ) -> tuple[T, Usage, int]:
+        """한 번 묻고 받은 것을 읽는다. 깨진 응답에 한해 한 번 더 묻는다.
+
+        `on_call` 은 호출마다 불린다. 깨진 응답으로 한 번 더 물으면 두 번 불린다 — 부르는 쪽이
+        그것을 `llm_calls` 에 그대로 남겨야 토큰 합이 실제와 맞는다 (`app/llm/log.py`).
+        """
+        last_error: ClassifySchemaError | None = None
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            text, usage = await _call(
+                self.client, self.model, prompt, attempt, self.provider, schema, instruction, kind
+            )
+            if self.on_call is not None:
+                self.on_call(usage)
+            try:
+                return parse(text), usage, attempt
+            except ClassifySchemaError as exc:
+                logger.warning(
+                    "분류 응답 거절 model=%s attempt=%d reason=%s message=%s",
+                    self.model,
+                    attempt,
+                    exc.reason,
+                    exc,
+                )
+                if exc.reason != "unparsable":
+                    # 모양이 아니라 내용의 문제다. 다시 물어도 같은 답이 온다
+                    raise ClassifyError(exc.reason, str(exc)) from exc
+                last_error = exc
+
+        assert last_error is not None  # 루프는 최소 한 번 돈다
+        raise ClassifyError(
+            "unparsable", f"{MAX_ATTEMPTS}회 모두 스키마에 맞지 않았다: {last_error}"
+        ) from last_error
+
+
+def _taxonomy_choices(
+    taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]],
+) -> dict[str, tuple[str, ...]] | None:
+    """근거 검사가 직무 분류를 볼 목록. 표가 비었으면 None 이라 그 두 칸을 보지 않는다."""
+    if not taxonomy_tree:
+        return None
+    choices = {JOB_MAJOR: tuple(major for major, _ in taxonomy_tree)}
+    minors = tuple(minor for _, minor_list in taxonomy_tree for minor in minor_list)
+    if minors:
+        choices[JOB_MINOR] = minors
+    return choices
+
+
+def _result_of(
+    parsed: ParsedClassification,
+    body: str,
+    title: str,
+    current_values: Mapping[str, str],
+    taxonomy_choices: Mapping[str, tuple[str, ...]] | None,
+    model: str,
+    *,
+    usage: Usage,
+    attempts: int,
+    notes: Sequence[str],
+) -> ClassificationResult:
+    """한 번에 나눈 응답을 결과로 만든다. 공고마다 원문에서 옮기고 근거를 확인한다."""
+    # 자르기 전 글의 줄을 쓴다 — 번호는 모델이 본 글과 같고, 번호가 틀렸을 때 찾는 범위만
+    # 넓어진다 (`app/classify/pieces.py`)
+    lines = number_lines(title, body)
+    # 공고를 하나도 내지 않았으면 공통 칸만으로 공고 하나를 만든다. 공통 칸도 비었으면 빈
+    # 공고 하나이고, 그것은 지금까지 "아무것도 못 뽑았다" 던 결과와 같다
+    postings = parsed.postings or [ParsedPosting(fields={}, pieces={})]
+    split = len(postings) > 1
+    results: list[PostingResult] = []
+    posting_notes: list[str] = []
+    for number, posting in enumerate(postings, start=1):
+        result, found = _posting_result(
+            posting, parsed.common, lines, body, title, taxonomy_choices, model
+        )
+        results.append(result)
+        posting_notes.extend(f"{number}번 공고: {note}" if split else note for note in found)
+
+    suggestions, suggestion_reasons = _suggestions_of(parsed.fields, current_values, body, title)
+    return ClassificationResult(
+        postings=results,
+        usage=usage,
+        attempts=attempts,
+        suggestions=suggestions,
+        suggestion_reasons=suggestion_reasons,
+        notes=[*notes, *posting_notes],
+    )
+
+
+def _suggestions_of(
+    fields: Mapping[str, str], current_values: Mapping[str, str], body: str, title: str
+) -> tuple[dict[str, str], dict[str, str]]:
+    """맨 위 제안 칸을 추린다. 같은 응답에서 받는다 — 두 번째 호출을 만들면 토큰이 두 배다."""
+    top = {name: strip_line_marks(value).strip() for name, value in fields.items()}
+    return _extract_suggestions(top, current_values, f"{title}\n{body}")
+
+
+def _total(usages: Sequence[Usage]) -> Usage:
+    """여러 호출의 비용을 하나로 더한다. 호출마다의 기록은 `on_call` 이 이미 남겼다."""
+    first = usages[0]
+    return Usage(
+        provider=first.provider,
+        model=first.model,
+        input_tokens=sum(usage.input_tokens for usage in usages),
+        output_tokens=sum(usage.output_tokens for usage in usages),
+        total_tokens=sum(usage.total_tokens for usage in usages),
+        latency_ms=sum(usage.latency_ms for usage in usages),
+    )
 
 
 def _posting_result(
@@ -538,6 +838,8 @@ def _posting_result(
     title: str,
     taxonomy_choices: Mapping[str, tuple[str, ...]] | None,
     model: str,
+    *,
+    sent_lines: Sequence[int] = (),
 ) -> tuple[PostingResult, list[str]]:
     """나눈 공고 하나를 원문에서 옮기고 근거를 확인한다. 남길 메모도 함께 돌려준다.
 
@@ -591,6 +893,7 @@ def _posting_result(
         evidence=grounded.evidence,
         dropped=grounded.dropped,
         reasons=grounded.reasons,
+        sent_lines=tuple(sent_lines),
     )
     return result, notes
 
@@ -601,7 +904,9 @@ async def _call(
     prompt: str,
     attempt: int,
     provider: Provider,
-    response_model: type[Classification] = Classification,
+    response_model: Any = Classification,
+    instruction: str = _SYSTEM_INSTRUCTION,
+    kind: str = CLASSIFY_KIND,
 ) -> tuple[str, Usage]:
     try:
         return await provider.call_model(
@@ -609,9 +914,9 @@ async def _call(
             model,
             prompt,
             attempt,
-            "본문 분류",
+            kind,
             response_schema=response_model,
-            system_instruction=_SYSTEM_INSTRUCTION,
+            system_instruction=instruction,
         )
     except LlmCallError as exc:
         raise ClassifyError(exc.reason, str(exc)) from exc
