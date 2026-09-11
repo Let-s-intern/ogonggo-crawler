@@ -145,8 +145,10 @@ def scope_ids(
     """
     body, params = _scope_from(scope, days)
     bound = "" if limit is None else " LIMIT ?"
+    # 나눈 공고는 수집 건 하나에 분류 행이 여럿이다. 분류 표를 잇는 범위에서 같은 수집 건이
+    # 여러 번 나오면 한 실행이 같은 공고를 몇 번이고 다시 부른다
     rows = conn.execute(
-        f"SELECT r.id AS id {body} ORDER BY r.id DESC{bound}",
+        f"SELECT DISTINCT r.id AS id {body} ORDER BY r.id DESC{bound}",
         params if limit is None else (*params, limit),
     ).fetchall()
     return [int(row["id"]) for row in rows]
@@ -163,7 +165,7 @@ def scope_count(conn: sqlite3.Connection, scope: str, *, days: int | None = None
     건이냐" 이고, 그중 몇 건씩 끊어 도는지는 실행이 정한다.
     """
     body, params = _scope_from(scope, days)
-    row = conn.execute(f"SELECT count(*) AS n {body}", params).fetchone()
+    row = conn.execute(f"SELECT count(DISTINCT r.id) AS n {body}", params).fetchone()
     return int(row["n"])
 
 
@@ -289,11 +291,12 @@ def save_classification(
     dropped: Sequence[str] = (),
     evidence: Mapping[str, str] | None = None,
     part: int = 1,
+    part_role: str | None = None,
 ) -> None:
     """분류 결과를 넣거나 덮는다. 빈 값은 NULL 로 들어간다.
 
-    `part` 는 공고를 나눈 몇 번째 공고인지다. 나누지 않은 공고는 1번 하나다
-    (`migrations/0029_split_postings.sql`).
+    `part` 는 공고를 나눈 몇 번째 공고인지다. 나누지 않은 공고는 1번 하나다. `part_role` 은
+    나눈 직무의 이름이고 나누지 않은 공고는 None 이다 (`migrations/0029_split_postings.sql`).
 
     덮는 것이 맞다. 분류는 본문에서 다시 만들 수 있는 값이라 이력을 쌓을 이유가 없고,
     한 공고에 결과가 둘이면 어느 쪽이 지금 값인지 알 수 없다.
@@ -301,11 +304,12 @@ def save_classification(
     `evidence` 는 판정 칸을 그렇게 고른 근거 문장이다. 남기지 않으면 나중에 "이 공고가 왜
     경력으로 분류됐나" 에 답할 수 없다 (`migrations/0015_classification_evidence.sql`).
     """
-    columns = (*STORED_CLASSIFY_FIELDS, "dropped_fields", "model", "evidence_json")
+    columns = (*STORED_CLASSIFY_FIELDS, "dropped_fields", "model", "evidence_json", "part_role")
     values = [fields.get(name, "").strip() or None for name in STORED_CLASSIFY_FIELDS]
     values.append(", ".join(dropped))
     values.append(model)
     values.append(json.dumps(dict(evidence or {}), ensure_ascii=False))
+    values.append(part_role)
     assignments = ", ".join(f"{name} = excluded.{name}" for name in columns)
     conn.execute(
         f"""

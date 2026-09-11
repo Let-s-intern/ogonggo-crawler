@@ -30,7 +30,8 @@ def settings_with_key() -> Settings:
 
 def response(**fields: str) -> str:
     base = response_body(**fields)
-    base.update(
+    # 직무 분류는 공고마다 고르는 칸이라 공고 안에 앉는다
+    base["postings"][0].update(
         {
             "job_major": fields.get("job_major", ""),
             "job_major_evidence": fields.get("job_major_evidence", ""),
@@ -74,9 +75,9 @@ async def test_대분류_소분류를_고르면_결과에_채워진다(conn: sql
         client=FakeClient(text),
     )
 
-    assert result.fields["job_major"] == "IT·개발"
-    assert result.fields["job_minor"] == "서버·백엔드"
-    assert result.dropped == []
+    assert result.postings[0].fields["job_major"] == "IT·개발"
+    assert result.postings[0].fields["job_minor"] == "서버·백엔드"
+    assert result.postings[0].dropped == []
 
 
 async def test_프롬프트에_트리가_한번에_들어간다(conn: sqlite3.Connection) -> None:
@@ -118,9 +119,9 @@ async def test_근거가_원문에_없으면_버려진다(conn: sqlite3.Connecti
         client=FakeClient(text),
     )
 
-    assert result.fields.get("job_major", "") == ""
-    assert result.fields.get("job_minor", "") == ""
-    assert set(result.dropped) == {"job_major", "job_minor"}
+    assert result.postings[0].fields.get("job_major", "") == ""
+    assert result.postings[0].fields.get("job_minor", "") == ""
+    assert set(result.postings[0].dropped) == {"job_major", "job_minor"}
 
 
 async def test_대분류만_정해지고_소분류는_판단불가면_대분류만_남는다(
@@ -143,9 +144,9 @@ async def test_대분류만_정해지고_소분류는_판단불가면_대분류�
         client=FakeClient(text),
     )
 
-    assert result.fields["job_major"] == "IT·개발"
-    assert result.fields.get("job_minor", "") == ""
-    assert result.dropped == []
+    assert result.postings[0].fields["job_major"] == "IT·개발"
+    assert result.postings[0].fields.get("job_minor", "") == ""
+    assert result.postings[0].dropped == []
 
 
 async def test_소분류_근거만_없으면_대분류는_그대로_남는다(conn: sqlite3.Connection) -> None:
@@ -168,9 +169,9 @@ async def test_소분류_근거만_없으면_대분류는_그대로_남는다(co
         client=FakeClient(text),
     )
 
-    assert result.fields["job_major"] == "IT·개발"
-    assert result.fields.get("job_minor", "") == ""
-    assert result.dropped == ["job_minor"]
+    assert result.postings[0].fields["job_major"] == "IT·개발"
+    assert result.postings[0].fields.get("job_minor", "") == ""
+    assert result.postings[0].dropped == ["job_minor"]
 
 
 async def test_대분류가_판단불가면_소분류도_비운다(conn: sqlite3.Connection) -> None:
@@ -192,8 +193,8 @@ async def test_대분류가_판단불가면_소분류도_비운다(conn: sqlite3
         client=FakeClient(text),
     )
 
-    assert result.fields.get("job_major", "") == ""
-    assert result.fields.get("job_minor", "") == ""
+    assert result.postings[0].fields.get("job_major", "") == ""
+    assert result.postings[0].fields.get("job_minor", "") == ""
 
 
 async def test_표가_비어있으면_직무_분류를_묻지_않는다() -> None:
@@ -207,5 +208,5 @@ async def test_표가_비어있으면_직무_분류를_묻지_않는다() -> Non
         client=FakeClient(text),
     )
 
-    assert "job_major" not in result.fields
-    assert "job_minor" not in result.fields
+    assert "job_major" not in result.postings[0].fields
+    assert "job_minor" not in result.postings[0].fields

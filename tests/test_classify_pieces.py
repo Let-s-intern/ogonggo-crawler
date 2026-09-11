@@ -106,10 +106,10 @@ async def test_분류가_조각을_원문_글자로_저장한다() -> None:
         client=client,
     )
 
-    assert result.fields["duties"] == "주요업무 : 결재 서버 개발"
-    assert result.fields["requirements"] == "Java 3년 이상 경험"
-    assert result.fields["work_location"] == "성남"
-    assert result.dropped == []
+    assert result.postings[0].fields["duties"] == "주요업무 : 결재 서버 개발"
+    assert result.postings[0].fields["requirements"] == "Java 3년 이상 경험"
+    assert result.postings[0].fields["work_location"] == "성남"
+    assert result.postings[0].dropped == []
     assert any("짚은 줄 전체" in note for note in result.notes)
 
     prompt = client.calls[0]["contents"]

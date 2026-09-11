@@ -102,7 +102,7 @@ async def test_a_different_grounded_value_becomes_a_suggestion() -> None:
     assert result.suggestions == {"deadline": "2026년 9월 30일까지"}
     assert result.suggestion_reasons["deadline"] == "원문의 접수 마감이 다르다"
     # 채우는 아홉 칸은 이 경로와 무관하게 그대로 채워진다
-    assert result.fields["duties"] == "제휴사 데이터 연동 구조 기획"
+    assert result.postings[0].fields["duties"] == "제휴사 데이터 연동 구조 기획"
     # 제안 칸(company·start_date)은 값을 안 줬으니 비어 있다
     assert "company" not in result.suggestions
 
@@ -118,7 +118,7 @@ async def test_a_suggestion_without_evidence_in_the_source_is_thrown_away() -> N
     )
 
     assert result.suggestions == {}
-    assert result.dropped == []  # 채우는 아홉 칸의 근거 검사와는 다른 목록이다
+    assert result.postings[0].dropped == []  # 채우는 아홉 칸의 근거 검사와는 다른 목록이다
 
 
 async def test_no_current_value_means_no_suggestion_even_if_the_model_answers() -> None:
@@ -191,5 +191,5 @@ async def test_a_bare_not_in_source_reason_is_reused_for_extract_fields() -> Non
     """제안과 무관한 회귀 확인 — 채우는 칸의 근거 검사 문구는 그대로다."""
     result, _ = await classify(response(work_location="원문에 없는 근무지"))
 
-    assert result.dropped == ["work_location"]
-    assert result.reasons["work_location"] == NOT_IN_SOURCE
+    assert result.postings[0].dropped == ["work_location"]
+    assert result.postings[0].reasons["work_location"] == NOT_IN_SOURCE

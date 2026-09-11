@@ -60,6 +60,8 @@ from app.classify.schema import (
     UNDECIDED,
     Classification,
     ClassifySchemaError,
+    ParsedPosting,
+    Piece,
     parse_classification,
     suggestion_field,
     suggestion_reason_field,
@@ -91,7 +93,8 @@ MAX_ATTEMPTS = 2
 MAX_BODY_CHARS = 12000
 
 _SYSTEM_INSTRUCTION = (
-    "너는 채용공고를 정해진 칸으로 나눈다. 제목과 본문의 줄마다 앞에 [번호] 가 붙어 있다. "
+    "너는 채용공고를 정해진 칸으로 나눈다. 공고가 여러 직무를 뽑으면 직무마다 공고 하나로 "
+    "나눈다. 제목과 본문의 줄마다 앞에 [번호] 가 붙어 있다. "
     "뽑는 칸은 그 내용이 몇 번 줄의 어느 부분인지를 조각으로 답하고, 조각의 글자는 그 줄에 "
     "적힌 그대로 옮긴다. 판정하는 칸은 본문을 읽고 주어진 목록에서 고른 뒤 "
     "그렇게 고른 근거 문장을 본문에서 그대로 옮겨 적는다. "
@@ -101,12 +104,23 @@ _SYSTEM_INSTRUCTION = (
 _PROMPT = """아래는 채용공고의 제목과 본문이다. 줄마다 앞에 [번호] 가 붙어 있다.
 [0] 이 제목이고 [1] 부터가 본문이다. 이것을 정해진 칸으로 나눈다.
 
+# 공고 나누기 — postings 와 common
+
+- 이 공고가 뽑는 직무(모집 분야)마다 postings 에 하나씩 낸다. 직무가 하나면 postings 는
+  하나다. 직무 아래에 더 작은 직무가 나뉘어 있으면 가장 작은 직무마다 하나다.
+- 모든 직무에 똑같이 해당하는 내용(공통 자격요건, 복지, 전형 절차, 회사 소개 등)은 common 에
+  한 번만 담는다. 공고마다 common 이 붙으므로 같은 내용을 postings 에 되풀이하지 않는다.
+- 한 직무에만 해당하는 내용은 그 직무의 posting 에 담는다.
+- job_role 과 판정하는 칸은 posting 마다 그 직무를 보고 답한다. common 에는 없다.
+- 직무가 하나인 공고는 전부 그 posting 에 담고 common 을 비워 둬도 된다.
+
 # 뽑는 칸 — 어느 줄의 어느 부분인지를 조각으로 답한다
 
-- job_role: 직무. **제목([0])에서만 가져온다.** 그 공고가 어떤 일을 할 사람을
-  뽑는지 제목이 말하는 부분이다. 회사명·연도·`경력사원 채용`·`영입` 같은 말은 빼고 직무를
-  가리키는 부분만 남긴다. 제목이 직무를 말하지 않으면(`전 직군 채용`, `신입사원 채용`) 빈
-  목록으로 둔다
+- job_role: 직무. **직무가 하나인 공고는 제목([0])에서만 가져온다.** 그 공고가 어떤 일을
+  할 사람을 뽑는지 제목이 말하는 부분이다. 회사명·연도·`경력사원 채용`·`영입` 같은 말은
+  빼고 직무를 가리키는 부분만 남긴다. 제목이 직무를 말하지 않으면(`전 직군 채용`,
+  `신입사원 채용`) 빈 목록으로 둔다. **직무마다 나눈 공고는 본문에서 그 직무의 이름이 적힌
+  줄에서 가져온다**(`[Finance]` 이면 `Finance`)
 - duties: 주요 업무·담당 업무
 - requirements: 자격요건·지원자격
 - preferred: 우대사항
@@ -193,21 +207,37 @@ class ClassifyError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class ClassificationResult:
-    """분류 한 건의 결과.
+class PostingResult:
+    """나눈 공고 하나의 결과.
 
-    `fields` 는 아홉 칸 전부를 갖는다. 채우지 못한 칸은 빈 문자열이고, 근거를 찾지 못해 버린
-    칸도 빈 문자열이다 — 버린 칸의 이름은 `dropped` 에, 이유는 `reasons` 에 있다.
+    `fields` 는 분류가 채우는 칸 전부를 갖는다. 채우지 못한 칸은 빈 문자열이고, 근거를 찾지
+    못해 버린 칸도 빈 문자열이다 — 버린 칸의 이름은 `dropped` 에, 이유는 `reasons` 에 있다.
     """
 
     fields: dict[str, str]
-    usage: Usage
-    attempts: int
     # 살아남은 판정 칸의 근거 문장. 사람이 그 판정을 읽고 검사할 수 있는 유일한 자리다
     evidence: dict[str, str] = field(default_factory=dict)
     dropped: list[str] = field(default_factory=list)
     # 버린 칸마다 왜 버렸는지. 고칠 자리가 이유마다 다르다
     reasons: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def filled(self) -> list[str]:
+        """값이 들어간 칸 이름."""
+        return [name for name in CLASSIFY_FIELDS if self.fields.get(name, "").strip()]
+
+
+@dataclass(frozen=True)
+class ClassificationResult:
+    """분류 한 번의 결과. 공고 한 건이 직무마다 나뉘면 `postings` 가 여럿이다.
+
+    직무가 하나인 공고는 `postings` 가 하나다. 제안은 공고 한 건 전체에 대한 것이라 여기 한
+    번만 있다.
+    """
+
+    postings: list[PostingResult]
+    usage: Usage
+    attempts: int
     notes: list[str] = field(default_factory=list)
     # 이미 값이 있는 칸(`company`·`deadline`·`start_date`)에 원문이 다르다고 낸 값. 근거
     # 검사를 통과하고 지금 값과 실제로 다른 것만 남는다 — 저장은 `job_field_suggestions` 뿐이고
@@ -216,9 +246,9 @@ class ClassificationResult:
     suggestion_reasons: dict[str, str] = field(default_factory=dict)
 
     @property
-    def filled(self) -> list[str]:
-        """값이 들어간 칸 이름."""
-        return [name for name in CLASSIFY_FIELDS if self.fields.get(name, "").strip()]
+    def split(self) -> bool:
+        """직무마다 나뉘었는가. 공고가 하나면 나누지 않은 것이다."""
+        return len(self.postings) > 1
 
 
 def build_client(settings: Settings | None = None) -> Any:
@@ -261,7 +291,8 @@ def _current_values_block(current_values: Mapping[str, str]) -> str:
     )
     return (
         "\n# 이미 있는 값 — 원문과 다르면 고쳐 제안한다\n\n"
-        "아래 칸에는 이미 값이 있다. 원문을 읽고 같은 값이면 그 칸의 `_suggestion` 과\n"
+        "아래 칸에는 이미 값이 있다. 제안 칸은 postings 안이 아니라 응답 맨 위에 둔다.\n"
+        "원문을 읽고 같은 값이면 그 칸의 `_suggestion` 과\n"
         "`_suggestion_reason` 을 비워 둔다. 값이 다르면 `_suggestion` 에 원문이 말하는 값을,\n"
         "`_suggestion_reason` 에 왜 다른지 원문에 있는 근거를 한 줄로 적는다. 원문에 없는\n"
         "근거로 고치지 않는다 — 짐작이 아니라 읽고 판단해야 한다.\n\n"
@@ -284,7 +315,7 @@ def _taxonomy_block(tree: Sequence[tuple[str, tuple[str, ...]]]) -> str:
     return (
         "\n# 직무 분류 — 아래 목록에서만 고른다\n\n"
         "job_major 는 대분류, job_minor 는 그 대분류 밑의 소분류다. 목록에 없는 이름을\n"
-        "새로 만들지 않는다.\n\n"
+        "새로 만들지 않는다. 직무마다 나눈 공고는 posting 마다 그 직무를 보고 고른다.\n\n"
         "**가능하면 항상 채운다.** 정확히 들어맞는 대분류가 없어도, 이 공고가 하는 일과\n"
         "가장 가까운 대분류를 고른다 — 완벽히 맞는 것을 찾는 것이 아니라 다른 후보보다\n"
         "조금이라도 더 가까운 것을 고르는 일이다. job_major 를 판단불가 로 두는 것은 본문에\n"
@@ -408,6 +439,9 @@ async def classify_body(
 ) -> ClassificationResult:
     """공고 하나를 나눈다. 받은 값은 원문에 있는지 확인한 뒤에만 남는다.
 
+    직무가 여럿인 공고는 직무마다 `ClassificationResult.postings` 하나가 된다. 칸마다 공통
+    조각을 그 공고의 조각 앞에 붙인 뒤 공고마다 근거를 확인한다 (`app/classify/schema.py`).
+
     `title` 은 `job_role` 의 출처다. 비어 있어도 나머지 여덟 칸은 그대로 나오므로 분류가
     실패하지 않는다 — 나눌 것이 없는 것은 본문이 빈 경우뿐이다.
 
@@ -431,7 +465,6 @@ async def classify_body(
     provider, model = chosen(resolved)
     resolved_client = client or build_client(resolved)
     prompt, notes = build_prompt(body, title, current_values, taxonomy_tree)
-    response_fields = tuple(response_model.model_fields)
 
     taxonomy_choices: dict[str, tuple[str, ...]] | None = None
     if taxonomy_tree:
@@ -446,7 +479,7 @@ async def classify_body(
         if on_call is not None:
             on_call(usage)
         try:
-            fields, pieces = parse_classification(text, response_fields)
+            parsed = parse_classification(text, response_model)
         except ClassifySchemaError as exc:
             logger.warning(
                 "분류 응답 거절 model=%s attempt=%d reason=%s message=%s",
@@ -461,75 +494,105 @@ async def classify_body(
             last_error = exc
             continue
 
-        # 근거 문장과 제안에 번호까지 옮겨 왔으면 먼저 뗀다. 그다음 뽑는 칸은 조각을 원문에서
-        # 옮겨 글자로 만든다. 자르기 전 글의 줄을 쓴다 — 번호는 모델이 본 글과 같고, 번호가
-        # 틀렸을 때 찾는 범위만 넓어진다 (`app/classify/pieces.py`)
-        for name, value in fields.items():
-            fields[name] = strip_line_marks(value).strip()
+        # 자르기 전 글의 줄을 쓴다 — 번호는 모델이 본 글과 같고, 번호가 틀렸을 때 찾는 범위만
+        # 넓어진다 (`app/classify/pieces.py`)
         lines = number_lines(title, body)
-        extracted = {name: resolve(pieces.get(name, []), lines) for name in EXTRACT_FIELDS}
-        fields.update({name: item.value for name, item in extracted.items()})
+        # 공고를 하나도 내지 않았으면 공통 칸만으로 공고 하나를 만든다. 공통 칸도 비었으면 빈
+        # 공고 하나이고, 그것은 지금까지 "아무것도 못 뽑았다" 던 결과와 같다
+        postings = parsed.postings or [ParsedPosting(fields={}, pieces={})]
+        split = len(postings) > 1
+        results: list[PostingResult] = []
+        posting_notes: list[str] = []
+        for number, posting in enumerate(postings, start=1):
+            result, found = _posting_result(
+                posting, parsed.common, lines, body, title, taxonomy_choices, model
+            )
+            results.append(result)
+            posting_notes.extend(f"{number}번 공고: {note}" if split else note for note in found)
 
-        # 받은 값을 그 자리에서 **보낸 그 글**에 돌려 본다. 못 찾은 칸은 버린다. 보낸 것과
-        # 다른 값에 돌려 보면 옳게 뽑은 칸이 버려진다 — 원문으로 물어 놓고 본문에 돌려 보면
-        # 본문 밖 이름표에서 온 근무지가 통째로 사라진다. 제목까지 보는 것은 `job_role` 이
-        # 거기서 오기 때문이다 (`app/classify/grounding.py`).
-        #
-        # 넘기는 것은 자르기 전 값이다. 모델이 본 것은 앞 `MAX_BODY_CHARS` 자뿐이라, 전체에
-        # 돌려 보면 검사가 넓어질 뿐 좁아지지 않는다
-        grounded = ground(fields, body, title, taxonomy_choices=taxonomy_choices)
-        # 조각을 냈는데 하나도 옮기지 못한 칸은 버린 칸이다. 짚은 줄도 없고 그 글자도 원문
-        # 어디에도 없었다 — 원문에 없는 값을 버리던 자리와 같은 이유로 센다
-        for name, item in extracted.items():
-            if item.lost and not item.value and name not in grounded.dropped:
-                grounded.dropped.append(name)
-                grounded.reasons[name] = NOT_IN_SOURCE
-        if grounded.dropped:
-            logger.warning(
-                "분류가 근거 없는 값을 냈다 model=%s 버린 칸=%s",
-                model,
-                ", ".join(f"{name}({grounded.reasons[name]})" for name in grounded.dropped),
-            )
-        piece_notes = _piece_notes(extracted)
-        if piece_notes:
-            logger.warning(
-                "분류 조각을 원문에서 그대로 찾지 못했다 model=%s %s",
-                model,
-                "; ".join(piece_notes),
-            )
         # 같은 응답에서 제안도 같이 추린다. 두 번째 호출을 만들면 토큰이 두 배다
+        top = {name: strip_line_marks(value).strip() for name, value in parsed.fields.items()}
         suggestions, suggestion_reasons = _extract_suggestions(
-            fields, current_values or {}, f"{title}\n{body}"
+            top, current_values or {}, f"{title}\n{body}"
         )
         return ClassificationResult(
-            fields=grounded.fields,
+            postings=results,
             usage=usage,
             attempts=attempt,
-            evidence=grounded.evidence,
-            dropped=grounded.dropped,
-            reasons=grounded.reasons,
             suggestions=suggestions,
             suggestion_reasons=suggestion_reasons,
-            notes=[
-                *notes,
-                *piece_notes,
-                *(
-                    [
-                        "근거가 없어 버린 칸: "
-                        + ", ".join(
-                            f"{name}({grounded.reasons[name]})" for name in grounded.dropped
-                        )
-                    ]
-                    if grounded.dropped
-                    else []
-                ),
-            ],
+            notes=[*notes, *posting_notes],
         )
 
     assert last_error is not None  # 루프는 최소 한 번 돈다
     raise ClassifyError(
         "unparsable", f"{MAX_ATTEMPTS}회 모두 스키마에 맞지 않았다: {last_error}"
     ) from last_error
+
+
+def _posting_result(
+    posting: ParsedPosting,
+    common: Mapping[str, Sequence[Piece]],
+    lines: Sequence[str],
+    body: str,
+    title: str,
+    taxonomy_choices: Mapping[str, tuple[str, ...]] | None,
+    model: str,
+) -> tuple[PostingResult, list[str]]:
+    """나눈 공고 하나를 원문에서 옮기고 근거를 확인한다. 남길 메모도 함께 돌려준다.
+
+    칸마다 공통 조각을 그 공고의 조각 앞에 붙인다. 같은 글자가 양쪽에서 나오면 한 번만 남는다
+    (`app/classify/pieces.py` 의 `resolve`).
+    """
+    # 근거 문장에 번호까지 옮겨 왔으면 먼저 뗀다. 그다음 뽑는 칸은 조각을 원문에서 옮겨 글자로
+    # 만든다
+    fields = {name: strip_line_marks(value).strip() for name, value in posting.fields.items()}
+    extracted = {
+        name: resolve([*common.get(name, []), *posting.pieces.get(name, [])], lines)
+        for name in EXTRACT_FIELDS
+    }
+    fields.update({name: item.value for name, item in extracted.items()})
+
+    # 받은 값을 그 자리에서 **보낸 그 글**에 돌려 본다. 못 찾은 칸은 버린다. 보낸 것과
+    # 다른 값에 돌려 보면 옳게 뽑은 칸이 버려진다 — 원문으로 물어 놓고 본문에 돌려 보면
+    # 본문 밖 이름표에서 온 근무지가 통째로 사라진다. 제목까지 보는 것은 `job_role` 이
+    # 거기서 오기 때문이다 (`app/classify/grounding.py`).
+    #
+    # 넘기는 것은 자르기 전 값이다. 모델이 본 것은 앞 `MAX_BODY_CHARS` 자뿐이라, 전체에
+    # 돌려 보면 검사가 넓어질 뿐 좁아지지 않는다
+    grounded = ground(fields, body, title, taxonomy_choices=taxonomy_choices)
+    # 조각을 냈는데 하나도 옮기지 못한 칸은 버린 칸이다. 짚은 줄도 없고 그 글자도 원문
+    # 어디에도 없었다 — 원문에 없는 값을 버리던 자리와 같은 이유로 센다
+    for name, item in extracted.items():
+        if item.lost and not item.value and name not in grounded.dropped:
+            grounded.dropped.append(name)
+            grounded.reasons[name] = NOT_IN_SOURCE
+    if grounded.dropped:
+        logger.warning(
+            "분류가 근거 없는 값을 냈다 model=%s 버린 칸=%s",
+            model,
+            ", ".join(f"{name}({grounded.reasons[name]})" for name in grounded.dropped),
+        )
+    piece_notes = _piece_notes(extracted)
+    if piece_notes:
+        logger.warning(
+            "분류 조각을 원문에서 그대로 찾지 못했다 model=%s %s",
+            model,
+            "; ".join(piece_notes),
+        )
+    notes = list(piece_notes)
+    if grounded.dropped:
+        notes.append(
+            "근거가 없어 버린 칸: "
+            + ", ".join(f"{name}({grounded.reasons[name]})" for name in grounded.dropped)
+        )
+    result = PostingResult(
+        fields=grounded.fields,
+        evidence=grounded.evidence,
+        dropped=grounded.dropped,
+        reasons=grounded.reasons,
+    )
+    return result, notes
 
 
 async def _call(

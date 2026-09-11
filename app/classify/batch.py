@@ -232,18 +232,27 @@ async def classify_ids(
             progress.note(f"raw_jobs {raw_job_id}: {exc}")
             continue
 
-        save_classification(
-            conn,
-            raw_job_id,
-            result.fields,
-            model=result.usage.model,
-            dropped=result.dropped,
-            evidence=result.evidence,
-        )
-        progress.dropped += len(result.dropped)
-        # 같은 호출의 다른 갈래다. 값이 있는 칸에 원문이 다른 값을 낸 것은 여기로 간다 —
-        # `normalize/engine.py` 는 이 표를 읽지 않는다 (PRD 6절)
-        save_suggestions(conn, raw_job_id, result.suggestions, result.suggestion_reasons)
+        # 직무마다 나뉘었으면 번호마다 한 행이다. 나누지 않은 공고는 1번 하나이고 직무 이름을
+        # 따로 남기지 않는다 — 그 직무는 제목에서 온 `job_role` 그대로다
+        for part, posting in enumerate(result.postings, start=1):
+            role = posting.fields.get("job_role", "").strip()
+            save_classification(
+                conn,
+                raw_job_id,
+                posting.fields,
+                model=result.usage.model,
+                dropped=posting.dropped,
+                evidence=posting.evidence,
+                part=part,
+                part_role=(role or None) if result.split else None,
+            )
+            progress.dropped += len(posting.dropped)
+            # 같은 호출의 다른 갈래다. 값이 있는 칸에 원문이 다른 값을 낸 것은 여기로 간다 —
+            # `normalize/engine.py` 는 이 표를 읽지 않는다 (PRD 6절). 회사명·마감일은 공고 한
+            # 건 전체의 값이라 나눈 공고마다 같은 제안이 붙는다
+            save_suggestions(
+                conn, raw_job_id, result.suggestions, result.suggestion_reasons, part=part
+            )
         try:
             # 분류가 채운 칸이 `normalized_jobs` 까지 가야 소비 측이 본다. 규칙 -> 분류 ->
             # 사람 보정 순서는 정규화 경로 하나가 정한다 (`app/normalize/engine.py`)

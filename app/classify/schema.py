@@ -39,6 +39,13 @@
 때문이다** (2026-08-26 확인: `response_schema.properties[career_level].enum[0]: cannot be
 empty`). `판단불가` 는 저장되지 않고 빈 칸이 된다.
 
+## 공고가 여럿일 수 있다
+
+공고 한 건에 직무가 여럿이면 직무마다 공고 하나로 나눈다 (2026-09-11 결정). 응답은 직무마다
+하나인 `postings` 와, 모든 직무에 같은 뽑는 칸을 한 번만 담는 `common` 으로 온다. 칸마다
+`common` 의 조각과 그 공고의 조각을 코드가 합친다 — 공통 내용을 직무 수만큼 되풀이하게 하면
+삼성 한 건에서 2,000자를 열두 번 적어 응답이 잘린다. 직무가 하나인 공고는 `postings` 가 하나다.
+
 | reason | 뜻 |
 |---|---|
 | `unparsable` | JSON 이 아니거나, 객체·문자열이 아닌 자리에 다른 타입이 왔다 |
@@ -53,7 +60,8 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Mapping
-from typing import Any, Final, Literal, get_args
+from dataclasses import dataclass
+from typing import Any, Final, Literal, cast, get_args
 
 from pydantic import BaseModel, Field, create_model
 
@@ -86,8 +94,8 @@ class LinePiece(BaseModel):
     text: str
 
 
-class Classification(BaseModel):
-    """공고 하나를 나눈 칸들과, 판정 칸의 근거 문장.
+class Posting(BaseModel):
+    """나눈 공고 하나의 칸들과, 판정 칸의 근거 문장.
 
     뽑는 칸은 조각 목록이고 원문에 없으면 빈 목록이다. 판정 칸은 `Literal` 이라 목록에
     없는 값이 애초에 응답에 담기지 못한다. `판단불가` 가 목록에 있는 것은 "본문만으로는 고를
@@ -123,6 +131,36 @@ class Classification(BaseModel):
     compensation: list[LinePiece] = Field(default_factory=list)
     benefits: list[LinePiece] = Field(default_factory=list)
     recruitment_headcount: list[LinePiece] = Field(default_factory=list)
+
+
+class CommonFields(BaseModel):
+    """모든 직무에 똑같이 해당하는 뽑는 칸. 코드가 공고마다 그 공고의 조각 앞에 붙인다.
+
+    `job_role` 은 없다 — 직무 이름은 공고마다 다르다. 판정 칸도 없다. 신입·경력처럼 직무마다
+    갈릴 수 있고, 공고마다 되풀이해도 한 단어라 응답이 길어지지 않는다.
+    """
+
+    work_location: list[LinePiece] = Field(default_factory=list)
+    duties: list[LinePiece] = Field(default_factory=list)
+    preferred: list[LinePiece] = Field(default_factory=list)
+    hiring_process: list[LinePiece] = Field(default_factory=list)
+    requirements: list[LinePiece] = Field(default_factory=list)
+    etc_info: list[LinePiece] = Field(default_factory=list)
+    company_and_team_introduction: list[LinePiece] = Field(default_factory=list)
+    compensation: list[LinePiece] = Field(default_factory=list)
+    benefits: list[LinePiece] = Field(default_factory=list)
+    recruitment_headcount: list[LinePiece] = Field(default_factory=list)
+
+
+class Classification(BaseModel):
+    """응답 전체. 직무마다 하나인 `postings` 와 모든 직무에 공통인 `common`.
+
+    직무가 하나인 공고는 `postings` 가 하나다. 제안 칸은 공고 한 건 전체에 대한 것이라 맨
+    위에 한 번만 온다.
+    """
+
+    common: CommonFields = Field(default_factory=CommonFields)
+    postings: list[Posting] = Field(default_factory=list)
 
     # 수집이 이미 채운 칸을 원문과 견줘 다르면 낸다 (Push 11, PRD 6절). 값이 같거나 판단할
     # 근거가 없으면 둘 다 빈 문자열이다 — 이 칸이 채워진다고 그 값이 그대로 저장되지 않는다.
@@ -187,8 +225,15 @@ EXTRACT_FIELDS: tuple[str, ...] = (
 # 분류가 채우는 칸. `normalized_jobs` 의 같은 이름 컬럼으로 간다
 CLASSIFY_FIELDS: tuple[str, ...] = (*JUDGE_FIELDS, *EXTRACT_FIELDS)
 
-# 응답에 올 수 있는 이름 전부
+# 응답 맨 위에 올 수 있는 이름 전부
 RESPONSE_FIELDS: tuple[str, ...] = tuple(Classification.model_fields)
+# 나눈 공고 하나에 올 수 있는 이름과, 공통 묶음에 올 수 있는 이름
+POSTING_FIELDS: tuple[str, ...] = tuple(Posting.model_fields)
+COMMON_FIELDS: tuple[str, ...] = tuple(CommonFields.model_fields)
+# 응답 맨 위의 두 묶음. 나머지 맨 위 칸은 제안이다
+COMMON: Final = "common"
+POSTINGS: Final = "postings"
+assert set(COMMON_FIELDS) == set(EXTRACT_FIELDS) - {"job_role"}
 
 # 직무 분류. `job_taxonomy`(운영 DB 표)에서 고르는 판정 칸 둘이라 `Classification`(정적
 # pydantic 모델)에도, 위 `CLASSIFY_FIELDS`/`RESPONSE_FIELDS`(둘 다 그 정적 모델에서 뽑는다)
@@ -209,7 +254,7 @@ STORED_CLASSIFY_FIELDS: tuple[str, ...] = (*CLASSIFY_FIELDS, *TAXONOMY_FIELDS)
 
 
 def _choices(name: str) -> tuple[str, ...]:
-    annotation = Classification.model_fields[name].annotation
+    annotation = Posting.model_fields[name].annotation
     return tuple(value for value in get_args(annotation) if value and value != UNDECIDED)
 
 
@@ -221,11 +266,14 @@ JUDGE_CHOICES: dict[str, tuple[str, ...]] = {name: _choices(name) for name in JU
 # 스키마에 적은 글자와 위 상수가 갈리면 "고르지 않았다" 가 목록 안의 값이 되어 그대로 저장된다.
 # 임포트 시점에 걸린다 — 640건을 돌린 뒤에 알게 될 일이 아니다
 for _name in JUDGE_FIELDS:
-    assert UNDECIDED in get_args(Classification.model_fields[_name].annotation), _name
+    assert UNDECIDED in get_args(Posting.model_fields[_name].annotation), _name
 
 
 def build_classification_model(conn: sqlite3.Connection) -> type[Classification]:
     """`job_taxonomy` 의 켜진 값으로 `job_major`/`job_minor` 를 더한 모델을 만든다.
+
+    두 칸은 공고마다 고르는 칸이라 공고 모델(`Posting`)에 더하고, 그 공고 모델을 담는 응답
+    모델을 돌려준다.
 
     `Classification` 은 고치지 않는다 — 그 클래스는 배포 시점에 고정된 아홉 칸의 모양이고,
     직무 분류는 운영 중에 표가 바뀌면 다음 호출부터 목록이 따라와야 한다. 그래서 매 호출
@@ -254,7 +302,18 @@ def build_classification_model(conn: sqlite3.Connection) -> type[Classification]
         fields[JOB_MINOR] = (Literal[(*minor_names, UNDECIDED)], UNDECIDED)
         fields[f"{JOB_MINOR}_evidence"] = (str, "")
 
-    return create_model("ClassificationWithTaxonomy", __base__=Classification, **fields)
+    posting: Any = create_model("PostingWithTaxonomy", __base__=Posting, **fields)
+    return create_model(
+        "ClassificationWithTaxonomy",
+        __base__=Classification,
+        postings=(list[posting], Field(default_factory=list)),
+    )
+
+
+def posting_model_of(response_model: type[Classification]) -> type[Posting]:
+    """응답 모델이 담는 공고 모델. 직무 분류가 있으면 그 두 칸을 더한 모델이다."""
+    (item,) = get_args(response_model.model_fields[POSTINGS].annotation)
+    return cast(type[Posting], item)
 
 
 class ClassifySchemaError(ValueError):
@@ -265,44 +324,106 @@ class ClassifySchemaError(ValueError):
         self.reason = reason
 
 
+@dataclass(frozen=True)
+class ParsedPosting:
+    """나눈 공고 하나. 글자 칸(판정·근거·직무 분류)과 뽑는 칸의 조각을 따로 담는다."""
+
+    fields: dict[str, str]
+    pieces: dict[str, list[Piece]]
+
+
+@dataclass(frozen=True)
+class ParsedClassification:
+    """응답 하나. 맨 위의 제안 칸, 공통 조각, 나눈 공고들."""
+
+    fields: dict[str, str]
+    common: dict[str, list[Piece]]
+    postings: list[ParsedPosting]
+
+
 def validate_classification(
-    data: Any, response_fields: tuple[str, ...] = RESPONSE_FIELDS
-) -> tuple[dict[str, str], dict[str, list[Piece]]]:
-    """파싱된 응답을 검증해 글자 칸과 뽑는 칸의 조각을 따로 돌려준다. 없는 키는 빈 값이다.
+    data: Any, response_model: type[Classification] = Classification
+) -> ParsedClassification:
+    """파싱된 응답을 검증한다. 없는 키는 빈 값이다.
 
     스키마에 없는 칸 이름이 오면 무엇을 말하려던 것인지 추측해서 고치지 않는다. 조용히 고친
-    값은 나중에 왜 그 칸에 그 값이 들어갔는지 아무도 설명하지 못한다.
+    값은 나중에 왜 그 칸에 그 값이 들어갔는지 아무도 설명하지 못한다. 맨 위든 `common` 안이든
+    공고 안이든 같다.
 
-    `response_fields` 는 기본값이 정적 아홉 칸(`RESPONSE_FIELDS`)이지만, 직무 분류가 있는
-    호출은 `build_classification_model()` 이 만든 그 모델의 필드 이름을 넘긴다 — 그 두 칸은
-    호출마다 있을 수도 없을 수도 있어 고정 튜플에 넣을 수 없다(`app/classify/schema.py` 의
-    `TAXONOMY_FIELDS` 설명).
+    `response_model` 은 기본값이 정적 모델(`Classification`)이지만, 직무 분류가 있는 호출은
+    `build_classification_model()` 이 만든 모델을 넘긴다 — 그 두 칸은 호출마다 있을 수도 없을
+    수도 있어 고정 튜플에 넣을 수 없다(`TAXONOMY_FIELDS` 설명).
 
     판정 칸의 값이 목록 밖이면 여기서 버리지 않고 그대로 넘긴다. 무엇을 왜 버렸는지 한자리에서
     세려고 판정은 `app/classify/grounding.py` 가 한다.
     """
     if not isinstance(data, Mapping):
         raise ClassifySchemaError("unparsable", f"응답이 객체가 아니다: {type(data).__name__}")
+    response_fields = tuple(response_model.model_fields)
+    posting_fields = tuple(posting_model_of(response_model).model_fields)
+    _reject_unknown(data, response_fields, "")
 
-    unknown = sorted(str(key) for key in data if key not in response_fields)
-    if unknown:
-        raise ClassifySchemaError("unknown_field", f"스키마에 없는 칸이 있다: {', '.join(unknown)}")
+    common_raw = _object(COMMON, data.get(COMMON))
+    _reject_unknown(common_raw, COMMON_FIELDS, f"{COMMON} ")
+    common = {name: _pieces(f"{COMMON}.{name}", common_raw.get(name)) for name in COMMON_FIELDS}
 
-    result: dict[str, str] = {}
-    pieces: dict[str, list[Piece]] = {}
-    for name in response_fields:
-        raw = data.get(name, "")
-        if name in EXTRACT_FIELDS:
-            pieces[name] = _pieces(name, raw)
-            continue
-        if raw is None:
-            raw = ""
-        if not isinstance(raw, str):
+    postings_raw = data.get(POSTINGS)
+    if postings_raw is None or postings_raw == "":
+        postings_raw = []
+    if not isinstance(postings_raw, list):
+        raise ClassifySchemaError(
+            "unparsable", f"`{POSTINGS}` 가 목록이 아니다: {type(postings_raw).__name__}"
+        )
+    postings: list[ParsedPosting] = []
+    for index, raw in enumerate(postings_raw):
+        where = f"{POSTINGS}[{index}]"
+        if not isinstance(raw, Mapping):
             raise ClassifySchemaError(
-                "unparsable", f"`{name}` 이 문자열이 아니다: {type(raw).__name__}"
+                "unparsable", f"`{where}` 가 객체가 아니다: {type(raw).__name__}"
             )
-        result[name] = raw.strip()
-    return result, pieces
+        _reject_unknown(raw, posting_fields, f"{where} ")
+        fields: dict[str, str] = {}
+        pieces: dict[str, list[Piece]] = {}
+        for name in posting_fields:
+            if name in EXTRACT_FIELDS:
+                pieces[name] = _pieces(f"{where}.{name}", raw.get(name))
+            else:
+                fields[name] = _text(f"{where}.{name}", raw.get(name))
+        postings.append(ParsedPosting(fields=fields, pieces=pieces))
+
+    top = {
+        name: _text(name, data.get(name))
+        for name in response_fields
+        if name not in (COMMON, POSTINGS)
+    }
+    return ParsedClassification(fields=top, common=common, postings=postings)
+
+
+def _reject_unknown(data: Mapping[str, Any], allowed: tuple[str, ...], where: str) -> None:
+    unknown = sorted(str(key) for key in data if key not in allowed)
+    if unknown:
+        raise ClassifySchemaError(
+            "unknown_field", f"{where}스키마에 없는 칸이 있다: {', '.join(unknown)}"
+        )
+
+
+def _object(name: str, raw: Any) -> Mapping[str, Any]:
+    """묶음 하나. 빈 문자열과 None 은 빈 묶음으로 읽는다."""
+    if raw is None or raw == "":
+        return {}
+    if not isinstance(raw, Mapping):
+        raise ClassifySchemaError("unparsable", f"`{name}` 이 객체가 아니다: {type(raw).__name__}")
+    return raw
+
+
+def _text(name: str, raw: Any) -> str:
+    if raw is None:
+        return ""
+    if not isinstance(raw, str):
+        raise ClassifySchemaError(
+            "unparsable", f"`{name}` 이 문자열이 아니다: {type(raw).__name__}"
+        )
+    return raw.strip()
 
 
 def _pieces(name: str, raw: Any) -> list[Piece]:
@@ -334,11 +455,11 @@ def _pieces(name: str, raw: Any) -> list[Piece]:
 
 
 def parse_classification(
-    text: str, response_fields: tuple[str, ...] = RESPONSE_FIELDS
-) -> tuple[dict[str, str], dict[str, list[Piece]]]:
-    """모델 응답 문자열을 파싱하고 검증한다. 글자 칸과 뽑는 칸의 조각을 따로 돌려준다."""
+    text: str, response_model: type[Classification] = Classification
+) -> ParsedClassification:
+    """모델 응답 문자열을 파싱하고 검증한다."""
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
         raise ClassifySchemaError("unparsable", f"JSON 으로 읽을 수 없다: {exc}") from exc
-    return validate_classification(data, response_fields)
+    return validate_classification(data, response_model)
