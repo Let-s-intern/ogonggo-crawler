@@ -276,6 +276,31 @@ def build_rule(
     )
 
 
+def without_yearless_formats(rule_type: str, config: str) -> str:
+    """`date_parse` 설정 문자열에서 연도가 없는 형식만 뺀다. 다른 규칙은 그대로 돌려준다.
+
+    `migrations/0027_drop_yearless_date_formats.sql` 가 저장된 규칙에 한 일을, 그 마이그레이션을
+    거치지 않고 들어오는 규칙(`app/api/import_data.py`)에 똑같이 한다. 형식이 하나도 남지 않으면
+    빈 목록이 되고, 그 설정은 `DateParseConfig` 가 거절한다.
+
+    JSON 은 공백 없이 다시 쓴다. 마이그레이션이 쓴 SQLite `json_set` 결과와 같은 모양이라,
+    이미 정리된 같은 규칙과 글자 그대로 견줄 수 있다.
+    """
+    if rule_type != "date_parse":
+        return config
+    try:
+        data = json.loads(config)
+    except json.JSONDecodeError:
+        return config
+    formats = data.get("formats") if isinstance(data, dict) else None
+    if not isinstance(formats, list):
+        return config
+    kept = [item for item in formats if not isinstance(item, str) or _YEAR_DIRECTIVE.search(item)]
+    if len(kept) == len(formats):
+        return config
+    return json.dumps({**data, "formats": kept}, ensure_ascii=False, separators=(",", ":"))
+
+
 def _explain(rule_type: str, exc: ValidationError) -> str:
     """pydantic 의 에러를 운영자가 읽을 한 줄로 옮긴다."""
     parts: list[str] = []

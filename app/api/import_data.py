@@ -25,6 +25,12 @@ SSH 와 `docker cp` 로 파일을 밀어 넣게 되고, 그것은 이 서비스�
 규칙이 들어 있고, 그것이 들어오면 `load_rules` 가 터져 그 뒤의 정규화가 한 건도 되지 않는다
 (`migrations/0016_drop_department_category_headcount.sql`).
 
+**이 서버가 읽지 못하는 규칙도 들이지 않는다.** 들어오는 규칙은 화면에서 저장할 때와 같은
+`build_rule` 검증을 지난다. 다만 `date_parse` 의 연도 없는 형식(`%m/%d`)은 그 형식만 빼고
+들인다 — 0027 이전에 뜬 파일의 마감일 규칙이 거기 걸리는데, 규칙을 통째로 버리면 가져온
+공고의 마감일이 날짜로 정리되지 않는다. 운영 DB 에서 같은 일을 한 것이
+`migrations/0027_drop_yearless_date_formats.sql` 이다.
+
 같은 규칙인지는 `field_name`, `rule_type`, `rule_config_json`, `priority` 넷으로 가른다.
 `note` 는 사람이 읽는 이름표라 판정에 넣지 않는다 — 넣으면 메모만 다른 같은 규칙이
 두 벌 쌓이고, 정규화는 그 둘을 차례로 태운다.
@@ -70,7 +76,7 @@ from app.normalize.engine import (
     insert_normalized,
     load_rules,
 )
-from app.normalize.rules import NORMALIZED_FIELDS
+from app.normalize.rules import RuleConfigError, build_rule, without_yearless_formats
 
 logger = logging.getLogger(__name__)
 
@@ -436,9 +442,13 @@ def _merge_rules(conn: sqlite3.Connection, source: sqlite3.Connection) -> tuple[
     `note` 는 사람이 읽는 이름표라 판정에 넣지 않는다 — 넣으면 메모만 다른 같은 규칙이 두 벌
     쌓이고, 정규화는 그 둘을 차례로 태운다.
 
-    `NORMALIZED_FIELDS` 에 없는 칸의 규칙은 건너뛴 것으로 센다. 화면으로는 저장할 수 없는
-    규칙이라 (`app/normalize/rules.py` 의 `build_rule`) 파일로 들어오는 길만 열어 둘 이유가
-    없고, 들어오면 `load_rules` 가 그 파일의 공고 전부를 정규화하지 못한다.
+    이 서버가 읽지 못하는 규칙은 건너뛴 것으로 센다 — 지워진 칸에 걸린 규칙도, 설정이 지금의
+    검증을 통과하지 못하는 규칙도. 화면으로는 저장할 수 없는 규칙이라
+    (`app/normalize/rules.py` 의 `build_rule`) 파일로 들어오는 길만 열어 둘 이유가 없고,
+    들어오면 `load_rules` 가 그 파일의 공고 전부를 정규화하지 못한다.
+
+    연도 없는 날짜 형식만은 그 형식을 빼고 들인다. 운영 DB 에서 같은 일을 한 것이
+    `migrations/0027_drop_yearless_date_formats.sql` 이고, 빼는 모양도 그것과 같다.
     """
     columns = "field_name, rule_type, rule_config_json, priority"
     known = {
@@ -449,13 +459,14 @@ def _merge_rules(conn: sqlite3.Connection, source: sqlite3.Connection) -> tuple[
     for row in source.execute(
         f"SELECT {columns}, enabled, note FROM normalization_rules ORDER BY id"
     ):
+        rule_type = str(row["rule_type"])
         key = (
             str(row["field_name"]),
-            str(row["rule_type"]),
-            str(row["rule_config_json"]),
+            rule_type,
+            without_yearless_formats(rule_type, str(row["rule_config_json"])),
             int(row["priority"]),
         )
-        if key in known or row["field_name"] not in NORMALIZED_FIELDS:
+        if key in known or not _readable(*key):
             skipped += 1
             continue
         conn.execute(
@@ -469,6 +480,15 @@ def _merge_rules(conn: sqlite3.Connection, source: sqlite3.Connection) -> tuple[
         known.add(key)
         added += 1
     return added, skipped
+
+
+def _readable(field_name: str, rule_type: str, config: str, priority: int) -> bool:
+    """이 서버의 `load_rules` 가 읽을 수 있는 규칙인가. 화면에서 저장할 때와 같은 검증이다."""
+    try:
+        build_rule(field_name, rule_type, config, priority=priority)
+    except RuleConfigError:
+        return False
+    return True
 
 
 def _merge_llm_settings(conn: sqlite3.Connection, source: sqlite3.Connection) -> tuple[int, int]:
