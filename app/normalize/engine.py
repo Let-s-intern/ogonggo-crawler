@@ -303,14 +303,15 @@ def read_raw(conn: sqlite3.Connection, raw_job_id: int) -> tuple[str, dict[str, 
     return str(row["source_url"]), data
 
 
-def read_overrides(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, str]:
+def read_overrides(conn: sqlite3.Connection, raw_job_id: int, part: int = 1) -> dict[str, str]:
     """그 건에 사람이 고쳐 둔 값. 필드명이 키다. 읽기 전용이다.
 
     허용 목록 밖의 필드명은 버린다. CHECK 가 이미 막고 있지만, 그 방어가 사라지는 경로는
     누군가 DB 를 직접 고친 경우뿐이고 그때 정규화가 엉뚱한 컬럼을 쓰게 두지 않는다.
     """
     rows = conn.execute(
-        "SELECT field_name, value FROM job_field_overrides WHERE raw_job_id = ?", (raw_job_id,)
+        "SELECT field_name, value FROM job_field_overrides WHERE raw_job_id = ? AND part = ?",
+        (raw_job_id, part),
     ).fetchall()
     return {
         str(row["field_name"]): str(row["value"])

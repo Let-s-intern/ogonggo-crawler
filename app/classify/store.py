@@ -249,25 +249,27 @@ def read_current_values(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, 
     }
 
 
-def read_classification(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, str]:
+def read_classification(conn: sqlite3.Connection, raw_job_id: int, part: int = 1) -> dict[str, str]:
     """그 공고의 분류 결과. 아직 분류되지 않았으면 빈 dict 다. 읽기 전용이다.
 
     빈 dict 와 "전부 빈 문자열인 dict" 는 뜻이 다르다. 앞은 아직 돌지 않은 것이고 뒤는
     돌았는데 본문이 아무것도 주지 않은 것이다.
     """
     row = conn.execute(
-        f"SELECT {', '.join(STORED_CLASSIFY_FIELDS)} FROM job_classifications WHERE raw_job_id = ?",
-        (raw_job_id,),
+        f"SELECT {', '.join(STORED_CLASSIFY_FIELDS)} FROM job_classifications"
+        " WHERE raw_job_id = ? AND part = ?",
+        (raw_job_id, part),
     ).fetchone()
     if row is None:
         return {}
     return {name: str(row[name] or "") for name in STORED_CLASSIFY_FIELDS}
 
 
-def read_evidence(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, str]:
+def read_evidence(conn: sqlite3.Connection, raw_job_id: int, part: int = 1) -> dict[str, str]:
     """판정 칸의 근거 문장. 아직 분류되지 않았거나 판정이 없으면 빈 dict 다. 읽기 전용이다."""
     row = conn.execute(
-        "SELECT evidence_json FROM job_classifications WHERE raw_job_id = ?", (raw_job_id,)
+        "SELECT evidence_json FROM job_classifications WHERE raw_job_id = ? AND part = ?",
+        (raw_job_id, part),
     ).fetchone()
     if row is None:
         return {}
@@ -286,8 +288,12 @@ def save_classification(
     model: str,
     dropped: Sequence[str] = (),
     evidence: Mapping[str, str] | None = None,
+    part: int = 1,
 ) -> None:
     """분류 결과를 넣거나 덮는다. 빈 값은 NULL 로 들어간다.
+
+    `part` 는 공고를 나눈 몇 번째 공고인지다. 나누지 않은 공고는 1번 하나다
+    (`migrations/0029_split_postings.sql`).
 
     덮는 것이 맞다. 분류는 본문에서 다시 만들 수 있는 값이라 이력을 쌓을 이유가 없고,
     한 공고에 결과가 둘이면 어느 쪽이 지금 값인지 알 수 없다.
@@ -303,12 +309,12 @@ def save_classification(
     assignments = ", ".join(f"{name} = excluded.{name}" for name in columns)
     conn.execute(
         f"""
-        INSERT INTO job_classifications (raw_job_id, {", ".join(columns)})
-        VALUES ({", ".join("?" for _ in range(len(columns) + 1))})
-        ON CONFLICT (raw_job_id) DO UPDATE
+        INSERT INTO job_classifications (raw_job_id, part, {", ".join(columns)})
+        VALUES ({", ".join("?" for _ in range(len(columns) + 2))})
+        ON CONFLICT (raw_job_id, part) DO UPDATE
            SET {assignments}, classified_at = datetime('now')
         """,
-        (raw_job_id, *values),
+        (raw_job_id, part, *values),
     )
 
 
@@ -317,6 +323,8 @@ def save_suggestions(
     raw_job_id: int,
     suggestions: Mapping[str, str],
     reasons: Mapping[str, str] | None = None,
+    *,
+    part: int = 1,
 ) -> None:
     """값이 있는 칸에 원문이 다르다고 낸 값을 `job_field_suggestions` 에 넣거나 덮는다.
 
@@ -324,8 +332,8 @@ def save_suggestions(
     해서 옛 제안이 틀렸다고 볼 근거는 없다. 사람이 검수 화면에서 수락하거나 거절해야 그 행이
     사라진다.
 
-    같은 칸에 제안이 둘이면 어느 것을 보고 있는지 알 수 없어(`(raw_job_id, field_name)`
-    UNIQUE), 새 제안이 옛 제안을 덮는다.
+    같은 칸에 제안이 둘이면 어느 것을 보고 있는지 알 수 없어(`(raw_job_id, part,
+    field_name)` UNIQUE), 새 제안이 옛 제안을 덮는다.
     """
     reasons = reasons or {}
     for field_name, value in suggestions.items():
@@ -333,17 +341,19 @@ def save_suggestions(
             continue
         conn.execute(
             """
-            INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT (raw_job_id, field_name) DO UPDATE
+            INSERT INTO job_field_suggestions (raw_job_id, part, field_name, value, reason)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (raw_job_id, part, field_name) DO UPDATE
                SET value = excluded.value, reason = excluded.reason,
                    created_at = datetime('now')
             """,
-            (raw_job_id, field_name, value, reasons.get(field_name, "").strip()),
+            (raw_job_id, part, field_name, value, reasons.get(field_name, "").strip()),
         )
 
 
-def read_suggestions(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, dict[str, str]]:
+def read_suggestions(
+    conn: sqlite3.Connection, raw_job_id: int, part: int = 1
+) -> dict[str, dict[str, str]]:
     """그 공고에 남아 있는 제안. 필드명이 키고, 값은 `value`·`reason` 이다. 읽기 전용이다.
 
     검수 화면(11.6)이 "제안 있음" 을 보이는 자리다. 수락은 `job_field_overrides` 에 넣는
@@ -351,8 +361,9 @@ def read_suggestions(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, dic
     일이라 여기는 읽기만 한다.
     """
     rows = conn.execute(
-        "SELECT field_name, value, reason FROM job_field_suggestions WHERE raw_job_id = ?",
-        (raw_job_id,),
+        "SELECT field_name, value, reason FROM job_field_suggestions"
+        " WHERE raw_job_id = ? AND part = ?",
+        (raw_job_id, part),
     ).fetchall()
     return {
         str(row["field_name"]): {"value": str(row["value"]), "reason": str(row["reason"] or "")}

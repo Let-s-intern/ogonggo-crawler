@@ -250,7 +250,9 @@ def _read_source(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, Any]:
     }
 
 
-def _upsert_override(conn: sqlite3.Connection, raw_job_id: int, field: str, value: str) -> None:
+def _upsert_override(
+    conn: sqlite3.Connection, raw_job_id: int, field: str, value: str, part: int = 1
+) -> None:
     """`job_field_overrides` 에 값 하나를 넣거나 덮는다.
 
     `save_review_job_fragment` 의 저장과 제안 수락(11.6) 이 같은 문장을 쓴다 — 사람이 손으로
@@ -258,12 +260,12 @@ def _upsert_override(conn: sqlite3.Connection, raw_job_id: int, field: str, valu
     """
     conn.execute(
         """
-        INSERT INTO job_field_overrides (raw_job_id, field_name, value)
-             VALUES (?, ?, ?)
-        ON CONFLICT (raw_job_id, field_name)
+        INSERT INTO job_field_overrides (raw_job_id, part, field_name, value)
+             VALUES (?, ?, ?, ?)
+        ON CONFLICT (raw_job_id, part, field_name)
           DO UPDATE SET value = excluded.value, updated_at = datetime('now')
         """,
-        (raw_job_id, field, value),
+        (raw_job_id, part, field, value),
     )
 
 

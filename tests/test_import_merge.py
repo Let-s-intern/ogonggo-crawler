@@ -311,6 +311,32 @@ def test_이_서버에_이미_있는_보정은_덮지_않는다(
     assert values == [("이_서버가_고친_제목",)]
 
 
+def test_나눈_공고의_보정은_번호마다_따로_들어온다(
+    conn: sqlite3.Connection, tmp_path: pathlib.Path
+) -> None:
+    """같은 칸이어도 번호가 다르면 다른 보정이다. 1번 보정이 있다고 2번을 건너뛰지 않는다."""
+    path = make_upload(
+        tmp_path / "upload.db", jobs=[job("가")], overrides=[(1, "benefits", "1번_복지")]
+    )
+    upload = db.connect(path)
+    upload.execute(
+        """
+        INSERT INTO job_field_overrides (raw_job_id, part, field_name, value, created_at,
+                                         updated_at)
+        VALUES (1, 2, 'benefits', '2번_복지', '2026-08-02 10:00:00', '2026-08-02 10:00:00')
+        """
+    )
+    upload.close()
+
+    result = import_database(conn, path)
+
+    assert (result.overrides_added, result.overrides_skipped) == (2, 0)
+    assert rows(conn, "SELECT part, value FROM job_field_overrides ORDER BY part") == [
+        (1, "1번_복지"),
+        (2, "2번_복지"),
+    ]
+
+
 def test_저쪽_서버의_실행_기록은_따라오지_않는다(
     conn: sqlite3.Connection, tmp_path: pathlib.Path
 ) -> None:

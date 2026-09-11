@@ -615,20 +615,26 @@ def _merge_overrides(
 ) -> tuple[int, int]:
     """사람이 검수한 값을 가져온다. 다시 만들 수 없는 값이라 빠뜨리지 않는다.
 
-    이 서버에 이미 그 공고의 그 필드가 있으면 건너뛴다. 이쪽 사람이 고쳐 둔 값을 저쪽 값으로
+    이 서버에 이미 그 공고·그 번호의 그 필드가 있으면 건너뛴다. 이쪽 사람이 고쳐 둔 값을 저쪽 값으로
     덮지 않는다.
 
     중복이라 건너뛴 공고에 붙은 보정도 가져온다. 그 공고의 확정 값은 다음 재정규화에서 바뀐다 —
     보정을 저장하는 검수 화면이 이미 그 순서로 동작한다 (`app/api/review.py`).
     """
     known = {
-        (int(row["raw_job_id"]), str(row["field_name"]))
-        for row in conn.execute("SELECT raw_job_id, field_name FROM job_field_overrides")
+        (int(row["raw_job_id"]), int(row["part"]), str(row["field_name"]))
+        for row in conn.execute("SELECT raw_job_id, part, field_name FROM job_field_overrides")
     }
+    columns = {
+        str(row["name"])
+        for row in source.execute("PRAGMA table_info(job_field_overrides)").fetchall()
+    }
+    # 0029 전에 내보낸 파일에는 번호 칸이 없다. 그때는 공고를 나누지 않았으니 전부 1번이다
+    part = "part" if "part" in columns else "1 AS part"
     added = skipped = 0
     for row in source.execute(
-        """
-        SELECT raw_job_id, field_name, value, created_at, updated_at
+        f"""
+        SELECT raw_job_id, {part}, field_name, value, created_at, updated_at
           FROM job_field_overrides ORDER BY id
         """
     ):
@@ -638,17 +644,24 @@ def _merge_overrides(
                 "broken_reference",
                 f"보정이 없는 공고 {row['raw_job_id']} 를 가리킨다",
             )
-        key = (raw_job_id, str(row["field_name"]))
+        key = (raw_job_id, int(row["part"]), str(row["field_name"]))
         if key in known:
             skipped += 1
             continue
         conn.execute(
             """
-            INSERT INTO job_field_overrides (raw_job_id, field_name, value, created_at,
+            INSERT INTO job_field_overrides (raw_job_id, part, field_name, value, created_at,
                                              updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (raw_job_id, row["field_name"], row["value"], row["created_at"], row["updated_at"]),
+            (
+                raw_job_id,
+                row["part"],
+                row["field_name"],
+                row["value"],
+                row["created_at"],
+                row["updated_at"],
+            ),
         )
         known.add(key)
         added += 1
