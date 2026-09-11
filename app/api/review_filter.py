@@ -114,6 +114,11 @@ FIELD_LABELS: dict[str, str] = {
     "etc_info": "기타",
     "job_major": "직무 대분류",
     "job_minor": "직무 소분류",
+    "company_and_team_introduction": "회사·팀 소개",
+    "compensation": "급여·처우",
+    "benefits": "복지·혜택",
+    "education_level": "학력",
+    "recruitment_headcount": "모집인원",
 }
 
 # `빈 값인 필드` 조건에서 "아무 필드나 하나라도 비었다" 를 가리키는 값
@@ -149,6 +154,12 @@ EMPTY_NOTES: dict[str, str] = {
     # 돌리지 않았거나 본문으로 판단이 갈리지 않으면 빈다
     "job_major": "아직 분류를 돌리지 않았거나 본문으로 판단할 근거가 없으면 빈다",
     "job_minor": "대분류만 정해지고 소분류가 본문으로 갈리지 않는 공고는 이 칸만 빈다",
+    # 0028 이 더한 칸. 분류가 채우고, 공고가 그 내용을 적지 않으면 빈다
+    "company_and_team_introduction": "회사·팀 소개 구역이 따로 없는 공고는 빈다",
+    "compensation": "급여를 적지 않는 공고는 빈다",
+    "benefits": "복지를 적지 않는 공고는 빈다",
+    "education_level": "학력을 말하지 않는 공고는 빈다. 오공고로는 학력 무관으로 나간다",
+    "recruitment_headcount": "모집 인원을 적지 않는 공고는 빈다",
 }
 
 # 같은 공고가 두 번 들어왔는지 보는 기준. 무엇을 중복으로 볼지가 상황마다 달라 고르게 둔다.

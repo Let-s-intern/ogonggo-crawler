@@ -40,6 +40,8 @@ _SELECT = """
            deadline, body, requirements,
            start_date, employment_type, career_level, work_location,
            duties, preferred, hiring_process, etc_info,
+           company_and_team_introduction, compensation, benefits, education_level,
+           recruitment_headcount,
            source_url, normalized_at
       FROM normalized_jobs
 """
@@ -64,6 +66,10 @@ class JobOut(BaseModel):
     닫힌 값이다. 아직 분류를 돌리지 않았거나 본문으로 판단이 갈리지 않으면 `null` 이다
     (`.claude/docs/api-contract.md`).
 
+    0028 이 오공고가 받는 다섯 칸을 더했다 — 회사·팀 소개, 급여·처우, 복지·혜택, 학력,
+    모집인원. 모집인원은 적힌 그대로의 글자이고 숫자가 아니다
+    (`migrations/0028_add_posting_detail_fields.sql`).
+
     사이트가 그 값을 주지 않으면 `null` 이다. 없는 값을 다른 값으로 채우지 않는다.
     """
 
@@ -86,6 +92,11 @@ class JobOut(BaseModel):
     preferred: str | None
     hiring_process: str | None
     etc_info: str | None
+    company_and_team_introduction: str | None
+    compensation: str | None
+    benefits: str | None
+    education_level: str | None
+    recruitment_headcount: str | None
     source_url: str
     normalized_at: str
 
@@ -189,6 +200,11 @@ def _out(row: sqlite3.Row) -> JobOut:
         preferred=row["preferred"],
         hiring_process=row["hiring_process"],
         etc_info=row["etc_info"],
+        company_and_team_introduction=row["company_and_team_introduction"],
+        compensation=row["compensation"],
+        benefits=row["benefits"],
+        education_level=row["education_level"],
+        recruitment_headcount=row["recruitment_headcount"],
         source_url=str(row["source_url"]),
         normalized_at=_iso(str(row["normalized_at"])),
     )

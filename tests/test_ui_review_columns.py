@@ -15,7 +15,7 @@
 | 빈 표의 colspan 이 머리글 열 수와 같다 | 0건 안내가 칸 하나에 갇힌다 |
 | 중복 조건이 걸리면 두 수가 함께 하나씩 는다 | 묶음 열을 더한 쪽만 어긋난다 |
 | 값 칸이 `OVERRIDABLE_FIELDS` 와 같은 수다 | 지운 칸의 머리글이 남거나 새 칸이 빠진다 |
-| 0016 이 지운 세 칸의 이름표가 없다 | 저장할 수 없는 칸을 운영자가 고치려 든다 |
+| 0016 이 지운 칸 중 되살리지 않은 둘의 이름표가 없다 | 저장할 수 없는 칸을 운영자가 고치려 든다 |
 """
 
 from __future__ import annotations
@@ -45,8 +45,10 @@ EMPTY_COLSPAN = re.compile(r'<tr><td colspan="(\d+)"')
 # 워크플로우·수집 시각·원문이다
 FIXED_COLUMNS = 9
 
-# 0016 이 `normalized_jobs` 에서 지운 칸의 이름표. 표에 남아 있으면 안 된다
-DROPPED_LABELS = ("부서", "직군", "모집인원")
+# 0016 이 `normalized_jobs` 에서 지운 칸의 이름표. 표에 남아 있으면 안 된다.
+# 모집인원은 0028 이 `recruitment_headcount` 로 다시 더해 여기서 뺐다 — 옛 `headcount` 가
+# 아니라 분류가 채우는 새 칸이다 (`migrations/0028_add_posting_detail_fields.sql`)
+DROPPED_LABELS = ("부서", "직군")
 
 
 @pytest.fixture

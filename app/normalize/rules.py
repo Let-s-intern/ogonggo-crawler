@@ -60,7 +60,8 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 # 더했다 — 지운 직군과 달리 닫힌 목록이 아니라 제목에서 옮기는 자유 텍스트다
 # (`migrations/0017_job_role.sql`). 0025 가 `job_major`·`job_minor` 를 더했다 — `career_level`
 # 처럼 셀렉터가 채우는 칸이 아니라 분류가 `job_taxonomy` 표에서 골라 덮는 칸이다
-# (`migrations/0025_job_major_minor.sql`).
+# (`migrations/0025_job_major_minor.sql`). 0028 이 오공고가 받는 다섯 칸을 더했다
+# (`migrations/0028_add_posting_detail_fields.sql`).
 NORMALIZED_FIELDS: tuple[str, ...] = (
     "company",
     "title",
@@ -78,6 +79,11 @@ NORMALIZED_FIELDS: tuple[str, ...] = (
     "etc_info",
     "job_major",
     "job_minor",
+    "company_and_team_introduction",
+    "compensation",
+    "benefits",
+    "education_level",
+    "recruitment_headcount",
 )
 
 # `normalization_rules.rule_type` 의 CHECK 제약과 같은 값이어야 한다.

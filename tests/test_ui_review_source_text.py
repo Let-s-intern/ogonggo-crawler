@@ -49,8 +49,9 @@ HEAD_CELL = re.compile(r'<th scope="col"')
 # 열이 바뀌는 날 이 수를 함께 고친다 — 머리글과 `empty_row` 의 colspan 이 서로 맞는지는
 # `tests/test_ui_review_columns.py` 가 따로 본다
 # 0025 가 `job_major`/`job_minor` 를 `NORMALIZED_FIELDS`(=`OVERRIDABLE_FIELDS`)에 더해
-# 23 -> 25 다. 표의 필드 반복(`{% for field in fields %}`)이 그 목록을 그대로 따라간다
-TABLE_COLUMNS = 25
+# 23 -> 25 다. 표의 필드 반복(`{% for field in fields %}`)이 그 목록을 그대로 따라간다.
+# 0028 이 오공고가 받는 다섯 칸을 더해 25 -> 30 이다
+TABLE_COLUMNS = 30
 
 INPUT_TAG = re.compile(r"<(?:input|textarea)\b[^>]*>")
 TEXTAREA_BODY = re.compile(r"<textarea\b[^>]*>(.*?)</textarea>", re.DOTALL)

@@ -7,7 +7,8 @@
 칸은 `normalized_jobs` 에 이미 있는 아홉 개다. 새로 만들지 않는다
 (`migrations/0011_split_body_columns.sql`). 0016 이 부서·직군·모집인원을 뺐고
 (`migrations/0016_drop_department_category_headcount.sql`) 0017 이 직무를 더했다
-(`migrations/0017_job_role.sql`).
+(`migrations/0017_job_role.sql`). 0028 이 오공고가 받는 다섯 칸(회사·팀 소개, 급여·처우,
+복지·혜택, 학력, 모집인원)을 더했다 (`migrations/0028_add_posting_detail_fields.sql`).
 
 ## 칸이 두 가지다
 
@@ -86,7 +87,7 @@ class LinePiece(BaseModel):
 
 
 class Classification(BaseModel):
-    """공고 하나를 나눈 아홉 칸과, 판정 칸 둘의 근거 문장.
+    """공고 하나를 나눈 칸들과, 판정 칸의 근거 문장.
 
     뽑는 칸은 조각 목록이고 원문에 없으면 빈 목록이다. 판정 칸은 `Literal` 이라 목록에
     없는 값이 애초에 응답에 담기지 못한다. `판단불가` 가 목록에 있는 것은 "본문만으로는 고를
@@ -100,6 +101,13 @@ class Classification(BaseModel):
     career_level: Literal["판단불가", "신입", "경력", "무관"] = UNDECIDED
     career_level_evidence: str = ""
 
+    # 0028. 지원 자격이 요구하는 최소 학력. 우대사항에만 있는 학력은 고르지 않고, 학력을
+    # 말하지 않는 공고는 판단불가(빈 칸)다. 오공고로 보낼 때 그쪽 목록으로 옮긴다
+    education_level: Literal["판단불가", "무관", "고졸", "전문학사", "학사", "석사", "박사"] = (
+        UNDECIDED
+    )
+    education_level_evidence: str = ""
+
     # 뽑는 칸. 모델은 글자를 쓰지 않고 몇 번 줄의 어느 부분인지를 조각으로 답한다. 저장은
     # 원문에서 잘라 온 글자다 (`app/classify/pieces.py`). `job_role` 만 0 번 줄(제목)에서 온다
     job_role: list[LinePiece] = Field(default_factory=list)
@@ -109,6 +117,12 @@ class Classification(BaseModel):
     hiring_process: list[LinePiece] = Field(default_factory=list)
     requirements: list[LinePiece] = Field(default_factory=list)
     etc_info: list[LinePiece] = Field(default_factory=list)
+    # 0028. 회사·팀 소개는 공고에 그 소제목 구역이 있을 때만 채운다. 모집인원은 적힌 그대로다 —
+    # 숫자로 바꾸는 것은 오공고로 보낼 때 한다
+    company_and_team_introduction: list[LinePiece] = Field(default_factory=list)
+    compensation: list[LinePiece] = Field(default_factory=list)
+    benefits: list[LinePiece] = Field(default_factory=list)
+    recruitment_headcount: list[LinePiece] = Field(default_factory=list)
 
     # 수집이 이미 채운 칸을 원문과 견줘 다르면 낸다 (Push 11, PRD 6절). 값이 같거나 판단할
     # 근거가 없으면 둘 다 빈 문자열이다 — 이 칸이 채워진다고 그 값이 그대로 저장되지 않는다.
@@ -123,7 +137,7 @@ class Classification(BaseModel):
 
 
 # 본문을 읽고 정해진 값 중에서 고르는 칸
-JUDGE_FIELDS: tuple[str, ...] = ("employment_type", "career_level")
+JUDGE_FIELDS: tuple[str, ...] = ("employment_type", "career_level", "education_level")
 
 # 수집이 채우는 여섯 칸 중, 원문을 읽어 다른 값을 낼 수 있는 셋. `title` 은 이미 `job_role` 의
 # 출처로 프롬프트에 그대로 들어가 있어 다시 비교할 이유가 없고, `body` 는 모델에게 보내는
@@ -164,6 +178,10 @@ EXTRACT_FIELDS: tuple[str, ...] = (
     "hiring_process",
     "requirements",
     "etc_info",
+    "company_and_team_introduction",
+    "compensation",
+    "benefits",
+    "recruitment_headcount",
 )
 
 # 분류가 채우는 칸. `normalized_jobs` 의 같은 이름 컬럼으로 간다

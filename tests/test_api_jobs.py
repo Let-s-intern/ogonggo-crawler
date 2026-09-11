@@ -189,6 +189,12 @@ def test_item_shape_matches_contract(client: TestClient, conn: sqlite3.Connectio
         "preferred",
         "hiring_process",
         "etc_info",
+        # 0028 이 더한 다섯 칸. 오공고가 받는 칸이고 분류가 채운다
+        "company_and_team_introduction",
+        "compensation",
+        "benefits",
+        "education_level",
+        "recruitment_headcount",
         "source_url",
         "normalized_at",
     }

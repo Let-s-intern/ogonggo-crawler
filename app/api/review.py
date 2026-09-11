@@ -90,6 +90,9 @@ LONG_FIELDS: frozenset[str] = frozenset(
         "preferred",
         "hiring_process",
         "etc_info",
+        "company_and_team_introduction",
+        "compensation",
+        "benefits",
     }
 )
 
@@ -116,6 +119,11 @@ _COLUMNS = """
            n.etc_info      AS etc_info,
            n.job_major     AS job_major,
            n.job_minor     AS job_minor,
+           n.company_and_team_introduction AS company_and_team_introduction,
+           n.compensation AS compensation,
+           n.benefits AS benefits,
+           n.education_level AS education_level,
+           n.recruitment_headcount AS recruitment_headcount,
            n.source_url    AS source_url,
            n.normalized_at AS normalized_at,
            n.delivered_at  AS delivered_at,

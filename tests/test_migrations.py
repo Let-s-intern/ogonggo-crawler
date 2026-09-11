@@ -88,6 +88,12 @@ EXPECTED_COLUMNS = {
         # 0025 가 더한 직무 분류. job_taxonomy 의 이름을 그대로 옮겨 담는다
         "job_major",
         "job_minor",
+        # 0028 이 더한 다섯 칸. 오공고가 받는 칸이고 분류가 채운다
+        "company_and_team_introduction",
+        "compensation",
+        "benefits",
+        "education_level",
+        "recruitment_headcount",
     },
     "normalization_rules": {
         "id",
@@ -217,6 +223,7 @@ ALL_VERSIONS = [
     "0025",
     "0026",
     "0027",
+    "0028",
 ]
 
 
@@ -1612,3 +1619,66 @@ def test_job_field_suggestions_up_after_down_restores_the_table(conn: sqlite3.Co
 
     db.migrate_up(conn)
     assert _columns(conn, "job_field_suggestions") == EXPECTED_COLUMNS["job_field_suggestions"]
+
+
+def _at_0027(connection: sqlite3.Connection) -> None:
+    """0028 직전 상태로 만든다. 오공고가 받는 다섯 칸이 아직 없는 스키마다."""
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0028"))
+
+
+POSTING_DETAIL_COLUMNS = (
+    "company_and_team_introduction",
+    "compensation",
+    "benefits",
+    "education_level",
+    "recruitment_headcount",
+)
+
+
+def test_posting_detail_fields_are_added_to_both_tables(conn: sqlite3.Connection) -> None:
+    """분류가 앉히는 자리와 소비 측이 읽는 자리 둘 다에 있어야 값이 끝까지 간다."""
+    _at_0027(conn)
+    for table in ("normalized_jobs", "job_classifications"):
+        assert not set(POSTING_DETAIL_COLUMNS) & _columns(conn, table), table
+
+    db.migrate_up(conn)
+
+    for table in ("normalized_jobs", "job_classifications"):
+        assert set(POSTING_DETAIL_COLUMNS) <= _columns(conn, table), table
+
+
+def test_posting_detail_fields_leave_the_old_headcount_alone(conn: sqlite3.Connection) -> None:
+    """모집인원은 새 이름이다. 0016 이전 분류기가 남긴 `headcount` 는 지우지 않는다."""
+    db.migrate_up(conn)
+
+    assert "headcount" in _columns(conn, "job_classifications")
+    assert "headcount" not in _columns(conn, "normalized_jobs")
+
+
+def test_the_posting_detail_down_drops_the_columns_and_their_corrections(
+    conn: sqlite3.Connection,
+) -> None:
+    """되돌리면 다섯 칸의 값과 거기 걸린 보정·제안만 사라진다. 나머지는 그대로다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.executemany(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+        [("title", "사람이 고친 제목"), ("compensation", "연봉 협의")],
+    )
+    conn.executemany(
+        """
+        INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
+        VALUES (1, ?, '제안 값', '원문과 다르다')
+        """,
+        [("title",), ("education_level",)],
+    )
+
+    db.migrate_down(conn, steps=1)
+
+    for table in ("normalized_jobs", "job_classifications"):
+        assert not set(POSTING_DETAIL_COLUMNS) & _columns(conn, table), table
+    overrides = conn.execute("SELECT field_name FROM job_field_overrides").fetchall()
+    assert [row["field_name"] for row in overrides] == ["title"]
+    suggestions = conn.execute("SELECT field_name FROM job_field_suggestions").fetchall()
+    assert [row["field_name"] for row in suggestions] == ["title"]

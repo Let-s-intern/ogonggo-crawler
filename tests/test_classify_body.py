@@ -366,6 +366,7 @@ def test_the_judge_columns_have_a_closed_list() -> None:
     """목록을 정하지 않으면 같은 일이 사이트마다 다른 이름으로 쌓인다."""
     assert JUDGE_CHOICES["employment_type"] == ("정규직", "계약직", "인턴", "기타")
     assert JUDGE_CHOICES["career_level"] == ("신입", "경력", "무관")
+    assert JUDGE_CHOICES["education_level"] == ("무관", "고졸", "전문학사", "학사", "석사", "박사")
     for values in JUDGE_CHOICES.values():
         assert "" not in values
 
