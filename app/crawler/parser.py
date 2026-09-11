@@ -109,7 +109,7 @@ class DetailParseResult:
 
     `source_text` 는 상세 컨테이너를 가공 없이 편 글자다. 뽑지 못하면 빈 문자열이고, 그 건은
     지금까지와 같은 모양으로 적재된다 (`app/crawler/runner.py` 의 `_record`). API 상세는
-    이 값을 만들지 않는다 (`.claude/site-recipes/source-text-container.md`).
+    응답 전체를 편다 (`app/crawler/api_source.py` 의 `payload_source_text`).
     """
 
     fields: dict[str, str]

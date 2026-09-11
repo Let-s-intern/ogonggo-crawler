@@ -25,6 +25,13 @@ HTML 을 셀렉터로 읽는 자리(`app/crawler/parser.py`)와 하는 일이 �
 LG 의 `detailContext` 처럼 HTML 조각이 그대로 들어 있는 필드가 있다. 여기서 텍스트로 펴지
 않는다. 지저분한 값은 정규화 규칙이 다루는 문제이고, 수집 단계가 손대면 원본이 사라진다
 (`CLAUDE.md`, `.claude/rules/data-safety.md`).
+
+## 원문은 응답 전체를 편다
+
+필드는 경로가 짚은 자리만 담는다. 응답에는 그 밖에도 공고 내용이 있다 — LG 의 근무지·필수
+역량·전형 절차, 한화의 근무지·모집인원이 경로 밖에 있어 분류가 보지 못했다. 그래서 원문
+(`DetailParseResult.source_text`)은 응답 전체를 `키: 값` 줄로 편 글자다
+(`payload_source_text`). 필드와 달리 원문은 읽히는 글이라 HTML 을 펴고 쓸데없는 값을 덜어 낸다.
 """
 
 from __future__ import annotations
@@ -32,8 +39,9 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import replace
+from datetime import datetime
 from typing import Any
 
 from bs4 import BeautifulSoup
@@ -51,6 +59,7 @@ from app.crawler.parser import (
     field_text,
     select_nodes,
 )
+from app.normalize.engine import flatten_html
 from app.selector.api_schema import (
     DIGITS_FILTER,
     FORM_BODY,
@@ -74,6 +83,29 @@ ENTRY_PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_.]*)\}")
 # 항목 하나가 남으려면 있어야 하는 것. 제목이 없으면 공고를 알아볼 수 없고, id 가 없으면
 # 상세로 갈 수도 주소를 만들 수도 없다
 REQUIRED_LIST_VALUES: tuple[str, ...] = ("title", "id")
+
+# 원문으로 펼 때 덜어 내는 값을 가르는 표시들 (`payload_source_text`)
+_HANGUL = re.compile(r"[가-힣]")
+# 링크와 파일 경로. 한글이 이만큼 섞인 줄은 문장 안에 주소가 든 것이라 남긴다
+_LINK = re.compile(
+    r"https?://|www\.|\.(?:png|jpe?g|gif|svg|webp|pdf|docx?|hwp|xlsx?|zip)\b", re.IGNORECASE
+)
+LINK_SENTENCE_HANGUL = 4
+# 날짜·시각 모양. `2026.08.25`, `08/20`, `15:00`
+_DATE_SHAPE = re.compile(r"\d{2,4}[.\-/년]\s?\d{1,2}|\d{1,2}:\d{2}")
+# 붙여 쓴 날짜. 현대는 마감을 `20260830` 으로, 삼성은 `202609021700` 으로 준다
+_COMPACT_DATE_FORMATS: dict[int, str] = {8: "%Y%m%d", 12: "%Y%m%d%H%M", 14: "%Y%m%d%H%M%S"}
+# 네 자리 시각. `1705` 는 키 이름이 시각이라고 말할 때만 시각이다 — 아니면 번호와 구분이 안 된다
+_CLOCK = re.compile(r"\d{4}")
+_TIME_KEY = re.compile(r"(?:tm|time)$", re.IGNORECASE)
+# 코드값을 이루는 글자. 다른 글자가 섞이면 코드가 아니다 — `[Finance]` 는 LG 의 직무 이름이다
+_CODE_CHARS = re.compile(r"[A-Za-z0-9_.\-:/+#]+")
+_ALNUM = re.compile(r"[A-Za-z0-9]")
+_DIGIT = re.compile(r"\d")
+_EMPTY_WORDS = frozenset({"null", "none", "true", "false", "undefined"})
+_SPACES = re.compile(r"\s+")
+# 이보다 짧은 줄은 겹쳐도 지우지 않는다. `서울` 이 두 번 나오는 것은 문장이 겹친 것이 아니다
+DUPLICATE_MIN_LENGTH = 8
 
 
 class _Missing:
@@ -390,7 +422,97 @@ def build_detail(payload: Any, config: ApiDetailConfig) -> DetailParseResult:
             "경로를 확인한다: "
             + ", ".join(_describe(config.fields.get(name, "")) for name in unreadable)
         )
-    return DetailParseResult(fields=fields, missing=missing)
+    return DetailParseResult(
+        fields=fields, missing=missing, source_text=payload_source_text(payload)
+    )
+
+
+def payload_source_text(payload: Any) -> str:
+    """상세 응답 전체를 분류가 읽는 원문으로 편다. 값 하나가 `키: 값` 으로 시작하는 줄이 된다.
+
+        rtNm: LIFEPLUS부문 'LIFEPLUS TV 마케팅 기획 및 운영
+        rtAcptEndDttm: 2026.08.25 15:00
+        rtExmQlf: ■ 직무 필요역량 및 자격요건
+        ㆍ 학력: 국내외 4년제 대학교 학사 학위 이상
+
+    키 이름을 붙이는 것은 짧은 값이 무엇인지 알게 하려고다. 날짜 두 줄 중 어느 것이 마감인지,
+    `본사(서울 63빌딩)` 가 근무지인지는 키 이름 없이는 알 수 없다. 여러 줄인 값은 첫 줄에만
+    붙인다. HTML 조각은 `flatten_html` 로 편다.
+
+    덜어 내는 줄은 셋이다.
+
+    | 줄 | 예 | 왜 |
+    |---|---|---|
+    | 링크·파일 경로 | `www.hanwhain.com`, `….png` | 공고 내용이 아니다 |
+    | 코드값 | `N`, `SUCCESS`, `19463`, `G12002` | 화면에 안 보이는 값이다. 날짜는 남긴다 |
+    | 같은 묶음 안에서 겹친 문장 | 삼성 직무마다 한글·영어 칸에 같은 자격요건 | 글자 수만 먹는다 |
+
+    **겹친 문장은 같은 묶음 안에서만 지운다.** 묶음은 응답 배열의 한 칸이다 — 삼성은 직무
+    열두 개가 열두 칸이고 칸마다 `- 2년 이상 유관경력 보유하신 분` 이 있다. 응답 전체에서 지우면
+    둘째 직무부터 자격요건이 사라져, 직무별로 나눌 때 그 직무의 칸이 빈다.
+    """
+    lines: list[str] = []
+    shown: dict[tuple[int, ...], set[str]] = {}
+    for key, value, group in _leaves(payload):
+        seen = shown.setdefault(group, set())
+        labelled = False
+        for raw in flatten_html(value).split("\n"):
+            line = raw.strip()
+            if not line or _is_link(line) or _is_code(key, line):
+                continue
+            same = _SPACES.sub(" ", line)
+            if len(same) >= DUPLICATE_MIN_LENGTH:
+                if same in seen:
+                    continue
+                seen.add(same)
+            lines.append(line if labelled or not key else f"{key}: {line}")
+            labelled = True
+    return "\n".join(lines)
+
+
+def _leaves(
+    value: Any, key: str = "", group: tuple[int, ...] = ()
+) -> Iterator[tuple[str, str, tuple[int, ...]]]:
+    """응답 안의 값을 차례대로. 값마다 바로 위 키 이름과, 지나온 배열 칸 번호들이 붙는다."""
+    if isinstance(value, Mapping):
+        for name, inner in value.items():
+            yield from _leaves(inner, str(name), group)
+    elif isinstance(value, list):
+        for index, inner in enumerate(value):
+            yield from _leaves(inner, key, (*group, index))
+    elif isinstance(value, str | int | float) and not isinstance(value, bool):
+        yield key, str(value), group
+
+
+def _is_link(line: str) -> bool:
+    return bool(_LINK.search(line)) and len(_HANGUL.findall(line)) < LINK_SENTENCE_HANGUL
+
+
+def _is_code(key: str, line: str) -> bool:
+    """사람이 읽는 글이 아니라 시스템이 쓰는 값인가. 띄어쓰기나 한글이 있으면 글이다."""
+    if _HANGUL.search(line) or _SPACES.search(line):
+        return False
+    if _DATE_SHAPE.search(line) or _compact_date(line):
+        return False
+    if _CLOCK.fullmatch(line) and _TIME_KEY.search(key):
+        return False
+    if line.lower() in _EMPTY_WORDS or not _ALNUM.search(line):
+        return True
+    if not _CODE_CHARS.fullmatch(line):
+        return False
+    # `Finance` 같은 낱말은 남기고, 숫자가 섞였거나 전부 대문자인 것(`G12002`, `FORM`)만 코드다
+    return bool(_DIGIT.search(line)) or line.upper() == line
+
+
+def _compact_date(line: str) -> bool:
+    fmt = _COMPACT_DATE_FORMATS.get(len(line))
+    if fmt is None or not line.isdigit():
+        return False
+    try:
+        datetime.strptime(line, fmt)
+    except ValueError:
+        return False
+    return True
 
 
 def _item(

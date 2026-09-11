@@ -19,7 +19,13 @@ import httpx
 import pytest
 
 from app.config import Settings
-from app.crawler.api_source import build_detail, build_items, fetch_detail, fetch_list
+from app.crawler.api_source import (
+    build_detail,
+    build_items,
+    fetch_detail,
+    fetch_list,
+    payload_source_text,
+)
 from app.crawler.fetcher import Fetcher
 from app.crawler.parser import FieldParseError, SelectorMissError
 from app.selector.api_schema import validate_api_config
@@ -260,3 +266,65 @@ def test_an_optional_field_that_is_absent_is_reported_as_missing() -> None:
 
     assert detail.fields["department"] == ""
     assert detail.missing == ["department"]
+
+
+def test_the_detail_carries_the_whole_response_as_source_text() -> None:
+    result = build_detail(DETAIL_PAYLOAD, DETAIL_CONFIG)
+
+    assert result.source_text.strip()
+    assert "<" not in result.source_text
+
+
+def test_source_text_starts_each_value_with_its_key() -> None:
+    """짧은 값은 키 이름이 있어야 무엇인지 안다. 여러 줄인 값은 첫 줄에만 붙는다."""
+    payload = {"data": {"ruWorkpl": "본사(서울 63빌딩)", "body": "<p>첫 줄</p><p>둘째 줄</p>"}}
+
+    assert payload_source_text(payload) == "ruWorkpl: 본사(서울 63빌딩)\nbody: 첫 줄\n둘째 줄"
+
+
+def test_source_text_leaves_codes_and_links_out_but_keeps_dates_and_words() -> None:
+    payload = {
+        "hidden": "N",
+        "status": "SUCCESS",
+        "seq": 19463,
+        "taskCode": "G12002",
+        "opened": True,
+        "memo": None,
+        "site": "https://example.com/careers",
+        "logo": "promotion/20220801_f02.png",
+        "endDt": "20260830",
+        "endTm": "1705",
+        "end": "2026.08.25 15:00",
+        "major": "[Finance]",
+        "team": "Finance",
+    }
+
+    assert payload_source_text(payload) == (
+        "endDt: 20260830\nendTm: 1705\nend: 2026.08.25 15:00\nmajor: [Finance]\nteam: Finance"
+    )
+
+
+def test_a_value_whose_first_line_is_dropped_gives_its_key_to_the_next_line() -> None:
+    payload = {"rtEct": "https://example.com\n■ 처우 : 내규에 따라 개별 협상"}
+
+    assert payload_source_text(payload) == "rtEct: ■ 처우 : 내규에 따라 개별 협상"
+
+
+def test_repeated_sentences_are_dropped_only_inside_one_group() -> None:
+    """삼성은 직무마다 한글·영어 칸에 같은 자격요건이 있다. 직무 사이의 반복은 남긴다."""
+    same = "- 2년 이상 유관경력 보유하신 분"
+    payload = {
+        "items": [
+            {"qlfctKr": same, "qlfctEn": same},
+            {"qlfctKr": same, "qlfctEn": same},
+        ]
+    }
+
+    assert payload_source_text(payload) == f"qlfctKr: {same}\nqlfctKr: {same}"
+
+
+def test_short_values_are_kept_even_when_repeated() -> None:
+    """`서울` 이 두 칸에 있는 것은 문장이 겹친 것이 아니다."""
+    payload = {"workPlaceKr": "서울", "locationName": "서울"}
+
+    assert payload_source_text(payload) == "workPlaceKr: 서울\nlocationName: 서울"

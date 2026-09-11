@@ -30,7 +30,7 @@ CONFIGS: dict[str, dict[str, Any]] = {
     entry["name"]: entry for entry in json.loads(SEEDS.read_text(encoding="utf-8"))["crawlers"]
 }
 
-# 상세가 HTML 인 일곱 곳. 나머지 넷은 상세가 API 라 원문을 뽑지 않는다
+# 상세가 HTML 인 일곱 곳. 나머지 넷은 상세가 API 라 응답 전체를 편다 (`API_DETAIL`)
 HTML_DETAIL: dict[str, str] = {
     "SK": "sk-detail-20260825.html",
     "롯데그룹": "lotte-detail-20260825.html",
@@ -159,21 +159,74 @@ def test_a_body_selector_that_matches_nothing_gives_no_source_text() -> None:
     assert source_text(soup, "") == ""
 
 
+# 상세가 API 인 네 곳
+API_DETAIL: dict[str, str] = {
+    "LG": "lg-detail-20260825.json",
+    "한화": "hanwha-detail-20260825.json",
+    "삼성": "samsung-detail-20260825.json",
+    "현대자동차": "hyundai-detail-02800-20260825.json",
+}
+
+
+def api_source_text(site: str) -> str:
+    payload = json.loads((FIXTURES / API_DETAIL[site]).read_text(encoding="utf-8"))
+    config = validate_api_config(CONFIGS[site]["api_config"]).detail_config()
+    result = build_detail(payload, config)
+    assert result.fields["body"].strip()
+    return result.source_text
+
+
+@pytest.mark.parametrize("site", sorted(API_DETAIL))
+def test_the_api_detail_source_text_is_text_and_not_markup(site: str) -> None:
+    """LG 는 본문이 HTML 조각이다. 원문은 분류가 읽는 글이라 태그가 남으면 안 된다."""
+    text = api_source_text(site)
+
+    assert text.strip()
+    assert not TAG.search(text), TAG.search(text)
+
+
 @pytest.mark.parametrize(
-    ("site", "fixture"),
+    ("site", "wanted"),
     [
-        ("LG", "lg-detail-20260825.json"),
-        ("한화", "hanwha-detail-20260825.json"),
-        ("삼성", "samsung-detail-20260825.json"),
-        ("현대자동차", "hyundai-detail-02800-20260825.json"),
+        # 본문 경로 밖에 있어 분류가 보지 못하던 값들
+        ("한화", ["ruWorkpl: 본사(서울 63빌딩)", "ruRcrtPrsn: 총 0명"]),
+        ("LG", ["[Finance]", "[HR]", "recEndDate: 2026.09.13 23:00"]),
+        # 붙여 쓴 날짜와 시각은 코드값이 아니다
+        ("현대자동차", ["applyEndDt: 20260830", "applyEndTm: 1705"]),
     ],
 )
-def test_the_api_detail_path_makes_no_source_text(site: str, fixture: str) -> None:
-    """API 응답 전체는 다른 공고를 담는다. 뽑지 않고, 그 건은 분류가 본문으로 떨어진다."""
-    payload = json.loads((FIXTURES / fixture).read_text(encoding="utf-8"))
-    config = validate_api_config(CONFIGS[site]["api_config"]).detail_config()
+def test_the_api_detail_source_text_carries_what_the_body_path_left_out(
+    site: str, wanted: list[str]
+) -> None:
+    text = api_source_text(site)
 
-    result = build_detail(payload, config)
+    for value in wanted:
+        assert value in text
 
-    assert result.fields["body"].strip()
-    assert result.source_text == ""
+
+@pytest.mark.parametrize(
+    ("site", "unwanted"),
+    [
+        ("한화", ["rtApplyHidnYn:", "rtSeq:", "www.hanwhain.com"]),
+        ("LG", ["HR_REVIEW", "jobNoticeId:"]),
+        # `fldCode: K0035` 는 빠지고 `fldCodeNm: 모빌리티 선행개발` 은 남는다
+        ("현대자동차", ["recuNoticeSecretYn:", "fldCode:"]),
+    ],
+)
+def test_the_api_detail_source_text_leaves_codes_and_links_out(
+    site: str, unwanted: list[str]
+) -> None:
+    text = api_source_text(site)
+
+    for value in unwanted:
+        assert value not in text
+
+
+def test_every_samsung_track_keeps_its_own_requirement() -> None:
+    """겹친 문장은 직무 칸 안에서만 지운다. 공고 머리에 하나, 열두 직무에 하나씩이다.
+
+    칸마다 한글(`qlfctKr`)과 영어(`qlfctEn`)에 같은 문장이 있어 지우지 않으면 스물여섯이다.
+    """
+    text = api_source_text("삼성")
+
+    assert text.count("2년 이상 유관경력 보유하신 분") == 13

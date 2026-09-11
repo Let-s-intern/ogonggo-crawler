@@ -38,9 +38,8 @@ _SOURCE_TEXT = "json_extract(r.raw_data_json, '$.source_text')"
 # 없다. 원문만 대상으로 삼으면 그 공고들이 분류에서 통째로 사라진다
 # (`.claude/tasks/todo/prd-side-workflows.md` 4절).
 #
-# 상세가 API 인 사이트는 앞으로 수집하는 건에도 원문이 없다. 응답 전체는 다른 공고 목록을
-# 담고 본문 경로의 부모 객체도 하나로 정해지지 않아 원문을 뽑지 않기로 했다
-# (`.claude/site-recipes/source-text-container.md`). 그 넷은 계속 본문으로 돈다
+# 상세가 API 인 사이트는 응답 전체를 편 원문이 붙는다 (`app/crawler/api_source.py`). 그것을
+# 붙이기 전에 모은 건은 키가 없어 본문으로 돈다
 _CLASSIFY_TEXT = f"coalesce(nullif({_SOURCE_TEXT}, ''), {_BODY}, '')"
 
 
