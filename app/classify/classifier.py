@@ -217,6 +217,7 @@ class ClassifyError(RuntimeError):
     | `unparsable` | 1회 재요청까지 하고도 JSON 이 아니었다 |
     | `unknown_field` | 모델이 스키마에 없는 칸을 냈다 |
     | `empty_body` | 나눌 본문이 없다. 모델을 부르지 않는다 |
+    | `parts_mismatch` | 다시 분류하는데 나눈 공고 수와 다르게 답했다. 기존 분류를 둔다 |
 
     어느 것도 수집을 실패로 만들지 않는다. 본문은 `raw_jobs` 에 그대로 있고 나중에 다시
     돌릴 수 있다 (`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
@@ -333,6 +334,25 @@ _OUTLINE_PROMPT = """아래는 직무가 여럿일 수 있는 긴 채용공고�
 """
 
 
+def _known_roles_block(roles: Sequence[str]) -> str:
+    """이미 나눈 직무 구역. 다시 분류할 때 나눈 목록을 고정한다. 없으면 빈 문자열이다.
+
+    번호에 사람 보정과 전달된 공고 주소가 붙어 있어, 개수나 순서가 바뀌면 그 값이 다른 직무로
+    옮겨 붙는다 (2026-09-11 결정).
+    """
+    if not roles:
+        return ""
+    items = "\n".join(
+        f"{number}. {role or '(이름 없음)'}" for number, role in enumerate(roles, start=1)
+    )
+    return (
+        "\n# 이미 나눈 직무\n\n"
+        f"이 공고는 이미 아래 직무로 나눴다. postings 를 이 순서대로 정확히 {len(roles)}개 낸다.\n"
+        "직무를 더하거나 빼거나 합치지 않는다.\n\n"
+        f"{items}\n"
+    )
+
+
 def _current_values_block(current_values: Mapping[str, str]) -> str:
     """ "이미 있는 값" 구역. 값이 하나도 없으면 빈 문자열이라 프롬프트에 아무것도 남지 않는다.
 
@@ -397,8 +417,12 @@ def build_prompt(
     title: str = "",
     current_values: Mapping[str, str] | None = None,
     taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]] = (),
+    *,
+    known_roles: Sequence[str] = (),
 ) -> tuple[str, list[str]]:
     """보낼 프롬프트와 남길 메모. 상한을 넘긴 글은 자르고 그 사실을 적는다.
+
+    `known_roles` 는 다시 분류할 때 이미 나눈 직무 이름들이다. 주면 그 순서·개수로 답하게 한다.
 
     `body` 는 상세 원문이거나, 원문이 없는 건에서 본문이다 (`app/classify/store.py`).
 
@@ -432,6 +456,7 @@ def build_prompt(
             body=render(lines[1:], start=1),
             current_values_block=_current_values_block(current_values or {}),
             taxonomy_tree=taxonomy_tree,
+            part_block=_known_roles_block(known_roles),
         ),
         notes,
     )
@@ -544,6 +569,7 @@ async def classify_body(
     current_values: Mapping[str, str] | None = None,
     taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]] = (),
     response_model: type[Classification] = Classification,
+    known_parts: Sequence[tuple[str, Sequence[int]]] = (),
     settings: Settings | None = None,
     client: Any | None = None,
     on_call: Callable[[Usage], None] | None = None,
@@ -552,6 +578,11 @@ async def classify_body(
 
     직무가 여럿인 공고는 직무마다 `ClassificationResult.postings` 하나가 된다. 칸마다 공통
     조각을 그 공고의 조각 앞에 붙인 뒤 공고마다 근거를 확인한다 (`app/classify/schema.py`).
+
+    `known_parts` 는 다시 분류할 때 이미 나눈 공고들의 (직무 이름, 보낸 줄) 이다. 주면 나눈
+    목록을 그대로 두고 칸만 다시 채운다 — 긴 공고는 짜임을 다시 묻지 않고 번호마다 보냈던 줄을
+    보내고, 한 번에 나눈 공고는 직무 목록을 알려 같은 개수로 답하게 한다. 개수가 다르면
+    `parts_mismatch` 로 실패하고 부르는 쪽은 기존 분류를 그대로 둔다.
 
     `title` 은 `job_role` 의 출처다. 비어 있어도 나머지 여덟 칸은 그대로 나오므로 분류가
     실패하지 않는다 — 나눌 것이 없는 것은 본문이 빈 경우뿐이다.
@@ -577,7 +608,24 @@ async def classify_body(
     asker = _Asker(client or build_client(resolved), model, provider, on_call)
     taxonomy_choices = _taxonomy_choices(taxonomy_tree)
 
-    if len(body) > MAX_BODY_CHARS:
+    if known_parts and all(part_lines for _, part_lines in known_parts):
+        # 긴 공고를 다시 분류한다. 짜임을 다시 묻지 않고 번호마다 보냈던 줄을 그대로 보낸다.
+        # 제안은 공고 전체를 보는 짜임 호출에서만 받으므로 이번에는 없다
+        results, notes, usages, attempts = await _classify_parts(
+            asker,
+            body,
+            title,
+            number_lines(title, body),
+            taxonomy_tree,
+            response_model,
+            taxonomy_choices,
+            [list(part_lines) for _, part_lines in known_parts],
+        )
+        return ClassificationResult(
+            postings=results, usage=_total(usages), attempts=attempts, notes=notes
+        )
+
+    if len(body) > MAX_BODY_CHARS and not known_parts:
         return await _classify_long(
             asker,
             body,
@@ -588,7 +636,9 @@ async def classify_body(
             taxonomy_choices,
         )
 
-    prompt, notes = build_prompt(body, title, current_values, taxonomy_tree)
+    prompt, notes = build_prompt(
+        body, title, current_values, taxonomy_tree, known_roles=[role for role, _ in known_parts]
+    )
     parsed, usage, attempts = await asker.ask(
         prompt,
         schema=response_model,
@@ -596,6 +646,12 @@ async def classify_body(
         kind=CLASSIFY_KIND,
         parse=lambda text: parse_classification(text, response_model),
     )
+    if known_parts and len(parsed.postings) != len(known_parts):
+        raise ClassifyError(
+            "parts_mismatch",
+            f"이미 나눈 공고가 {len(known_parts)}개인데 {len(parsed.postings)}개로 답했다. "
+            "기존 분류를 그대로 둔다",
+        )
     return _result_of(
         parsed,
         body,
@@ -660,11 +716,47 @@ async def _classify_long(
             notes=[*notes, "긴 공고의 직무를 짜임에서 읽지 못해 한 번에 나눴다", *cut],
         )
 
-    split = len(outline.roles) > 1
+    results, posting_notes, part_usages, part_attempts = await _classify_parts(
+        asker,
+        body,
+        title,
+        lines,
+        taxonomy_tree,
+        response_model,
+        taxonomy_choices,
+        [sorted({*outline.common, *role}) for role in outline.roles],
+    )
+    suggestions, suggestion_reasons = _suggestions_of(outline.fields, current_values, body, title)
+    return ClassificationResult(
+        postings=results,
+        usage=_total([*usages, *part_usages]),
+        attempts=total_attempts + part_attempts,
+        suggestions=suggestions,
+        suggestion_reasons=suggestion_reasons,
+        notes=[*notes, *posting_notes],
+    )
+
+
+async def _classify_parts(
+    asker: _Asker,
+    body: str,
+    title: str,
+    lines: Sequence[str],
+    taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]],
+    response_model: type[Classification],
+    taxonomy_choices: Mapping[str, tuple[str, ...]] | None,
+    parts: Sequence[Sequence[int]],
+) -> tuple[list[PostingResult], list[str], list[Usage], int]:
+    """직무마다 제목과 고른 줄만 보내 나눈다. 짜임이 정했거나 전에 보냈던 줄이다.
+
+    돌려주는 것은 공고들, 남길 메모, 호출마다의 비용, 물은 횟수의 합이다.
+    """
+    split = len(parts) > 1
     results: list[PostingResult] = []
-    posting_notes: list[str] = []
-    for number, role in enumerate(outline.roles, start=1):
-        numbers = sorted({*outline.common, *role})
+    notes: list[str] = []
+    usages: list[Usage] = []
+    total_attempts = 0
+    for number, numbers in enumerate(parts, start=1):
         parsed, usage, attempts = await asker.ask(
             build_part_prompt(lines, numbers, taxonomy_tree),
             schema=response_model,
@@ -678,9 +770,7 @@ async def _classify_long(
         postings = parsed.postings or [ParsedPosting(fields={}, pieces={})]
         if len(postings) > 1:
             # 직무 하나를 보냈는데 더 잘게 나눴다. 짜임이 정한 목록을 따른다
-            posting_notes.append(
-                f"{prefix}한 직무를 보냈는데 공고 {len(postings)}개가 와 첫 공고만 남겼다"
-            )
+            notes.append(f"{prefix}한 직무를 보냈는데 공고 {len(postings)}개가 와 첫 공고만 남겼다")
         result, found = _posting_result(
             postings[0],
             parsed.common,
@@ -692,17 +782,8 @@ async def _classify_long(
             sent_lines=numbers,
         )
         results.append(result)
-        posting_notes.extend(prefix + note for note in found)
-
-    suggestions, suggestion_reasons = _suggestions_of(outline.fields, current_values, body, title)
-    return ClassificationResult(
-        postings=results,
-        usage=_total(usages),
-        attempts=total_attempts,
-        suggestions=suggestions,
-        suggestion_reasons=suggestion_reasons,
-        notes=[*notes, *posting_notes],
-    )
+        notes.extend(prefix + note for note in found)
+    return results, notes, usages, total_attempts
 
 
 @dataclass(frozen=True)

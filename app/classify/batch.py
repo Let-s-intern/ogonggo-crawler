@@ -32,6 +32,7 @@ from app.classify.store import (
     pending_count,
     pending_ids,
     read_current_values,
+    read_parts,
     read_source,
     read_title,
     save_classification,
@@ -211,6 +212,12 @@ async def classify_ids(
         # 분류가 원문과 "다르다" 를 말할 수 없다
         current_values = read_current_values(conn, raw_job_id)
 
+        # 이미 나눈 공고는 나눈 목록을 그대로 두고 칸만 다시 채운다 (2026-09-11 결정). 번호에
+        # 사람 보정과 전달된 공고 주소가 붙어 있어 개수나 순서가 바뀌면 그 값이 다른 직무로
+        # 옮겨 붙는다. 한 번도 나누지 않은 공고(1번 하나, 보낸 줄 없음)는 나눌 수 있다
+        stored = read_parts(conn, raw_job_id)
+        known = stored if len(stored) > 1 or any(part.lines for part in stored) else []
+
         def counted(usage: Usage) -> None:
             # 호출 하나가 행 하나다. 깨진 응답으로 한 번 더 물었으면 두 행이 남는다
             progress.count(usage)
@@ -223,6 +230,7 @@ async def classify_ids(
                 current_values=current_values,
                 taxonomy_tree=taxonomy_tree,
                 response_model=response_model,
+                known_parts=[(part.role, part.lines) for part in known],
                 settings=resolved,
                 client=resolved_client,
                 on_call=counted,
@@ -234,8 +242,10 @@ async def classify_ids(
 
         # 직무마다 나뉘었으면 번호마다 한 행이다. 나누지 않은 공고는 1번 하나이고 직무 이름을
         # 따로 남기지 않는다 — 그 직무는 제목에서 온 `job_role` 그대로다
+        # 목록을 고정한 공고는 직무 이름도 저장된 것을 쓴다
+        split = len(known) > 1 if known else result.split
         for part, posting in enumerate(result.postings, start=1):
-            role = posting.fields.get("job_role", "").strip()
+            role = known[part - 1].role if known else posting.fields.get("job_role", "").strip()
             save_classification(
                 conn,
                 raw_job_id,
@@ -244,7 +254,7 @@ async def classify_ids(
                 dropped=posting.dropped,
                 evidence=posting.evidence,
                 part=part,
-                part_role=(role or None) if result.split else None,
+                part_role=(role or None) if split else None,
                 part_lines=posting.sent_lines,
             )
             progress.dropped += len(posting.dropped)
@@ -293,9 +303,10 @@ def _note_failed_call(
     """응답을 받지 못한 호출도 남긴다. 토큰은 알 수 없어 0 이다.
 
     `empty_body` 는 모델을 부르지 않은 것이라 남기지 않는다 — 부르지 않은 호출을 기록하면
-    호출 수가 실제보다 많아진다.
+    호출 수가 실제보다 많아진다. `parts_mismatch` 는 모델이 답한 뒤의 거절이라 그 호출은 이미
+    남았다.
     """
-    if exc.reason == "empty_body":
+    if exc.reason in ("empty_body", "parts_mismatch"):
         return
     record_call(
         conn,

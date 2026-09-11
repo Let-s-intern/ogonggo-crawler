@@ -80,6 +80,11 @@ def to_ranges(numbers: Iterable[int]) -> list[list[int]]:
     return ranges
 
 
+def from_ranges(ranges: Iterable[Sequence[int]]) -> list[int]:
+    """`to_ranges` 의 반대. 이어진 범위를 줄 번호로 푼다."""
+    return sorted({number for start, end in ranges for number in range(start, end + 1)})
+
+
 def strip_line_marks(text: str) -> str:
     """줄마다 앞에 붙은 `[번호]` 를 뗀다. 모델이 번호까지 옮겨 오는 일이 있다."""
     return "\n".join(_LINE_MARK.sub("", line) for line in text.splitlines())

@@ -23,9 +23,10 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Final
 
-from app.classify.pieces import to_ranges
+from app.classify.pieces import from_ranges, to_ranges
 from app.classify.schema import COLLECTED_REVIEW_FIELDS, STORED_CLASSIFY_FIELDS
 
 # `raw_jobs.raw_data_json` 에서 원문·본문·제목을 꺼내는 자리. JSON 함수는 SQLite 3.38+ 에 있다
@@ -250,6 +251,37 @@ def read_current_values(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, 
         for name in COLLECTED_REVIEW_FIELDS
         if row[name] is not None and str(row[name]).strip()
     }
+
+
+@dataclass(frozen=True)
+class StoredPart:
+    """이미 나눈 공고 하나. 번호와 직무 이름, 긴 공고였으면 그때 보낸 원문 줄 번호."""
+
+    part: int
+    role: str
+    lines: tuple[int, ...]
+
+
+def read_parts(conn: sqlite3.Connection, raw_job_id: int) -> list[StoredPart]:
+    """그 수집 건을 나눈 공고들. 번호 순이다. 아직 분류되지 않았으면 빈 목록이다. 읽기 전용이다.
+
+    보낸 줄을 읽지 못하면(손으로 고친 행) 줄이 없는 공고로 읽는다. 그 공고는 한 번에 나눈
+    공고처럼 다시 분류된다.
+    """
+    rows = conn.execute(
+        "SELECT part, part_role, part_lines FROM job_classifications"
+        " WHERE raw_job_id = ? ORDER BY part",
+        (raw_job_id,),
+    ).fetchall()
+    parts: list[StoredPart] = []
+    for row in rows:
+        try:
+            ranges = json.loads(row["part_lines"] or "[]")
+            lines = tuple(from_ranges(ranges))
+        except (TypeError, ValueError):
+            lines = ()
+        parts.append(StoredPart(int(row["part"]), str(row["part_role"] or ""), lines))
+    return parts
 
 
 def read_classification(conn: sqlite3.Connection, raw_job_id: int, part: int = 1) -> dict[str, str]:
