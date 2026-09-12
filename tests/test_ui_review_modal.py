@@ -68,8 +68,8 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     )
     connection.execute(
         """
-        INSERT INTO normalized_jobs (raw_job_id, company, title, body, source_url)
-        VALUES (7, '파이썬재단', '백엔드 개발자', ?, ?)
+        INSERT INTO normalized_jobs (id, raw_job_id, company, title, body, source_url)
+        VALUES (3, 7, '파이썬재단', '백엔드 개발자', ?, ?)
         """,
         (LONG_BODY, LIST_URL),
     )
@@ -124,24 +124,24 @@ def test_표는_읽기만_하고_행의_수정_버튼이_모달을_연다(client
     """표 안에서 바로 고치는 입력은 남기지 않는다. 고치는 자리는 모달 하나다."""
     html = client.get("/ui/review").text
 
-    assert 'id="review-open-7"' in html
+    assert 'id="review-open-3"' in html
     assert "data-modal-open" in html
-    assert 'hx-get="/ui/review/modal/7"' in html
+    assert 'hx-get="/ui/review/modal/3"' in html
     # 필드 하나만 여는 입구는 없다
-    assert "/ui/review/modal/7/body" not in html
+    assert "/ui/review/modal/3/body" not in html
     assert "<textarea" not in html  # 표 안에서 바로 고치는 입력이 없다
     assert "hx-put=" not in html
 
 
 def test_모달에_여섯_필드가_다_들어오고_규칙값을_함께_보여준다(client: TestClient) -> None:
-    html = client.get("/ui/review/modal/7").text
+    html = client.get("/ui/review/modal/3").text
 
     for name in ("company", "title", "work_location", "deadline", "body", "requirements"):
         assert f'name="{name}"' in html, name
     assert "규칙이 만든 값" in html
     assert "본문 첫 줄" in html
     assert "<textarea" in html  # 본문과 자격요건은 여러 줄 입력이다
-    assert 'hx-put="/ui/review/jobs/7"' in html
+    assert 'hx-put="/ui/review/jobs/3"' in html
     # 고치지 않는 값도 조회 상세처럼 함께 보인다
     assert "수집 시각" in html
     assert "정규화 시각" in html
@@ -150,18 +150,18 @@ def test_모달에_여섯_필드가_다_들어오고_규칙값을_함께_보여�
 def test_검수_표와_모달에_직무_열이_나온다(client: TestClient) -> None:
     """0017 이 더한 칸이다. 화면에 없으면 잘못 뽑힌 직무를 아무도 보지 못한다 (2.5.V)."""
     table = client.get("/ui/review").text
-    modal = client.get("/ui/review/modal/7").text
+    modal = client.get("/ui/review/modal/3").text
 
     assert "직무" in table
-    assert 'id="review-cell-7-job_role"' in table
+    assert 'id="review-cell-3-job_role"' in table
     assert 'name="job_role"' in modal
 
 
 def test_보정된_필드는_규칙이_만든_값을_함께_보여준다(client: TestClient) -> None:
     """무엇에서 고친 것인지 모르면 그 보정이 맞는지 판정할 수 없다."""
-    client.put("/ui/review/jobs/7", data={**FULL_FORM, "company": "파이썬 소프트웨어 재단"})
+    client.put("/ui/review/jobs/3", data={**FULL_FORM, "company": "파이썬 소프트웨어 재단"})
 
-    html = client.get("/ui/review/modal/7").text
+    html = client.get("/ui/review/modal/3").text
 
     assert "규칙이 만든 값" in html
     assert "파이썬재단" in html  # 규칙이 만든 값이 그대로 남아 있다
@@ -174,7 +174,7 @@ def test_두_필드를_한_번에_저장하면_보정이_둘_쌓인다(
     before = normalized_row(conn)
 
     response = client.put(
-        "/ui/review/jobs/7",
+        "/ui/review/jobs/3",
         data={**FULL_FORM, "company": "파이썬 소프트웨어 재단", "work_location": "판교"},
     )
 
@@ -190,9 +190,9 @@ def test_두_필드를_한_번에_저장하면_보정이_둘_쌓인다(
     # 표의 값 칸 전부와 보정 개수·전달 칸만 갈린다. 표 전체는 다시 그리지 않는다.
     # 칸 목록을 여기 베껴 적지 않는다 — 0012 가 넓혔고 0016 이 셋을 지웠다
     assert oob_ids(response.text) == [
-        *(f"review-cell-7-{field}" for field in OVERRIDABLE_FIELDS),
-        "review-override-count-7",
-        "review-delivery-7",
+        *(f"review-cell-3-{field}" for field in OVERRIDABLE_FIELDS),
+        "review-override-count-3",
+        "review-delivery-3",
     ]
     # 표 조각 자체는 오지 않는다. 모달 안의 표(고치지 않는 값)와 구분해 캡션으로 본다
     assert "검수 대상 공고" not in response.text
@@ -204,7 +204,7 @@ def test_고친_값이_없으면_보정을_만들지_않고_닫지도_않는다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
     """조용히 닫으면 저장된 줄 알고, 아무 데도 남지 않은 수정을 나중에 찾게 된다."""
-    response = client.put("/ui/review/jobs/7", data=FULL_FORM)
+    response = client.put("/ui/review/jobs/3", data=FULL_FORM)
 
     assert override_fields(conn) == []
     assert "고친 값이 없다" in response.text
@@ -218,14 +218,14 @@ def test_줄바꿈만_다른_본문은_고친_것으로_보지_않는다(
     """브라우저는 textarea 를 CRLF 로 보낸다. 그것을 변경으로 읽으면 저장할 때마다 보정이 는다."""
     crlf = LONG_BODY.replace("\n", "\r\n")
 
-    client.put("/ui/review/jobs/7", data={**FULL_FORM, "body": crlf})
+    client.put("/ui/review/jobs/3", data={**FULL_FORM, "body": crlf})
 
     assert override_fields(conn) == []
 
 
 def test_빈_값으로_고치면_그것도_보정이다(client: TestClient, conn: sqlite3.Connection) -> None:
     """빈 문자열은 "이 필드는 비어 있는 것이 맞다" 는 판단이다. 보정이 없는 것과 다르다."""
-    client.put("/ui/review/jobs/7", data={**FULL_FORM, "title": ""})
+    client.put("/ui/review/jobs/3", data={**FULL_FORM, "title": ""})
 
     assert override_fields(conn) == ["title"]
     assert override_of(conn, "title") == ""
@@ -235,13 +235,13 @@ def test_모달_안에서_필드마다_보정을_지우고_모달은_열려_있�
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
     client.put(
-        "/ui/review/jobs/7",
+        "/ui/review/jobs/3",
         data={**FULL_FORM, "title": "사람이 고친 제목", "work_location": "판교"},
     )
     assert override_fields(conn) == ["title", "work_location"]
 
     response = client.put(
-        "/ui/review/jobs/7",
+        "/ui/review/jobs/3",
         data={**FULL_FORM, "title": "사람이 고친 제목", "work_location": "판교", "drop": "title"},
     )
 
@@ -249,7 +249,7 @@ def test_모달_안에서_필드마다_보정을_지우고_모달은_열려_있�
     assert "제목 보정을 지웠다" in response.text
     # 되돌리고 나머지를 계속 본다. 닫지 않는다
     assert "HX-Trigger-After-Settle" not in response.headers
-    assert "review-cell-7-title" in oob_ids(response.text)
+    assert "review-cell-3-title" in oob_ids(response.text)
     # 아직 저장하지 않은 다른 칸의 값은 그대로 남는다
     assert "판교" in response.text
 
@@ -259,17 +259,17 @@ def test_전달된_행은_모달_안에서_알리고_전달_표시는_그대로�
 ) -> None:
     conn.execute("UPDATE normalized_jobs SET delivered_at = '2020-01-01 00:00:00'")
 
-    opened = client.get("/ui/review/modal/7").text
+    opened = client.get("/ui/review/modal/3").text
     assert "이미 전달된 행이다" in opened
 
-    client.put("/ui/review/jobs/7", data={**FULL_FORM, "title": "전달 뒤에 고친 제목"})
+    client.put("/ui/review/jobs/3", data={**FULL_FORM, "title": "전달 뒤에 고친 제목"})
 
     row = conn.execute("SELECT delivered_at FROM normalized_jobs WHERE raw_job_id = 7").fetchone()
     assert row["delivered_at"] == "2020-01-01 00:00:00"
 
 
 def test_고칠_수_없는_필드는_지우지_못하고_사유를_적는다(client: TestClient) -> None:
-    html = client.put("/ui/review/jobs/7", data={**FULL_FORM, "drop": "source_url"}).text
+    html = client.put("/ui/review/jobs/3", data={**FULL_FORM, "drop": "source_url"}).text
 
     assert "고칠 수 없는 필드다" in html
     assert oob_ids(html) == []
@@ -278,7 +278,7 @@ def test_고칠_수_없는_필드는_지우지_못하고_사유를_적는다(cli
 def test_없는_수집_건은_사유를_적는다(client: TestClient) -> None:
     html = client.get("/ui/review/modal/999").text
 
-    assert "수집 건 999" in html
+    assert "공고 999" in html
     assert oob_ids(html) == []
 
 
@@ -289,7 +289,7 @@ def test_고치는_모달에는_지우는_경로가_없다(client: TestClient) -
     없어야 하는 것은 값을 고치는 자리 안의 지우기다 — 입력 칸 옆에 지우기 단추가 있으면
     고치려다 지우는 사고가 그 자리에서 난다.
     """
-    modal = client.get("/ui/review/modal/7").text
+    modal = client.get("/ui/review/modal/3").text
 
     assert "/ui/review/delete" not in modal
     assert "data-select-row" not in modal
@@ -303,7 +303,7 @@ def test_고치는_모달에는_지우는_경로가_없다(client: TestClient) -
 
 def test_고치는_흐름에_브라우저_확인_창이_끼어들지_않는다(client: TestClient) -> None:
     """보정 삭제는 되돌릴 수 없는 일이 아니다. 규칙값이 바로 아래에 그대로 적혀 있다."""
-    html = client.get("/ui/review/modal/7").text
+    html = client.get("/ui/review/modal/3").text
 
     assert "보정 삭제" in html or "규칙값" in html
     assert "hx-confirm" not in html

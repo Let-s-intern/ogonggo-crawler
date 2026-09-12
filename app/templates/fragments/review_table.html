@@ -200,8 +200,8 @@
       {% endif %}
       <td class="num">{{ job.id }}</td>
       <td>{{ review_open_button(job) }}</td>
-      <td>{{ review_delivery(job.raw_job_id, job.delivered_at, item.override_count) }}</td>
-      <td class="num">{{ review_override_count(job.raw_job_id, item.override_count) }}</td>
+      <td>{{ review_delivery(job.id, job.delivered_at, item.override_count) }}</td>
+      <td class="num">{{ review_override_count(job.id, item.override_count) }}</td>
       <td>{{ job.parent_company or "값 없음" }}</td>
       {% for cell in item.cells %}{{ review_cell(cell) }}{% endfor %}
       <td>{{ job.workflow_id }} - {{ job.workflow_name }}</td>

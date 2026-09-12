@@ -15,7 +15,7 @@
 {# 값 하나가 든 칸. `oob` 면 모달의 응답에 실려 표의 제자리를 갈아 끼운다.
    `changed` 는 방금 갈린 자리를 잠깐 물들여, 모달을 닫은 사람이 어디가 바뀌었는지 찾게 한다 #}
 {% macro review_cell_inner(cell, oob=False, changed=False) %}
-<div id="review-cell-{{ cell.raw_job_id }}-{{ cell.field }}"{% if oob %} hx-swap-oob="true"{% endif %}
+<div id="review-cell-{{ cell.job_id }}-{{ cell.field }}"{% if oob %} hx-swap-oob="true"{% endif %}
      class="max-w-[16rem] rounded-md p-1{% if changed %} just-changed{% endif %}">
   <span class="block truncate text-sm text-slate-800" title="{{ cell.value or '값 없음' }}">{{ cell.value or "값 없음" }}</span>
   {% if cell.overridden %}
@@ -39,24 +39,24 @@
 {# 이 행을 통째로 여는 버튼. 검수는 값 하나가 아니라 한 건이 맞는지 판정하는 일이라,
    여섯 필드가 한 모달에 함께 들어온다 #}
 {% macro review_open_button(job) %}
-<button type="button" id="review-open-{{ job.raw_job_id }}" data-modal-open
-        hx-get="/ui/review/modal/{{ job.raw_job_id }}"
+<button type="button" id="review-open-{{ job.id }}" data-modal-open
+        hx-get="/ui/review/modal/{{ job.id }}"
         hx-target="#app-modal-body" hx-swap="innerHTML"
-        aria-label="수집 건 {{ job.raw_job_id }} 고치기"
+        aria-label="공고 {{ job.id }} 고치기"
         title="공고 한 건을 통째로 열어 여러 필드를 고친다">수정</button>
 {% endmacro %}
 
 {# 이 행에 보정이 몇 개 걸렸는지. 모달에서 저장하거나 지우면 이 숫자도 같이 갈려야 한다 #}
-{% macro review_override_count(raw_job_id, count, oob=False) %}
-<div id="review-override-count-{{ raw_job_id }}"{% if oob %} hx-swap-oob="true"{% endif %}>
+{% macro review_override_count(job_id, count, oob=False) %}
+<div id="review-override-count-{{ job_id }}"{% if oob %} hx-swap-oob="true"{% endif %}>
   {% if count %}{{ count }}개 필드{% else %}없음{% endif %}
 </div>
 {% endmacro %}
 
 {# 전달 여부. 전달된 행을 고쳐도 소비 측이 가진 값은 그대로라, 그 사실을 여기서 적는다
    (`.claude/rules/data-safety.md`) #}
-{% macro review_delivery(raw_job_id, delivered_at, count, oob=False) %}
-<div id="review-delivery-{{ raw_job_id }}"{% if oob %} hx-swap-oob="true"{% endif %}>
+{% macro review_delivery(job_id, delivered_at, count, oob=False) %}
+<div id="review-delivery-{{ job_id }}"{% if oob %} hx-swap-oob="true"{% endif %}>
   {% if delivered_at %}
   <span class="badge badge-idle">전달됨</span>
   <span class="mt-0.5 block text-xs text-slate-500">{{ delivered_at | as_time }}</span>

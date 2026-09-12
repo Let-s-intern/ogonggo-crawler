@@ -352,7 +352,8 @@ def shown_value(field: str) -> str:
     """
     return (
         "COALESCE((SELECT o.value FROM job_field_overrides o"
-        f" WHERE o.raw_job_id = n.raw_job_id AND o.field_name = '{field}'), n.{field})"
+        " WHERE o.raw_job_id = n.raw_job_id AND o.part = n.part"
+        f" AND o.field_name = '{field}'), n.{field})"
     )
 
 
@@ -461,7 +462,11 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
 
     # 어느 칸의 제안인지는 보지 않는다 — "제안이 붙어 있다" 만 가른다. 칸별로 좁히고 싶으면
     # 모달을 열어 본다 (11.6)
-    _suggestion_exists = "EXISTS (SELECT 1 FROM job_field_suggestions s WHERE s.raw_job_id = r.id)"
+    # 나눈 공고는 번호마다 따로 본다 — 한 직무에 붙은 제안으로 형제 공고까지 걸리지 않게 한다
+    _suggestion_exists = (
+        "EXISTS (SELECT 1 FROM job_field_suggestions s"
+        " WHERE s.raw_job_id = n.raw_job_id AND s.part = n.part)"
+    )
     if picked.has_suggestion == "yes":
         clauses.append(_suggestion_exists)
     elif picked.has_suggestion == "no":
