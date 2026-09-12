@@ -124,8 +124,60 @@ def _find(text: str, line: str) -> str | None:
     start = haystack.find(needle)
     if start < 0:
         return None
-    end = start + len(needle) - 1
-    return line[positions[start] : positions[end] + 1]
+    last = start + len(needle) - 1
+    begin, end = _widen(line, positions[start], positions[last], text)
+    return line[begin : end + 1]
+
+
+# 잘라 온 구간 앞뒤로 되붙일 수 있는 문장부호. 글머리표(`-`, `•`)는 칸의 내용이 아니라 넣지 않는다
+_LEADING_MARKS = frozenset("([{<\"'")
+_TRAILING_MARKS = frozenset(")]}>.!?\"'")
+_CLOSING_OF = {"(": ")", "[": "]", "{": "}", "<": ">"}
+_OPENING_OF = {closing: opening for opening, closing in _CLOSING_OF.items()}
+
+
+def _widen(line: str, begin: int, end: int, text: str) -> tuple[int, int]:
+    """느슨하게 찾은 구간을 문장부호까지 넓힌다.
+
+    느슨한 비교는 문장부호를 걷어내고 맞추므로, 찾은 구간은 첫 글자와 끝 글자에서 멈춘다.
+    그대로 자르면 `본사(서울 63빌딩)` 가 `본사(서울 63빌딩` 이 되고 `(필수) 자격증` 이 `필수)
+    자격증` 이 된다 (2026-09-13 실제 호출에서 확인).
+
+    두 가지를 되붙인다. 모델이 적은 글의 앞뒤에 있는 괄호·따옴표·마침표가 원문 바로 옆에도 있으면
+    그만큼, 그리고 구간 안에서 짝이 맞지 않는 괄호의 짝이 원문 바로 옆에 있으면 그것까지다.
+    """
+    head = _edge(text, _LEADING_MARKS)
+    tail = _edge(text[::-1], _TRAILING_MARKS)
+    while head and begin > 0 and line[begin - 1] == head[-1]:
+        begin -= 1
+        head = head[:-1]
+    while tail and end + 1 < len(line) and line[end + 1] == tail[-1]:
+        end += 1
+        tail = tail[:-1]
+
+    while end + 1 < len(line) and line[end + 1] in _OPENING_OF:
+        closing = line[end + 1]
+        piece = line[begin : end + 1]
+        if piece.count(_OPENING_OF[closing]) <= piece.count(closing):
+            break
+        end += 1
+    while begin > 0 and line[begin - 1] in _CLOSING_OF:
+        opening = line[begin - 1]
+        piece = line[begin : end + 1]
+        if piece.count(_CLOSING_OF[opening]) <= piece.count(opening):
+            break
+        begin -= 1
+    return begin, end
+
+
+def _edge(text: str, marks: frozenset[str]) -> str:
+    """글 앞에 붙은 문장부호들. 뒤쪽을 보려면 뒤집어서 넘기고, 돌려받은 것도 뒤집힌 순서다."""
+    taken = []
+    for char in text:
+        if char not in marks:
+            break
+        taken.append(char)
+    return "".join(taken)
 
 
 def _find_anywhere(text: str, lines: Sequence[str]) -> str | None:

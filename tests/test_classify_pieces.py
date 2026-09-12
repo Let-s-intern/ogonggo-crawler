@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.classify.classifier import classify_body
 from app.classify.pieces import number_lines, render, resolve, strip_line_marks
 from app.config import Settings
@@ -88,6 +90,33 @@ def test_글머리표뿐인_조각은_건너뛴다() -> None:
     assert resolved.value == ""
     assert resolved.whole_lines == 0
     assert resolved.lost == 0
+
+
+@pytest.mark.parametrize(
+    ("line", "text", "expected"),
+    [
+        # 느슨한 비교가 문장부호를 걷어내 끝 괄호가 떨어지던 자리 (2026-09-13 실제 호출)
+        ("ruWorkpl: 본사(서울 63빌딩)", "본사(서울 63빌딩)", "본사(서울 63빌딩)"),
+        (
+            "[Big Data센터] SW개발 (데이터 엔지니어링)",
+            "SW개발 (데이터 엔지니어링)",
+            "SW개발 (데이터 엔지니어링)",
+        ),
+        ("(필수) 자격증 소지자", "(필수) 자격증 소지자", "(필수) 자격증 소지자"),
+        (
+            "- 2년 이상 유관경력 보유하신 분.",
+            "2년 이상 유관경력 보유하신 분.",
+            "2년 이상 유관경력 보유하신 분.",
+        ),
+        # 모델이 닫는 괄호를 빠뜨려도 원문대로 닫는다
+        ("ruWorkpl: 본사(서울 63빌딩)", "본사(서울 63빌딩", "본사(서울 63빌딩)"),
+        # 글머리표는 되붙이지 않고, 모델이 괄호 없이 적은 이름에 괄호를 붙이지 않는다
+        ("- 2년 이상 유관경력 보유하신 분.", "- 2년 이상", "2년 이상"),
+        ("[Big Data센터] SW개발", "Big Data센터", "Big Data센터"),
+    ],
+)
+def test_앞뒤_문장부호를_원문대로_살린다(line: str, text: str, expected: str) -> None:
+    assert resolve([(1, text)], ["제목", line]).value == expected
 
 
 async def test_분류가_조각을_원문_글자로_저장한다() -> None:
