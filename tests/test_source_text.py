@@ -19,7 +19,7 @@ import pytest
 from bs4 import BeautifulSoup
 
 from app.crawler.api_source import build_detail
-from app.crawler.parser import parse_detail, source_text
+from app.crawler.parser import parse_detail, source_text, structured_text
 from app.selector.api_schema import validate_api_config
 from app.selector.schema import DetailSelectors, validate_selectors
 
@@ -120,6 +120,72 @@ def test_the_source_text_leaves_the_page_furniture_out(
 
     for value in unwanted:
         assert value not in text, value
+
+
+def test_the_naver_source_text_carries_the_job_posting_data_the_page_hides() -> None:
+    """근무지 주소와 고용형태는 화면 글자에 없고 검색엔진용 `JobPosting` 데이터에만 있다."""
+    text = parsed("네이버").source_text
+
+    assert "streetAddress: 경기도 성남시 분당구 정자일로 95 (네이버 제2사옥)" in text
+    assert "employmentType: INTERN" in text
+    # 스키마 표시와, 화면에 이미 있는 제목은 다시 적지 않는다
+    assert "@type" not in text
+    assert "\ntitle: " not in text
+
+
+def _page_with(*scripts: str) -> BeautifulSoup:
+    tags = "".join(f'<script type="application/ld+json">{script}</script>' for script in scripts)
+    return BeautifulSoup(
+        f"<html><head>{tags}</head><body><div class='post'>본문이다</div></body></html>",
+        "html.parser",
+    )
+
+
+def test_structured_text_reads_job_postings_inside_a_list_or_a_graph() -> None:
+    """회사 소개처럼 `JobPosting` 이 아닌 데이터는 읽지 않는다."""
+    soup = _page_with(
+        json.dumps(
+            [
+                {"@type": "Organization", "name": "회사 소개 데이터"},
+                {"@type": "JobPosting", "employmentType": "FULL_TIME"},
+            ]
+        ),
+        json.dumps(
+            {
+                "@graph": [
+                    {
+                        "@type": ["JobPosting"],
+                        "jobLocation": {"address": {"streetAddress": "판교역로 1"}},
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+    )
+
+    assert structured_text(soup, "본문이다") == (
+        "employmentType: FULL_TIME\nstreetAddress: 판교역로 1"
+    )
+
+
+def test_structured_text_skips_broken_json_and_what_the_source_already_says() -> None:
+    soup = _page_with(
+        "{깨진 JSON",
+        json.dumps(
+            {
+                "@type": "JobPosting",
+                "title": "백엔드 개발자",
+                "description": "<p>본문이다</p><p>새 문장</p>",
+            },
+            ensure_ascii=False,
+        ),
+    )
+
+    assert structured_text(soup, "백엔드 개발자\n본문이다") == "description: 새 문장"
+
+
+def test_a_page_without_job_posting_data_adds_nothing() -> None:
+    assert structured_text(_page_with(), "본문이다") == ""
 
 
 def test_the_kakao_source_text_drops_the_other_postings_beside_it() -> None:
