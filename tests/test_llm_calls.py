@@ -23,6 +23,7 @@ from app import db
 from app.llm.base import Usage
 from app.llm.log import (
     CLASSIFY,
+    IMAGE_READ,
     SELECTOR_GENERATE,
     SELECTOR_REPAIR,
     by_feature,
@@ -125,12 +126,13 @@ def test_by_feature_lists_every_feature_even_with_no_calls(logged: sqlite3.Conne
 
     usage = {u.feature: u for u in by_feature(logged)}
 
-    assert set(usage) == {SELECTOR_GENERATE, SELECTOR_REPAIR, CLASSIFY}
+    assert set(usage) == {SELECTOR_GENERATE, SELECTOR_REPAIR, CLASSIFY, IMAGE_READ}
     assert usage[CLASSIFY].calls == 2
     assert usage[CLASSIFY].total_tokens == 4441 + 1050
     assert usage[SELECTOR_GENERATE].calls == 1
     assert usage[SELECTOR_REPAIR].calls == 0
     assert usage[SELECTOR_REPAIR].total_tokens == 0
+    assert usage[IMAGE_READ].calls == 0
 
 
 ON_QWEN = Usage(

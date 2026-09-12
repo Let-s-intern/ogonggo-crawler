@@ -61,6 +61,7 @@ from app.config import Settings
 from app.crawler.collect import API, COLLECT_MODES, open_collectors
 from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError, get_fetcher
+from app.crawler.images import LlmImageReader
 from app.crawler.playwright import PLAYWRIGHT, RENDER_MODES, STATIC, Renderer, open_source
 from app.crawler.runner import TEST, RunTarget, collect_selectors, run_once
 from app.llm import settings as llm_settings
@@ -1245,6 +1246,8 @@ async def test_run(
         selectors=selectors,
         fetcher=fetcher,
         api_config=api_config,
+        # 시험 실행도 실제 실행과 같은 원문을 보여 준다. 이미지를 읽으면 AI 호출이 생긴다
+        image_reader=LlmImageReader(conn),
     ) as collectors:
         result = await run_once(
             conn,

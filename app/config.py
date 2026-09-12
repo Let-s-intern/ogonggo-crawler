@@ -22,6 +22,7 @@ _BLANK_FALLS_BACK = (
     "selector_generate_provider",
     "selector_repair_provider",
     "classify_provider",
+    "image_read_provider",
 )
 
 # 앞뒤 공백만 걷어낸다. 비어 있는 것은 "키가 없다" 가 맞는 값이라 그대로 둔다.
@@ -80,6 +81,9 @@ class Settings(BaseSettings):
     selector_generate_provider: str = "gemini"
     selector_repair_provider: str = "gemini"
     classify_provider: str = "gemini"
+    # 본문이 이미지로만 올라온 공고의 이미지를 수집할 때 읽는다. 글 읽기에 강한 모델을 분류와
+    # 따로 둘 수 있게 기능을 나눈다 (`app/crawler/images.py`)
+    image_read_provider: str = "gemini"
 
     # 저장
     database_path: str = "./data/jobs.db"

@@ -13,7 +13,7 @@ from app.config import Settings
 from app.llm.base import LlmCallError, Provider
 from app.llm.claude import CLAUDE
 from app.llm.gemini import GEMINI
-from app.llm.log import CLASSIFY, SELECTOR_GENERATE, SELECTOR_REPAIR
+from app.llm.log import CLASSIFY, IMAGE_READ, SELECTOR_GENERATE, SELECTOR_REPAIR
 from app.llm.openai_compat import GPT_PROVIDER, OLLAMA_PROVIDER, QWEN_PROVIDER
 
 PROVIDERS: dict[str, Provider] = {
@@ -35,6 +35,7 @@ FEATURE_SETTING: dict[str, str] = {
     SELECTOR_GENERATE: "selector_generate_provider",
     SELECTOR_REPAIR: "selector_repair_provider",
     CLASSIFY: "classify_provider",
+    IMAGE_READ: "image_read_provider",
 }
 
 

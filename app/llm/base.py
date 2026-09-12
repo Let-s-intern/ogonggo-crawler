@@ -13,7 +13,7 @@ PROVIDER` 로 상수를 가져다 박고 있었던 것처럼, 제공자 하나�
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -56,6 +56,18 @@ class Usage:
     latency_ms: int
 
 
+@dataclass(frozen=True)
+class ImageInput:
+    """호출에 함께 싣는 이미지 한 장. 바이트와 그 형식(`image/jpeg` 같은)이다.
+
+    본문이 이미지로만 올라온 공고를 읽을 때만 쓴다 (`app/crawler/images.py`). 이미지가 없는
+    호출은 지금까지와 똑같이 글자 하나만 보낸다.
+    """
+
+    data: bytes
+    mime_type: str
+
+
 class CallModel(Protocol):
     """제공자 항목이 내놓는 호출 1회.
 
@@ -74,6 +86,7 @@ class CallModel(Protocol):
         response_schema: Any,
         system_instruction: str,
         temperature: float = 0.0,
+        images: Sequence[ImageInput] = (),
     ) -> Awaitable[tuple[str, Usage]]: ...
 
 

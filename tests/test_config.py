@@ -102,6 +102,7 @@ def test_every_feature_falls_back_to_gemini_when_nothing_is_chosen(clean_env: No
     assert settings.selector_generate_provider == "gemini"
     assert settings.selector_repair_provider == "gemini"
     assert settings.classify_provider == "gemini"
+    assert settings.image_read_provider == "gemini"
 
 
 def test_each_feature_can_point_at_a_different_provider(
@@ -129,6 +130,7 @@ def test_each_feature_can_point_at_a_different_provider(
         ("CLASSIFY_PROVIDER", "classify_provider", "gemini"),
         ("SELECTOR_GENERATE_PROVIDER", "selector_generate_provider", "gemini"),
         ("SELECTOR_REPAIR_PROVIDER", "selector_repair_provider", "gemini"),
+        ("IMAGE_READ_PROVIDER", "image_read_provider", "gemini"),
     ],
 )
 def test_a_blank_value_is_not_a_value(

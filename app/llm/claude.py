@@ -14,15 +14,17 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 import time
+from collections.abc import Sequence
 from typing import Any
 
 import anthropic
 from anthropic import AsyncAnthropic
 
 from app.config import Settings
-from app.llm.base import LlmCallError, Provider, Usage, log_usage
+from app.llm.base import ImageInput, LlmCallError, Provider, Usage, log_usage
 
 logger = logging.getLogger(__name__)
 
@@ -54,18 +56,36 @@ async def call_model(
     response_schema: Any,
     system_instruction: str,
     temperature: float = 0.0,
+    images: Sequence[ImageInput] = (),
 ) -> tuple[str, Usage]:
     """호출 1회. 모델 ID·토큰·지연을 남긴다.
 
     `temperature` 는 받지만 보내지 않는다. Messages API 에 그 인자가 없다.
     """
+    content: Any = prompt
+    if images:
+        # 이미지 블록을 앞에, 지시를 뒤에 둔다. 조각 순서가 곧 위에서 아래 순서다
+        content = [
+            *(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": image.mime_type,
+                        "data": base64.b64encode(image.data).decode("ascii"),
+                    },
+                }
+                for image in images
+            ),
+            {"type": "text", "text": prompt},
+        ]
     started = time.monotonic()
     try:
         response = await client.messages.parse(
             model=model,
             max_tokens=MAX_TOKENS,
             system=system_instruction,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": content}],
             output_format=response_schema,
         )
     except anthropic.APIError as exc:

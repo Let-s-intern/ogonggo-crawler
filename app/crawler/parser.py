@@ -121,6 +121,10 @@ class DetailParseResult:
     fields: dict[str, str]
     missing: list[str]
     source_text: str = ""
+    # 원문 영역 안의 이미지 주소. 적힌 그대로라 상대 주소일 수 있다 (`app/crawler/images.py`)
+    images: tuple[str, ...] = ()
+    # 공고는 적재하지만 실행 기록에 남길 일. 이미지를 읽지 못한 것이 그렇다
+    notes: tuple[str, ...] = ()
 
 
 def list_only(selectors: ListSelectors) -> bool:
@@ -232,6 +236,7 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
         fields=fields,
         missing=missing,
         source_text=f"{container}\n{structured}" if structured else container,
+        images=source_images(soup, selectors.body),
     )
 
 
@@ -339,22 +344,46 @@ def source_text(soup: BeautifulSoup, body_selector: str) -> str:
 
     뽑지 못하면 빈 문자열이다. 원문이 없다고 공고를 버리지 않는다.
     """
+    container = _source_container(soup, body_selector)
+    return "" if container is None else block_text(container)
+
+
+def source_images(soup: BeautifulSoup, body_selector: str) -> tuple[str, ...]:
+    """원문 영역 안의 이미지 주소. 원문과 같은 영역을 본다. 같은 주소는 한 번만 담는다.
+
+    `src` 가 없고 `data-src` 에만 주소를 둔 지연 로딩 이미지도 담는다. `data:` 로 박힌 이미지는
+    받을 주소가 아니고 대개 아이콘이라 뺀다.
+    """
+    container = _source_container(soup, body_selector)
+    if container is None:
+        return ()
+    found: dict[str, None] = {}
+    for image in container.find_all("img"):
+        raw = image.get("src") or image.get("data-src") or ""
+        source = (" ".join(raw) if isinstance(raw, list) else str(raw)).strip()
+        if source and not source.startswith("data:"):
+            found[source] = None
+    return tuple(found)
+
+
+def _source_container(soup: BeautifulSoup, body_selector: str) -> Tag | None:
+    """원문을 뽑는 노드. 본문 노드의 부모에서 페이지 부속을 뺀 사본이다. 못 잡으면 None 이다."""
     if not body_selector.strip():
-        return ""
+        return None
 
     nodes = select_nodes(soup, body_selector, "detail.body")
     if not nodes:
-        return ""
+        return None
 
     body = nodes[0]
     parent = body.parent
     if parent is None or parent.name in ("body", "html", "[document]"):
-        return block_text(body)
+        return body
 
     container = copy.copy(parent)
     for tag in container.select(PAGE_FURNITURE):
         tag.decompose()
-    return block_text(container)
+    return container
 
 
 def _link(node: Tag, selectors: ListSelectors, index: int) -> LinkResult:

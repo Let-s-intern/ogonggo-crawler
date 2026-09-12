@@ -14,15 +14,17 @@ Qwen(DashScope)과 Ollama Cloud 가 OpenAI 호환 엔드포인트를 준다. `op
 
 from __future__ import annotations
 
+import base64
 import logging
 import time
+from collections.abc import Sequence
 from typing import Any
 
 import openai
 from openai import AsyncOpenAI
 
 from app.config import Settings
-from app.llm.base import LlmCallError, Provider, Usage, log_usage
+from app.llm.base import ImageInput, LlmCallError, Provider, Usage, log_usage
 
 logger = logging.getLogger(__name__)
 
@@ -71,15 +73,32 @@ def _caller(name: str, label: str) -> Any:
         response_schema: Any,
         system_instruction: str,
         temperature: float = 0.0,
+        images: Sequence[ImageInput] = (),
     ) -> tuple[str, Usage]:
         """호출 1회. 모델 ID·토큰·지연을 남긴다."""
+        content: Any = prompt
+        if images:
+            # 이미지를 데이터 주소로 앞에, 지시를 뒤에 둔다. 조각 순서가 곧 위에서 아래 순서다
+            content = [
+                *(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{image.mime_type};base64,"
+                            + base64.b64encode(image.data).decode("ascii")
+                        },
+                    }
+                    for image in images
+                ),
+                {"type": "text", "text": prompt},
+            ]
         started = time.monotonic()
         try:
             response = await client.chat.completions.parse(
                 model=model,
                 messages=[
                     {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": content},
                 ],
                 response_format=response_schema,
                 temperature=temperature,

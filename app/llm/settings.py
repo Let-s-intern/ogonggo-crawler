@@ -44,6 +44,7 @@ FEATURE_LABELS: dict[str, str] = {
     "selector_generate": "셀렉터 생성",
     "selector_repair": "AI 수정",
     "classify": "본문 분류",
+    "image_read": "이미지 읽기",
 }
 
 

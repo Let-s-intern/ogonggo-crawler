@@ -13,13 +13,15 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Sequence
 from typing import Any
 
 from google import genai
 from google.genai import errors as genai_errors
+from google.genai import types
 
 from app.config import Settings, get_settings
-from app.llm.base import LlmCallError, Provider, Usage, log_usage
+from app.llm.base import ImageInput, LlmCallError, Provider, Usage, log_usage
 
 logger = logging.getLogger(__name__)
 
@@ -45,17 +47,28 @@ async def call_model(
     response_schema: Any,
     system_instruction: str,
     temperature: float = 0.0,
+    images: Sequence[ImageInput] = (),
 ) -> tuple[str, Usage]:
     """호출 1회. 모델 ID·토큰·지연을 남긴다.
 
     `kind` 는 로그에서 기능을 가르는 이름이다. 같은 값이 `llm_calls.feature` 로도 들어가서,
     나중에 "무엇이 토큰을 썼나" 를 기능별로 셀 수 있다 (`app/llm/log.py`).
     """
+    contents: Any = prompt
+    if images:
+        # 이미지를 앞에, 지시를 뒤에 둔다. 조각 순서가 곧 위에서 아래 순서다
+        contents = [
+            *(
+                types.Part.from_bytes(data=image.data, mime_type=image.mime_type)
+                for image in images
+            ),
+            prompt,
+        ]
     started = time.monotonic()
     try:
         response = await client.aio.models.generate_content(
             model=model,
-            contents=prompt,
+            contents=contents,
             config={
                 "system_instruction": system_instruction,
                 "response_mime_type": "application/json",
