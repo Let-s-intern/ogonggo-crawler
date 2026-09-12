@@ -137,3 +137,21 @@ async def test_분류가_나누면_정규화_표에도_나뉘어_들어간다(co
         (1, f"{TITLE} - 로봇 SW 개발", f"{URL}#1"),
         (2, f"{TITLE} - 비전 AI 연구", f"{URL}#2"),
     ]
+
+
+def test_조직_이름이_붙은_직무는_제목과_직무_칸에서_한_줄로_이어진다(
+    conn: sqlite3.Connection,
+) -> None:
+    """LG 처럼 다른 사업부에 같은 직무가 있으면 조직 이름이 함께 와야 제목이 겹치지 않는다."""
+    conn.executemany(
+        "INSERT INTO job_classifications (raw_job_id, part, part_role, job_role, model)"
+        " VALUES (1, ?, ?, ?, 'model')",
+        [(1, "HS사업본부\n기계", "HS사업본부\n기계"), (2, "MS사업본부\n기계", "MS사업본부\n기계")],
+    )
+
+    rewrite_one(conn, 1, load_rules(conn))
+
+    assert normalized(conn, "part, title, job_role") == [
+        (1, f"{TITLE} - HS사업본부 기계", "HS사업본부 기계"),
+        (2, f"{TITLE} - MS사업본부 기계", "MS사업본부 기계"),
+    ]

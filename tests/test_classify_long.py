@@ -15,8 +15,15 @@ import pytest
 
 from app import db
 from app.classify.batch import ClassifyProgress, classify_ids
-from app.classify.classifier import MAX_BODY_CHARS, MAX_OUTLINE_CHARS, classify_body
-from app.classify.pieces import to_ranges
+from app.classify.classifier import (
+    MAX_BODY_CHARS,
+    MAX_OUTLINE_CHARS,
+    build_outline_prompt,
+    build_part_prompt,
+    build_prompt,
+    classify_body,
+)
+from app.classify.pieces import number_lines, to_ranges
 from app.classify.schema import ClassifySchemaError, Outline, parse_outline
 from app.config import Settings
 from tests.classify_fakes import pieces, response
@@ -219,3 +226,13 @@ async def test_직무마다_보낸_줄이_분류_행에_남는다(conn: sqlite3.
         (1, "기계", "[[1, 4]]"),
         (2, "HR", "[[1, 2], [5, 6]]"),
     ]
+
+
+def test_세_프롬프트_모두_조직_아래_직무면_조직_이름_줄도_함께_보내라고_한다() -> None:
+    """한 번에 나눌 때도, 짜임을 물을 때도, 직무마다 부를 때도 같은 규칙이어야 제목이 안 겹친다."""
+    prompt, _ = build_prompt(BODY[:1000], TITLE)
+    outline, _ = build_outline_prompt(BODY, TITLE)
+    part = build_part_prompt(number_lines(TITLE, BODY), [1, 2, 3, 4])
+
+    for text in (prompt, outline, part):
+        assert "조직 이름이 적힌 줄" in text

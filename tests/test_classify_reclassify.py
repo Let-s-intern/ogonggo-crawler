@@ -164,3 +164,15 @@ def test_저장된_줄은_번호로_풀어_읽고_읽지_못하면_줄이_없는
         StoredPart(part=1, role="기계", lines=(1, 2, 3, 4)),
         StoredPart(part=2, role="", lines=()),
     ]
+
+
+async def test_조직_이름이_붙은_직무_목록도_한_줄로_알려준다(conn: sqlite3.Connection) -> None:
+    store_parts(
+        conn, SHORT, [(1, "로봇센터\n로봇 SW 개발", None), (2, "AI센터\n비전 AI 연구", None)]
+    )
+
+    _, client = await reclassify(conn, SHORT, split_posting.SPLIT)
+
+    prompt = client.calls[0]["contents"]
+    assert "1. 로봇센터 로봇 SW 개발" in prompt
+    assert "2. AI센터 비전 AI 연구" in prompt

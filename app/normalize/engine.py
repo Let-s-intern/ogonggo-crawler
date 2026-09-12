@@ -368,6 +368,9 @@ def normalized_values(
     나눈 공고는 제목 뒤에 직무 이름을 붙이고(`원래 제목 - 직무 이름`) 주소 뒤에 번호를
     붙인다(`...#2`) (2026-09-11 결정). 주소가 같으면 소비 측이 같은 공고로 보고 뒤의 것을
     버린다. 사람이 고친 제목은 그 위에 덮인다.
+
+    직무가 조직 아래 나뉜 공고는 직무 이름에 조직 이름 줄이 함께 온다(`HS사업본부` / `기계`).
+    제목과 `job_role` 에는 한 줄로 이어 넣는다 — 줄바꿈이 든 제목은 목록에서 잘려 보인다.
     """
     part = part or PostingPart()
     source_url, data = read_raw(conn, raw_job_id)
@@ -377,11 +380,14 @@ def normalized_values(
         read_parent_company(conn, raw_job_id),
         read_classification(conn, raw_job_id, part.number),
     )
+    if fields.get("job_role"):
+        fields["job_role"] = " ".join(str(fields["job_role"]).split())
     if part.split:
         source_url = f"{source_url}#{part.number}"
-        if part.role:
+        role = " ".join(part.role.split())
+        if role:
             title = fields.get("title")
-            fields["title"] = f"{title} - {part.role}" if title else part.role
+            fields["title"] = f"{title} - {role}" if title else role
     return source_url, apply_overrides(fields, read_overrides(conn, raw_job_id, part.number))
 
 
