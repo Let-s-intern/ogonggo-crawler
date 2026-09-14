@@ -196,6 +196,13 @@ EXPECTED_COLUMNS = {
         "created_at",
         "updated_at",
     },
+    # 0032 가 만든 분류 AI 규칙의 판. 저장마다 한 행이고 고치거나 지우지 않는다
+    "classify_rule_versions": {
+        "id",
+        "rules_json",
+        "note",
+        "created_at",
+    },
 }
 
 # 사람이 고칠 수 있는 필드. `source_url` 과 `delivered_at` 은 여기에 없다
@@ -247,6 +254,7 @@ ALL_VERSIONS = [
     "0029",
     "0030",
     "0031",
+    "0032",
 ]
 
 

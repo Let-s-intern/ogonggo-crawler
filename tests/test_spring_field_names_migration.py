@@ -39,12 +39,18 @@ RAW = {
 }
 
 
+def _down_to_0030(connection: sqlite3.Connection) -> None:
+    """0031 과 그 뒤를 되돌린다. 뒤에 마이그레이션이 붙어도 걸음 수를 0031 의 자리에서 센다."""
+    applied = db.applied_versions(connection)
+    db.migrate_down(connection, steps=len(applied) - applied.index("0031"))
+
+
 @pytest.fixture
 def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     """0030 까지 올린 DB 에 옛 이름으로 한 벌을 넣는다."""
     connection = db.connect(tmp_path / "rename.db")
     db.migrate_up(connection)
-    db.migrate_down(connection, steps=1)
+    _down_to_0030(connection)
     assert db.applied_versions(connection)[-1] == "0030"
     connection.execute(
         """
@@ -179,7 +185,7 @@ def test_old_names_are_rejected_after_up(conn: sqlite3.Connection) -> None:
 
 def test_down_restores_the_old_names(conn: sqlite3.Connection) -> None:
     db.migrate_up(conn)
-    db.migrate_down(conn, steps=1)
+    _down_to_0030(conn)
 
     job = conn.execute("SELECT * FROM normalized_jobs").fetchone()
     assert (job["company"], job["deadline"], job["job_minor"]) == (

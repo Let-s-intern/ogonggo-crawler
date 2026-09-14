@@ -37,10 +37,14 @@ def record_call(
     usage: Usage,
     ok: bool = True,
     error: str = "",
+    rules_version: int | None = None,
 ) -> int:
     """호출 하나를 남긴다. 실패해도 예외를 올리지 않고 0 을 돌려준다.
 
     실패한 호출도 남긴다. 토큰을 쓰고 실패하는 경우가 있어서 빼고 세면 합이 실제와 어긋난다.
+
+    `rules_version` 은 분류 호출이 쓴 AI 규칙의 판이다. 판이 없는 호출(셀렉터 생성, 저장하지 않은
+    규칙으로 돌린 시험)은 NULL 이다 (`migrations/0032_classify_rule_versions.sql`).
 
     제공자 이름은 `usage` 가 들고 온다. 여기서 설정을 다시 읽어 알아내면 호출과 기록 사이에
     설정이 바뀌었을 때 기록이 거짓이 된다 (`app/llm/base.py`).
@@ -50,8 +54,8 @@ def record_call(
             """
             INSERT INTO llm_calls
                    (provider, model, feature, input_tokens, output_tokens, total_tokens,
-                    latency_ms, ok, error)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    latency_ms, ok, error, rules_version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 usage.provider,
@@ -63,6 +67,7 @@ def record_call(
                 usage.latency_ms,
                 int(ok),
                 error[:500],
+                rules_version,
             ),
         )
     except sqlite3.Error as exc:

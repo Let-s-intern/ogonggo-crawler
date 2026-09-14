@@ -346,8 +346,12 @@ def save_classification(
     part: int = 1,
     part_role: str | None = None,
     part_lines: Sequence[int] = (),
+    rules_version: int | None = None,
 ) -> None:
     """분류 결과를 넣거나 덮는다. 빈 값은 NULL 로 들어간다.
+
+    `rules_version` 은 이 결과를 만든 AI 규칙의 판이다. 0 은 코드의 기본 규칙이다
+    (`migrations/0032_classify_rule_versions.sql`).
 
     `part` 는 공고를 나눈 몇 번째 공고인지다. 나누지 않은 공고는 1번 하나다. `part_role` 은
     나눈 직무의 이름이고 나누지 않은 공고는 None 이다. `part_lines` 는 긴 공고에서 이 공고를
@@ -367,13 +371,17 @@ def save_classification(
         "evidence_json",
         "part_role",
         "part_lines",
+        "rules_version",
     )
-    values = [fields.get(name, "").strip() or None for name in STORED_CLASSIFY_FIELDS]
+    values: list[str | int | None] = [
+        fields.get(name, "").strip() or None for name in STORED_CLASSIFY_FIELDS
+    ]
     values.append(", ".join(dropped))
     values.append(model)
     values.append(json.dumps(dict(evidence or {}), ensure_ascii=False))
     values.append(part_role)
     values.append(json.dumps(to_ranges(part_lines)) if part_lines else None)
+    values.append(rules_version)
     assignments = ", ".join(f"{name} = excluded.{name}" for name in columns)
     conn.execute(
         f"""

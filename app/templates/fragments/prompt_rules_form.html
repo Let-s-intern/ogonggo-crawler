@@ -1,0 +1,178 @@
+{# AI 규칙 편집. 저장·되돌리기가 모두 이 조각으로 돌아온다 (`app/api/ui_prompt_rules.py`).
+
+   저장이 거절되면 친 내용을 그대로 되그린다. 예시 표 끝의 빈 줄은 새 예시를 적는 자리이고, 두 칸을
+   모두 비운 줄은 저장하지 않는다.
+
+   시험 분류 단추는 편집 폼 안에 있다 — 저장하지 않은 규칙을 그대로 보내야 해서다. 이력의 되돌리기
+   폼은 폼 안에 폼을 둘 수 없어 편집 폼 밖에 둔다. #}
+{% from "macros.html" import failure, notice_box, state, wait, empty, empty_row, blank %}
+{% if error %}
+{{ failure(error.reason, error.message, title="저장하지 못했다") }}
+{% endif %}
+{% if message %}
+{{ notice_box(message) }}
+{% endif %}
+
+<p>
+  지금 규칙:
+  {% if version is none %}
+  {{ state("읽지 못함", "bad") }}
+  {% elif version.number == 0 %}
+  판 0 (코드의 기본 규칙. 아직 저장한 판이 없다)
+  {% else %}
+  판 {{ version.number }}{% if version.note %} — {{ version.note }}{% endif %}
+  {% endif %}
+</p>
+
+<form id="prompt-rules-editor" hx-put="/ui/prompt-rules" hx-target="#prompt-rules"
+      hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
+  <fieldset>
+    <legend>공통 규칙</legend>
+    <p>
+      <label for="prompt-rule-common">모든 칸에 걸리는 규칙</label>
+      <br>
+      <textarea id="prompt-rule-common" name="common" rows="8" class="w-full"
+                maxlength="{{ limits.common }}">{{ rules.common }}</textarea>
+      <br>
+      <span class="text-sm text-slate-600">
+        한 줄에 규칙 하나를 <code>- </code> 로 시작해 적는다. {{ limits.common }}자까지 적는다
+      </span>
+    </p>
+  </fieldset>
+
+  {% for name, label, kind in fields %}
+  {% set rule = rules.fields[name] %}
+  <fieldset id="prompt-rule-{{ name }}">
+    <legend>{{ label }} <code>{{ name }}</code> · {{ kind }}</legend>
+    <p>
+      <label for="prompt-rule-text-{{ name }}">규칙 글</label>
+      <br>
+      <textarea id="prompt-rule-text-{{ name }}" name="rule__{{ name }}" rows="3" class="w-full"
+                maxlength="{{ limits.rule }}">{{ rule.rule }}</textarea>
+    </p>
+    <div class="table-scroll">
+    <table class="data-table">
+      <caption>{{ label }} 예시. 원문에 이런 문장이 있으면 이 값을 넣는다. {{ limits.examples }}개까지 둔다</caption>
+      <thead>
+        <tr>
+          <th scope="col">원문</th>
+          <th scope="col">넣을 값</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for example in rule.examples %}
+        <tr>
+          <td><input name="example_source__{{ name }}" type="text" class="w-full"
+                     value="{{ example.source }}" aria-label="{{ label }} 예시 {{ loop.index }} 원문"></td>
+          <td><input name="example_value__{{ name }}" type="text" class="w-full"
+                     value="{{ example.value }}" aria-label="{{ label }} 예시 {{ loop.index }} 넣을 값"></td>
+        </tr>
+        {% endfor %}
+        {% for _ in blank_rows %}
+        <tr>
+          <td><input name="example_source__{{ name }}" type="text" class="w-full"
+                     aria-label="{{ label }} 새 예시 원문"></td>
+          <td><input name="example_value__{{ name }}" type="text" class="w-full"
+                     aria-label="{{ label }} 새 예시 넣을 값"></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </fieldset>
+  {% endfor %}
+
+  <fieldset>
+    <legend>새 판으로 저장</legend>
+    <p>
+      <label for="prompt-rule-note">바꾼 이유</label>
+      <br>
+      <input id="prompt-rule-note" name="note" type="text" size="60" maxlength="{{ limits.note }}">
+      <br>
+      <span class="text-sm text-slate-600">판 목록에 남는다. 비워도 저장된다</span>
+    </p>
+    <p>
+      <button type="submit">새 판으로 저장</button>
+      {{ wait("저장하는 중") }}
+    </p>
+  </fieldset>
+
+  <fieldset>
+    <legend>저장하기 전에 공고 하나로 시험</legend>
+    <p>
+      위에 적은 규칙으로 공고 하나를 다시 분류해 지금 저장된 값과 칸마다 비교한다. 저장하지 않은 규칙도
+      그대로 쓴다. 시험 결과는 저장하지 않는다.
+    </p>
+    <p class="text-sm text-slate-600">모델을 실제로 부르므로 토큰이 든다. 호출은 모델 호출 기록에 남는다</p>
+    {% if choices %}
+    <p>
+      <label for="prompt-rule-try-job">공고 (최근에 분류된 것부터)</label>
+      <br>
+      <select id="prompt-rule-try-job" name="raw_job_id">
+        {% for choice in choices %}
+        <option value="{{ choice.raw_job_id }}">#{{ choice.raw_job_id }} {{ choice.title or "(제목 없음)" }}{% if choice.rules_version is not none %} · 판 {{ choice.rules_version }} 으로 분류됨{% endif %}</option>
+        {% endfor %}
+      </select>
+    </p>
+    <p>
+      <button type="button" hx-post="/ui/prompt-rules/try" hx-target="#prompt-rules-try"
+              hx-swap="innerHTML" hx-disabled-elt="this" hx-indicator="#prompt-rules-try-wait">시험 분류</button>
+      {{ wait("모델을 부르는 중", id="prompt-rules-try-wait") }}
+    </p>
+    {% else %}
+    {{ empty("분류된 공고가 아직 없다. 분류를 한 번 돌리면 여기서 공고를 골라 시험할 수 있다") }}
+    {% endif %}
+    <div id="prompt-rules-try"></div>
+  </fieldset>
+</form>
+
+<h4>저장한 판</h4>
+<div class="table-scroll">
+<table class="data-table">
+  <caption>최근 것부터. 되돌리면 그 판을 복사한 새 판이 생긴다 — 옛 판은 지우지 않는다</caption>
+  <thead>
+    <tr>
+      <th scope="col" class="num">판</th>
+      <th scope="col">바꾼 이유</th>
+      <th scope="col">저장 시각</th>
+      <th scope="col">동작</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for entry in history %}
+    <tr>
+      <td class="num">{{ entry.number }}</td>
+      <td class="cell-text">{{ entry.note or blank() }}</td>
+      <td>{{ entry.created_at | as_time }}</td>
+      <td>
+        {% if loop.first %}
+        {{ state("지금 규칙", "ok") }}
+        {% else %}
+        <form hx-post="/ui/prompt-rules/{{ entry.number }}/restore" hx-target="#prompt-rules"
+              hx-swap="innerHTML" hx-disabled-elt="find button"
+              hx-confirm="판 {{ entry.number }} 을 새 판으로 복사해 지금 규칙으로 쓴다. 계속할까">
+          <button type="submit">이 판으로 되돌리기</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    {{ empty_row(4, "저장한 판이 아직 없다. 지금은 코드의 기본 규칙(판 0)으로 분류한다. 위에서 고쳐 저장하면 판 1 이 생긴다") }}
+    {% endfor %}
+    {% if history %}
+    <tr>
+      <td class="num">0</td>
+      <td class="cell-text">코드의 기본 규칙</td>
+      <td>{{ blank("저장한 적 없음") }}</td>
+      <td>
+        <form hx-post="/ui/prompt-rules/0/restore" hx-target="#prompt-rules"
+              hx-swap="innerHTML" hx-disabled-elt="find button"
+              hx-confirm="코드의 기본 규칙을 새 판으로 복사해 지금 규칙으로 쓴다. 계속할까">
+          <button type="submit">기본 규칙으로 되돌리기</button>
+        </form>
+      </td>
+    </tr>
+    {% endif %}
+  </tbody>
+</table>
+</div>

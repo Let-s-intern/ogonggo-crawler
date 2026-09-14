@@ -1,10 +1,11 @@
-"""검수 화면의 직무 대분류·소분류 칸 (5.1).
+"""검수 화면의 직군·직무 칸 (5.1).
 
-실사이트에 나가지 않는다. 저장된 행을 넣고 화면 경로로만 연다.
+실사이트에 나가지 않는다. 저장된 행을 넣고 화면 경로로만 연다. 이름표는 Spring 과 같은 `직군`/`직무`
+다 (2026-09-14 결정). 옛 이름표는 `직무 대분류`/`직무 소분류` 였다.
 
 | 확인 | 깨지면 |
 |---|---|
-| `직무` 와 `직무 대분류`/`직무 소분류` 머리글이 따로 있다 | 자유 텍스트와 닫힌 목록이 헷갈린다 |
+| `직군`/`직무` 머리글이 한 번씩 있다 | 옛 자유 글자 직무 열이 되살아나 두 `직무` 가 헷갈린다 |
 | 분류된 건은 값이, 안 된 건은 `값 없음` 이다 | 분류 전과 분류가 빈 것을 구분할 수 없다 |
 """
 
@@ -107,13 +108,14 @@ def _table(client: TestClient, **params: str) -> str:
     return found.group(0)
 
 
-def test_직무_대분류_소분류_머리글이_있다(client: TestClient) -> None:
+def test_직군_직무_머리글이_있다(client: TestClient) -> None:
     table = _table(client)
 
-    # 제목에서 옮기던 자유 글자 직무 열은 0031 이 지웠다
-    assert ">직무</th>" not in table
-    assert ">직무 대분류</th>" in table
-    assert ">직무 소분류</th>" in table
+    # 제목에서 옮기던 자유 글자 직무 열은 0031 이 지웠다. 그 뒤로 `직무` 는 분류표의 소분류다
+    assert table.count(">직군</th>") == 1
+    assert table.count(">직무</th>") == 1
+    assert "직무 대분류" not in table
+    assert "직무 소분류" not in table
 
 
 def test_분류된_건은_값이_안된_건은_값없음이_나온다(client: TestClient) -> None:

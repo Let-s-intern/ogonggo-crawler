@@ -430,8 +430,9 @@ def test_되돌리면_이력_표가_사라지고_recollect_실행은_수동으�
         "INSERT INTO crawl_runs (workflow_id, trigger) VALUES (?, 'recollect')", (workflow_id,)
     )
 
-    # 0031 이 뒤에 붙었으니 두 걸음을 되돌려야 0030 이 풀린다
-    db.migrate_down(conn, steps=2)
+    # 뒤에 붙은 마이그레이션까지 되돌려야 0030 이 풀린다. 걸음 수는 0030 의 자리에서 센다
+    applied = db.applied_versions(conn)
+    db.migrate_down(conn, steps=len(applied) - applied.index("0030"))
 
     assert conn.execute("SELECT trigger FROM crawl_runs").fetchone()["trigger"] == "manual"
     tables = {

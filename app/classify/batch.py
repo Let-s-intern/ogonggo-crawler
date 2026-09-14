@@ -26,6 +26,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app import taxonomy
+from app.classify import prompt_rules
 from app.classify.classifier import ClassifyError, chosen, classify_body
 from app.classify.schema import build_classification_model
 from app.classify.store import (
@@ -212,7 +213,10 @@ async def classify_ids(
         provider, model = chosen(resolved)
         resolved_client = client or _client(resolved)
         rules = load_rules(conn)
-    except (ClassifyError, NormalizeError) as exc:
+        # AI 규칙도 배치마다 한 번 읽는다. 도중에 화면에서 저장해도 이 실행은 시작할 때의 판으로
+        # 끝난다 — 한 배치 안에서 판이 섞이면 결과에 남긴 판 번호를 믿을 수 없다
+        prompt_version = prompt_rules.current(conn)
+    except (ClassifyError, NormalizeError, prompt_rules.RuleSetError) as exc:
         # 클라이언트를 못 만들거나 규칙을 못 읽으면 어떤 건도 처리할 수 없다. 아무것도 쓰지
         # 않고 끝낸다
         progress.note(str(exc))
@@ -241,7 +245,7 @@ async def classify_ids(
         def counted(usage: Usage) -> None:
             # 호출 하나가 행 하나다. 깨진 응답으로 한 번 더 물었으면 두 행이 남는다
             progress.count(usage)
-            record_call(conn, feature=CLASSIFY, usage=usage)
+            record_call(conn, feature=CLASSIFY, usage=usage, rules_version=prompt_version.number)
 
         try:
             result = await classify_body(
@@ -254,9 +258,10 @@ async def classify_ids(
                 settings=resolved,
                 client=resolved_client,
                 on_call=counted,
+                rules=prompt_version.rules,
             )
         except ClassifyError as exc:
-            _note_failed_call(conn, provider.name, model, exc)
+            _note_failed_call(conn, provider.name, model, exc, prompt_version.number)
             progress.note(f"raw_jobs {raw_job_id}: {exc}")
             continue
 
@@ -278,6 +283,7 @@ async def classify_ids(
                 part=part,
                 part_role=(role or None) if split else None,
                 part_lines=posting.sent_lines,
+                rules_version=prompt_version.number,
             )
             progress.dropped += len(posting.dropped)
             # 같은 호출의 다른 갈래다. 값이 있는 칸에 원문이 다른 값을 낸 것은 여기로 간다 —
@@ -320,7 +326,11 @@ def _client(settings: Settings) -> Any:
 
 
 def _note_failed_call(
-    conn: sqlite3.Connection, provider: str, model: str, exc: ClassifyError
+    conn: sqlite3.Connection,
+    provider: str,
+    model: str,
+    exc: ClassifyError,
+    rules_version: int | None = None,
 ) -> None:
     """응답을 받지 못한 호출도 남긴다. 토큰은 알 수 없어 0 이다.
 
@@ -343,6 +353,7 @@ def _note_failed_call(
         ),
         ok=False,
         error=f"{exc.reason}: {exc}",
+        rules_version=rules_version,
     )
 
 

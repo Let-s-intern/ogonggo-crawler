@@ -47,8 +47,10 @@ FIXED_COLUMNS = 9
 
 # 0016 이 `normalized_jobs` 에서 지운 칸의 이름표. 표에 남아 있으면 안 된다.
 # 모집인원은 0028 이 `recruitment_headcount` 로 다시 더해 여기서 뺐다 — 옛 `headcount` 가
-# 아니라 분류가 채우는 새 칸이다 (`migrations/0028_add_posting_detail_fields.sql`)
-DROPPED_LABELS = ("부서", "직군")
+# 아니라 분류가 채우는 새 칸이다 (`migrations/0028_add_posting_detail_fields.sql`).
+# 직군은 2026-09-14 부터 분류표 대분류 `job_field` 의 이름표라 여기서 뺐다 — 0016 이 지운 자유
+# 글자 직군 칸과 이름만 같다
+DROPPED_LABELS = ("부서",)
 
 
 @pytest.fixture

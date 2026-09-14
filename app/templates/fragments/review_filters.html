@@ -39,7 +39,7 @@
 
       {# 대분류만 먼저 둔다. 소분류는 대분류에 종속되므로 대분류를 고르지 않고는 좁힐 수
          없다(5.2, PRD 5절). 둘 다 닫힌 목록에서 고르는 값이다 #}
-      <label for="review-job-major">직무 대분류</label>
+      <label for="review-job-major">직군</label>
       <select id="review-job-major" name="job_field">
         <option value="">전체</option>
         {% for name in job_majors %}

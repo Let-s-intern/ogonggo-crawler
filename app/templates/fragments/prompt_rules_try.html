@@ -1,0 +1,38 @@
+{# 시험 분류 결과. 지금 저장된 값과 폼의 규칙으로 다시 뽑은 값을 칸마다 나란히 둔다.
+   아무것도 저장하지 않았다는 것을 결과 머리에 적는다 (`app/api/ui_prompt_rules.py`). #}
+{% from "macros.html" import failure, notice_box, state, blank %}
+{% if error %}
+{{ failure(error.reason, error.message, title="시험하지 못했다") }}
+{% else %}
+{{ notice_box("공고 #" ~ raw_job_id ~ " " ~ (title or "(제목 없음)") ~ " — 모델 호출 " ~ calls ~ "번, 토큰 " ~ tokens ~ ". 결과는 저장하지 않았다") }}
+{% for note in notes %}
+<p class="text-sm text-slate-600">{{ note }}</p>
+{% endfor %}
+{% for part in parts %}
+<div class="table-scroll">
+<table class="data-table">
+  <caption>
+    {% if parts | length > 1 %}{{ part.part }}번 공고{% if part.role %} {{ part.role }}{% endif %} — {% endif %}달라진 칸 {{ part.changed_count }}개{% if not part.classified %}. 저장된 분류가 없어 지금 값이 전부 비어 있다{% endif %}
+  </caption>
+  <thead>
+    <tr>
+      <th scope="col">칸</th>
+      <th scope="col">지금 값</th>
+      <th scope="col">시험 값</th>
+      <th scope="col">비교</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for field in part.fields %}
+    <tr id="prompt-rules-try-{{ part.part }}-{{ field.name }}">
+      <th scope="row">{{ field.label }}</th>
+      <td class="cell-text whitespace-pre-line">{{ field.stored or blank("값 없음") }}</td>
+      <td class="cell-text whitespace-pre-line">{{ field.trial or blank("값 없음") }}</td>
+      <td>{{ state("달라짐", "warn") if field.changed else state("같음") }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endfor %}
+{% endif %}

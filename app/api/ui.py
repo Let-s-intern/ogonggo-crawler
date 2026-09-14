@@ -79,6 +79,7 @@ NAV_GROUPS: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
             ("/rules", "정규화 규칙"),
             ("/side", "부가 워크플로우"),
             ("/taxonomy", "직무 분류"),
+            ("/prompt-rules", "AI 규칙"),
         ),
     ),
     (
@@ -167,6 +168,16 @@ NEXT_STEPS: dict[str, str] = {
     "not_found": "그 행이 없다. 목록을 다시 불러 확인한다",
     "invalid_input": "보낸 값이 형식에 맞지 않는다. 표시된 항목을 고쳐 다시 보낸다",
     "server_error": "서버가 처리하지 못했다. 서버 로그에 자세한 내용이 남는다",
+    # AI 규칙 화면 (`app/classify/prompt_rules.py`)
+    "unchanged": "지금 판과 같은 규칙이다. 고친 것이 없으면 저장할 필요가 없다",
+    "too_long": "규칙이 길다. 줄이거나 예시로 옮긴다 — 규칙은 공고마다 프롬프트에 실린다",
+    "too_many": "예시가 많다. 비슷한 예시를 하나로 합친다",
+    "half_example": "예시 줄은 원문과 넣을 값을 둘 다 적거나 둘 다 비운다",
+    "unknown_rule_field": "화면에 없는 칸 이름이 왔다. 화면을 새로 불러 다시 저장한다",
+    "broken_version": "가장 최근 판을 읽지 못한다. 화면에서 규칙을 고쳐 새 판으로 저장하면 "
+    "그 판을 대신한다",
+    "no_posting": "시험할 공고를 고른다. 목록이 비었으면 분류를 한 번 돌린다",
+    "empty_body": "그 공고에 원문도 본문도 없다. 다른 공고를 고른다",
 }
 
 
@@ -483,6 +494,12 @@ def taxonomy_page(request: Request) -> HTMLResponse:
     """직무 분류 체계 화면. `/rules` 와 같은 묶음이다 — 분류 체계는 정규화 파이프라인의
     입력이지 수집이 아니다."""
     return render_page(request, "pages/taxonomy.html")
+
+
+@router.get("/prompt-rules", response_class=HTMLResponse)
+def prompt_rules_page(request: Request) -> HTMLResponse:
+    """분류 AI 에게 주는 칸별·공통 규칙 화면. 직무 분류와 같은 묶음이다 — 둘 다 분류의 입력이다."""
+    return render_page(request, "pages/prompt_rules.html")
 
 
 @router.get("/companies", response_class=HTMLResponse)

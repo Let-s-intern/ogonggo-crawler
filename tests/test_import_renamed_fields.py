@@ -52,7 +52,8 @@ def old_upload(path: pathlib.Path) -> pathlib.Path:
     """0030 까지 올린 파일. 셀렉터·원본·규칙·보정이 전부 옛 이름이다."""
     upload = db.connect(path)
     db.migrate_up(upload)
-    db.migrate_down(upload, steps=1)
+    applied = db.applied_versions(upload)
+    db.migrate_down(upload, steps=len(applied) - applied.index("0031"))
     upload.execute(
         """
         INSERT INTO crawlers (name, list_url, detail_url, selectors_json, list_mode,

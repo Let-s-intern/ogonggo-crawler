@@ -56,6 +56,16 @@ from app.classify.pieces import (
     resolve,
     strip_line_marks,
 )
+from app.classify.prompt_rules import (
+    DEFAULT_RULES,
+    EXTRACT,
+    JUDGE,
+    TAXONOMY,
+    RuleSet,
+    names_of,
+    render_common,
+    render_fields,
+)
 from app.classify.schema import (
     CLASSIFY_FIELDS,
     COLLECTED_REVIEW_FIELDS,
@@ -137,35 +147,13 @@ _PROMPT = """아래는 채용공고의 제목과 본문이다. 줄마다 앞에 
 
 # 뽑는 칸 — 어느 줄의 어느 부분인지를 조각으로 답한다
 
-- position_name: 직무. **직무가 하나인 공고는 제목([0])에서만 가져온다.** 그 공고가 어떤 일을
-  할 사람을 뽑는지 제목이 말하는 부분이다. 회사명·연도·`경력사원 채용`·`영입` 같은 말은
-  빼고 직무를 가리키는 부분만 남긴다. 제목이 직무를 말하지 않으면(`전 직군 채용`,
-  `신입사원 채용`) 빈 목록으로 둔다. **직무마다 나눈 공고는 본문에서 그 직무의 이름이 적힌
-  줄에서 가져온다**(`[Finance]` 이면 `Finance`). 직무가 사업부·조직 아래 나뉘어 있으면 그
-  조직 이름이 적힌 줄도 조각으로 함께 낸다 — 조직 이름 조각을 먼저, 직무 이름 조각을 다음에
-  (`orgName: HS사업본부` 와 `[기계]` 이면 `HS사업본부`, `기계`). 다른 조직에 같은 이름의
-  직무가 있어 조직 이름이 없으면 어느 공고인지 알 수 없다
-- responsibilities: 주요 업무·담당 업무
-- qualifications: 자격요건·지원자격
-- preferred_qualifications: 우대사항
-- hiring_process: 전형 절차
-- region: 근무지
-- company_and_team_introduction: 회사·팀 소개. **공고에 `회사 소개`·`팀 소개`·`회사 및
-  팀 소개` 같은 소제목으로 된 구역이 있을 때만** 그 구역의 내용을 가져온다. 그런 구역이
-  없으면 빈 목록으로 둔다. 다른 곳에 흩어진 회사 소개 문장은 모아 오지 않는다
-- compensation: 급여·처우·연봉
-- benefits: 복지·혜택
-- recruitment_headcount: 모집 인원. 적힌 그대로 옮긴다(`0명`, `O명`, `00명` 도 그대로)
-- recruitment_notice: 위 어디에도 맞지 않는, **이 공고만의** 안내(전형 유의사항, 제출 서류,
-  보훈·장애인 우대 문구 등)
+{extract_rules}
 
 답하는 모양:
 - 칸마다 조각 목록으로 답한다. 조각 하나는 {{"line": 줄 번호, "text": 그 줄에서 이 칸에
   해당하는 부분}} 이다. 원문에 없는 칸은 빈 목록([])으로 둔다. 짐작해서 채우지 않는다.
 - **text 는 그 줄에 적힌 글자 그대로 옮긴다.** 단어를 바꾸거나, 요약하거나, 줄이거나,
   오타를 고치지 않는다. 줄 앞의 [번호] 는 text 에 넣지 않는다.
-- 공고의 소제목이 칸 이름과 달라도 된다. `지원자격`·`필수요건`·`이런 분을 찾아요` 아래
-  내용은 qualifications 다. 소제목 자체는 조각에 넣지 않는다.
 - 한 줄에 소제목과 내용이 같이 있으면(`주요업무 : 결제 서버 개발`) 내용 부분만 옮긴다
   (`결제 서버 개발`).
 - 한 줄에 여러 칸이 섞여 있으면(`근무지: 성남 | 고용형태: 정규직`) 그 칸에 해당하는
@@ -174,27 +162,14 @@ _PROMPT = """아래는 채용공고의 제목과 본문이다. 줄마다 앞에 
   값인지 알려 주는 표시다. 키 이름은 옮기지 않고 값 부분만 옮긴다(`본사(서울 63빌딩)`).
 - 내용이 여러 줄이면 줄마다 조각을 하나씩 낸다. 본문 여러 곳에 흩어져 있으면 그 줄들을
   모두 조각으로 낸다.
-- 어느 칸에도 맞지 않는 내용만 recruitment_notice 에 모은다. 본문 전체를 recruitment_notice 에 넣지
-  않는다.
-- **슬로건·화면 UI 문구는 어느 칸에도 옮기지 않는다.** "간편하면서도 안전한 금융을
-  만든다" 같은 한 줄 슬로건, "N개 계열사·N개의 포지션이 열려 있어요"·"1개 포지션" 같은
-  화면 카운트 문구는 이 공고 하나만 말하는 정보가 아니다. 회사·팀 소개는 소제목 구역이
-  있을 때 company_and_team_introduction 에만 담고, 다른 칸에는 옮기지 않는다. 공고 자체에
-  대한 안내만 recruitment_notice 에 담는다.
-
+{common_rules}
 # 판정하는 칸 — 본문을 읽고 목록에서 고른다
 
-- employment_type: 고용형태. {employment_type}
-- experience_type: 경력 구분. {experience_type}
-- education_level: 요구 학력. {education_level}
+{judge_rules}
 
 규칙:
-- **이 칸들은 글자가 본문에 그대로 없어도 된다.** 본문을 읽고 판단해서 고른다. `채용 후
-  정규직 전환` 이면 employment_type 은 인턴이다. `5년 이상 경험` 이면 experience_type 은
-  경력이다.
-- education_level 은 지원 자격이 요구하는 **최소 학력**을 고른다. `학사 이상`·`대졸`
-  이면 학사, `고졸 이상` 이면 고졸, `학력 무관` 이면 무관이다. 우대사항에만 있는
-  학력(`석사 우대`)은 요구 조건이 아니라 고르지 않는다. 학력을 말하지 않으면 판단불가 다.
+- **이 칸들은 글자가 본문에 그대로 없어도 된다.** 본문을 읽고 판단해서 고른다. 칸마다 적힌 예는
+  원문 문장과 그때 고를 값이다.
 - **반드시 위 목록에 있는 값만 쓴다.** 목록에 없는 값을 새로 만들지 않는다. 어디에도 맞지
   않으면 목록의 기타를, 본문만으로는 판단할 수 없으면 판단불가 를 쓴다.
 - 고른 칸마다 `employment_type_evidence` 처럼 `_evidence` 가 붙은 자리에 **그렇게 판단한
@@ -388,7 +363,9 @@ def _current_values_block(current_values: Mapping[str, str]) -> str:
     )
 
 
-def _taxonomy_block(tree: Sequence[tuple[str, tuple[str, ...]]]) -> str:
+def _taxonomy_block(
+    tree: Sequence[tuple[str, tuple[str, ...]]], rules: RuleSet = DEFAULT_RULES
+) -> str:
     """직무 분류 구역. 표가 비어 있으면(씨앗 전이거나 전부 껐으면) 빈 문자열이다.
 
     대분류·소분류를 두 단계로 나눠 묻지 않고 트리를 통째로 한 번에 보낸다(PRD
@@ -402,16 +379,11 @@ def _taxonomy_block(tree: Sequence[tuple[str, tuple[str, ...]]]) -> str:
     )
     return (
         "\n# 직무 분류 — 아래 목록에서만 고른다\n\n"
-        "job_field 는 대분류, job_role 는 그 대분류 밑의 소분류다. 목록에 없는 이름을\n"
-        "새로 만들지 않는다. 직무마다 나눈 공고는 posting 마다 그 직무를 보고 고른다.\n\n"
-        "**가능하면 항상 채운다.** 정확히 들어맞는 대분류가 없어도, 이 공고가 하는 일과\n"
-        "가장 가까운 대분류를 고른다 — 완벽히 맞는 것을 찾는 것이 아니라 다른 후보보다\n"
-        "조금이라도 더 가까운 것을 고르는 일이다. job_field 를 판단불가 로 두는 것은 본문에\n"
-        "무슨 일을 하는 사람을 뽑는지 알 만한 내용이 전혀 없을 때뿐이다.\n\n"
-        "대분류는 골랐는데 그 밑의 소분류 중 맞는 것이 없으면, 그 대분류 목록의 마지막에\n"
-        "있는 `기타`로 시작하는 소분류(예: 기타IT·개발)를 고른다 — job_role 를 판단불가 로\n"
-        "두지 않는다. job_role 는 반드시 그 job_field 줄에 적힌 소분류 중에서 고른다 —\n"
-        "다른 대분류의 소분류를 고르지 않는다.\n\n"
+        "job_field 는 대분류(직군), job_role 는 그 대분류 밑의 소분류(직무)다. 목록에 없는 이름을\n"
+        "새로 만들지 않는다. 직무마다 나눈 공고는 posting 마다 그 직무를 보고 고른다.\n"
+        "job_role 는 반드시 그 job_field 줄에 적힌 소분류 중에서 고른다 — 다른 대분류의 소분류를\n"
+        "고르지 않는다.\n\n"
+        f"{render_fields(rules, names_of(TAXONOMY))}\n\n"
         "고른 값마다 job_field_evidence / job_role_evidence 에 그렇게 판단한 본문 근거\n"
         "문장을 그대로 옮겨 적는다. `기타` 소분류를 골랐을 때도 이 공고가 그 대분류의 일을\n"
         "한다고 볼 수 있는 본문 문장을 그대로 옮겨 적는다 — 근거 문장은 항상 원문에 있는\n"
@@ -427,6 +399,7 @@ def build_prompt(
     taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]] = (),
     *,
     known_roles: Sequence[str] = (),
+    rules: RuleSet | None = None,
 ) -> tuple[str, list[str]]:
     """보낼 프롬프트와 남길 메모. 상한을 넘긴 글은 자르고 그 사실을 적는다.
 
@@ -465,6 +438,7 @@ def build_prompt(
             current_values_block=_current_values_block(current_values or {}),
             taxonomy_tree=taxonomy_tree,
             part_block=_known_roles_block(known_roles),
+            rules=rules or DEFAULT_RULES,
         ),
         notes,
     )
@@ -474,6 +448,7 @@ def build_part_prompt(
     lines: Sequence[str],
     numbers: Sequence[int],
     taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]] = (),
+    rules: RuleSet | None = None,
 ) -> str:
     """긴 공고에서 직무 하나를 나눌 프롬프트. 제목과 고른 줄만 원래 번호로 보낸다.
 
@@ -485,6 +460,7 @@ def build_part_prompt(
         current_values_block="",
         taxonomy_tree=taxonomy_tree,
         part_block=_PART_BLOCK,
+        rules=rules or DEFAULT_RULES,
     )
 
 
@@ -513,15 +489,22 @@ def _classification_prompt(
     current_values_block: str,
     taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]],
     part_block: str = "",
+    rules: RuleSet = DEFAULT_RULES,
 ) -> str:
+    """칸별·공통 규칙은 `rules` 에서, 나머지 골격은 이 파일에서 온다.
+
+    규칙 한 벌의 모양과 판은 `app/classify/prompt_rules.py` 에 있다.
+    """
     choices = {name: " / ".join((*values, UNDECIDED)) for name, values in JUDGE_CHOICES.items()}
     return _PROMPT.format(
         body=body,
         title=title,
         current_values_block=current_values_block,
-        taxonomy_block=_taxonomy_block(taxonomy_tree),
+        taxonomy_block=_taxonomy_block(taxonomy_tree, rules),
         part_block=part_block,
-        **choices,
+        extract_rules=render_fields(rules, names_of(EXTRACT)),
+        common_rules=render_common(rules),
+        judge_rules=render_fields(rules, names_of(JUDGE), choices),
     )
 
 
@@ -581,8 +564,13 @@ async def classify_body(
     settings: Settings | None = None,
     client: Any | None = None,
     on_call: Callable[[Usage], None] | None = None,
+    rules: RuleSet | None = None,
 ) -> ClassificationResult:
     """공고 하나를 나눈다. 받은 값은 원문에 있는지 확인한 뒤에만 남는다.
+
+    `rules` 는 칸별·공통 규칙 한 벌이다. 주지 않으면 코드의 기본 규칙(판 0)이다 — 부르는 쪽이
+    저장된 판을 읽어 넘기고, 규칙 시험은 저장하지 않은 규칙을 넘긴다
+    (`app/classify/prompt_rules.py`).
 
     직무가 여럿인 공고는 직무마다 `ClassificationResult.postings` 하나가 된다. 칸마다 공통
     조각을 그 공고의 조각 앞에 붙인 뒤 공고마다 근거를 확인한다 (`app/classify/schema.py`).
@@ -615,6 +603,7 @@ async def classify_body(
     provider, model = chosen(resolved)
     asker = _Asker(client or build_client(resolved), model, provider, on_call)
     taxonomy_choices = _taxonomy_choices(taxonomy_tree)
+    rule_set = rules or DEFAULT_RULES
 
     if known_parts and all(part_lines for _, part_lines in known_parts):
         # 긴 공고를 다시 분류한다. 짜임을 다시 묻지 않고 번호마다 보냈던 줄을 그대로 보낸다.
@@ -628,6 +617,7 @@ async def classify_body(
             response_model,
             taxonomy_choices,
             [list(part_lines) for _, part_lines in known_parts],
+            rule_set,
         )
         return ClassificationResult(
             postings=results, usage=_total(usages), attempts=attempts, notes=notes
@@ -642,10 +632,16 @@ async def classify_body(
             taxonomy_tree,
             response_model,
             taxonomy_choices,
+            rule_set,
         )
 
     prompt, notes = build_prompt(
-        body, title, current_values, taxonomy_tree, known_roles=[role for role, _ in known_parts]
+        body,
+        title,
+        current_values,
+        taxonomy_tree,
+        known_roles=[role for role, _ in known_parts],
+        rules=rule_set,
     )
     parsed, usage, attempts = await asker.ask(
         prompt,
@@ -681,6 +677,7 @@ async def _classify_long(
     taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]],
     response_model: type[Classification],
     taxonomy_choices: Mapping[str, tuple[str, ...]] | None,
+    rules: RuleSet = DEFAULT_RULES,
 ) -> ClassificationResult:
     """긴 공고. 짜임을 먼저 묻고, 직무마다 공통 줄과 그 직무의 줄만 보내 나눈다 (2026-09-11 결정).
 
@@ -704,7 +701,7 @@ async def _classify_long(
     total_attempts = attempts
 
     if not outline.roles:
-        prompt, cut = build_prompt(body, title, current_values, taxonomy_tree)
+        prompt, cut = build_prompt(body, title, current_values, taxonomy_tree, rules=rules)
         parsed, usage, attempts = await asker.ask(
             prompt,
             schema=response_model,
@@ -733,6 +730,7 @@ async def _classify_long(
         response_model,
         taxonomy_choices,
         [sorted({*outline.common, *role}) for role in outline.roles],
+        rules,
     )
     suggestions, suggestion_reasons = _suggestions_of(outline.fields, current_values, body, title)
     return ClassificationResult(
@@ -754,6 +752,7 @@ async def _classify_parts(
     response_model: type[Classification],
     taxonomy_choices: Mapping[str, tuple[str, ...]] | None,
     parts: Sequence[Sequence[int]],
+    rules: RuleSet = DEFAULT_RULES,
 ) -> tuple[list[PostingResult], list[str], list[Usage], int]:
     """직무마다 제목과 고른 줄만 보내 나눈다. 짜임이 정했거나 전에 보냈던 줄이다.
 
@@ -766,7 +765,7 @@ async def _classify_parts(
     total_attempts = 0
     for number, numbers in enumerate(parts, start=1):
         parsed, usage, attempts = await asker.ask(
-            build_part_prompt(lines, numbers, taxonomy_tree),
+            build_part_prompt(lines, numbers, taxonomy_tree, rules),
             schema=response_model,
             instruction=_SYSTEM_INSTRUCTION,
             kind=CLASSIFY_KIND,
