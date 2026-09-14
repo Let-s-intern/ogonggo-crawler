@@ -53,9 +53,9 @@ def insert_job(
     values["job_major"] = job_major
     values["title"] = f"공고 {raw_job_id}"
     values["company"] = "엘지전자"
-    # title/company/job_role/job_major 는 카드 확인에 쓰므로 비우지 않는다. 16칸의 60% 는
-    # 9.6 -> 10칸 이상이 있어야 완성이다. 일곱 칸을 비우면 아홉 칸(56.25%)만 남아 미완성이
-    # 된다
+    # title/company/job_role/job_major 는 카드 확인에 쓰므로 비우지 않는다. 0028 로 칸이
+    # 스물하나가 되어 60% 는 12.6 -> 13칸 이상이 있어야 완성이다. 아홉 칸을 비우면 열두
+    # 칸(57.1%)만 남아 미완성이 된다
     blankable = [
         "deadline",
         "body",
@@ -70,7 +70,7 @@ def insert_job(
         "employment_type",
         "job_minor",
     ]
-    blanks = 7 if not complete else blank_count
+    blanks = 9 if not complete else blank_count
     for name in blankable[:blanks]:
         values[name] = ""
     columns = list(NORMALIZED_FIELDS)
@@ -140,8 +140,8 @@ def test_완성된_건만_나온다(client: TestClient, conn: sqlite3.Connection
 def test_마흔프로_안쪽으로_비어도_완성으로_본다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
-    """열여섯 칸 중 여섯만 비면(10/16 = 62.5%) 여전히 완성이다."""
-    insert_job(conn, 1, complete=True, blank_count=6)
+    """스물한 칸 중 여덟만 비면(13/21 = 61.9%) 여전히 완성이다."""
+    insert_job(conn, 1, complete=True, blank_count=8)
 
     body = client.get("/ui/complete").text
 
@@ -149,7 +149,7 @@ def test_마흔프로_안쪽으로_비어도_완성으로_본다(
 
 
 def test_비율이_기준_밑이면_빠진다(client: TestClient, conn: sqlite3.Connection) -> None:
-    """일곱이 비면(9/16 = 56.25%) 60% 기준에 못 미쳐 빠진다."""
+    """아홉이 비면(12/21 = 57.1%) 60% 기준에 못 미쳐 빠진다."""
     insert_job(conn, 1, complete=False)
 
     body = client.get("/ui/complete").text

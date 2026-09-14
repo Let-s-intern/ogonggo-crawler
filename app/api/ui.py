@@ -154,8 +154,13 @@ NEXT_STEPS: dict[str, str] = {
     "list_not_found": "정적 HTML 에 목록이 없다. 렌더(Playwright) 방식으로 올려 다시 생성한다",
     "no_api_key": "그 기능이 고른 제공자의 API 키가 비어 있다. 환경변수를 채우면 다시 된다",
     "api_error": "생성 모델 호출이 실패했다. 잠시 뒤 다시 생성한다",
-    "unknown_provider": "설정의 제공자 이름이 없는 이름이다. gemini/claude/gpt/qwen 중 하나다",
+    "unknown_provider": "설정의 제공자 이름이 없는 이름이다. gemini/claude/gpt/qwen/ollama 나 "
+    "AI 설정 화면에서 추가한 회사 이름이어야 한다",
     "no_schema_support": "그 제공자의 그 모델은 응답을 정해진 목록으로 묶지 못한다. 모델을 바꾼다",
+    "no_image_support": "그 제공자는 이미지를 받지 않는다. 이미지를 받는 제공자를 고른다",
+    "invalid_provider": "AI 설정 화면에서 추가한 회사의 정의를 읽을 수 없다. 화면에서 정의를 "
+    "다시 저장한다",
+    "connection_failed": "주소·키·모델·답 형식 강제 방식을 확인하고 다시 테스트한다",
     "unparsable": "모델 응답이 JSON 이 아니었다. 셀렉터를 손으로 쓴다",
     "missing_field": "모델 응답에 필요한 필드가 없다. 셀렉터를 손으로 쓴다",
     "unknown_field": "모델이 스키마에 없는 필드를 냈다. 셀렉터를 손으로 쓴다",

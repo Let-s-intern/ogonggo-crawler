@@ -33,6 +33,7 @@ from urllib.parse import urlsplit
 from app.crawler import playwright as render_module
 from app.crawler.api_source import fetch_detail, fetch_list
 from app.crawler.fetcher import FetchPolicy, PageSource
+from app.crawler.images import ImageReader, read_detail_images
 from app.crawler.parser import (
     DetailParseResult,
     FieldParseError,
@@ -100,15 +101,32 @@ class HtmlListCollector:
 
 
 class HtmlDetailCollector:
-    """HTML 상세. 항목의 링크를 그대로 따라간다."""
+    """HTML 상세. 항목의 링크를 그대로 따라간다.
 
-    def __init__(self, source: PageSource, selectors: DetailSelectors) -> None:
+    `reader` 가 있으면 본문이 짧고 원문 영역에 이미지가 있는 공고의 이미지를 읽어 원문에 붙인다.
+    이미지는 렌더러가 아니라 `fetcher` 로 받는다 — 바이트를 받을 수 있는 쪽이 그것뿐이다
+    (`app/crawler/images.py`).
+    """
+
+    def __init__(
+        self,
+        source: PageSource,
+        selectors: DetailSelectors,
+        *,
+        fetcher: FetchPolicy | None = None,
+        reader: ImageReader | None = None,
+    ) -> None:
         self._source = source
         self._selectors = selectors
+        self._fetcher = fetcher
+        self._reader = reader
 
     async def collect(self, item: ListItem) -> DetailParseResult:
         page = await self._source.fetch(item.link)
-        return parse_detail(page.text, self._selectors)
+        detail = parse_detail(page.text, self._selectors)
+        if self._fetcher is None or self._reader is None:
+            return detail
+        return await read_detail_images(detail, page.url, self._fetcher, self._reader)
 
 
 class ApiListCollector:
@@ -165,8 +183,12 @@ async def open_collectors(
     api_config: ApiConfig | None = None,
     renderer: Callable[[FetchPolicy], Renderer] | None = None,
     known: Callable[[str], bool] | None = None,
+    image_reader: ImageReader | None = None,
 ) -> AsyncIterator[Collectors]:
     """이 실행이 쓸 수집기 둘을 만든다. 브라우저 수명이 이 블록이다.
+
+    `image_reader` 를 주면 HTML 상세에서 본문이 이미지로만 올라온 공고의 이미지를 읽는다
+    (`app/crawler/images.py`). 주지 않으면 읽지 않는다.
 
     모르는 모드는 정적이다. 렌더도 API 도 운영자가 명시적으로 올린 사이트만 받는다.
     """
@@ -195,7 +217,9 @@ async def open_collectors(
         detail_collector: DetailCollector = (
             ApiDetailCollector(fetcher, config)
             if detail_mode == API
-            else HtmlDetailCollector(source_for(detail_mode), selectors.detail)
+            else HtmlDetailCollector(
+                source_for(detail_mode), selectors.detail, fetcher=fetcher, reader=image_reader
+            )
         )
         yield Collectors(
             list_mode=list_mode,

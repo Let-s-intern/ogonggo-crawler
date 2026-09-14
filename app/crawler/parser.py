@@ -25,7 +25,11 @@ URL 과 합쳐 절대 URL 로 만들 뿐이고, 따라가도 되는 URL 인지�
 from __future__ import annotations
 
 import copy
+import json
+import re
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
+from typing import Any
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
@@ -107,14 +111,20 @@ class ListParseResult:
 class DetailParseResult:
     """`fields` 는 상세 셀렉터 이름 그대로다. `missing` 은 셀렉터는 있는데 0개 매칭인 선택 필드.
 
-    `source_text` 는 상세 컨테이너를 가공 없이 편 글자다. 뽑지 못하면 빈 문자열이고, 그 건은
+    `source_text` 는 상세 컨테이너를 가공 없이 편 글자다. 페이지에 검색엔진용 `JobPosting`
+    데이터가 있으면 컨테이너에 없는 값을 뒤에 붙인다 (`structured_text`). 뽑지 못하면 빈
+    문자열이고, 그 건은
     지금까지와 같은 모양으로 적재된다 (`app/crawler/runner.py` 의 `_record`). API 상세는
-    이 값을 만들지 않는다 (`.claude/site-recipes/source-text-container.md`).
+    응답 전체를 편다 (`app/crawler/api_source.py` 의 `payload_source_text`).
     """
 
     fields: dict[str, str]
     missing: list[str]
     source_text: str = ""
+    # 원문 영역 안의 이미지 주소. 적힌 그대로라 상대 주소일 수 있다 (`app/crawler/images.py`)
+    images: tuple[str, ...] = ()
+    # 공고는 적재하지만 실행 기록에 남길 일. 이미지를 읽지 못한 것이 그렇다
+    notes: tuple[str, ...] = ()
 
 
 def list_only(selectors: ListSelectors) -> bool:
@@ -220,8 +230,13 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
     if unreadable:
         raise FieldParseError(f"상세에서 필수 필드를 읽지 못했다: {', '.join(unreadable)}")
 
+    container = source_text(soup, selectors.body)
+    structured = structured_text(soup, container) if container.strip() else ""
     return DetailParseResult(
-        fields=fields, missing=missing, source_text=source_text(soup, selectors.body)
+        fields=fields,
+        missing=missing,
+        source_text=f"{container}\n{structured}" if structured else container,
+        images=source_images(soup, selectors.body),
     )
 
 
@@ -329,22 +344,46 @@ def source_text(soup: BeautifulSoup, body_selector: str) -> str:
 
     뽑지 못하면 빈 문자열이다. 원문이 없다고 공고를 버리지 않는다.
     """
+    container = _source_container(soup, body_selector)
+    return "" if container is None else block_text(container)
+
+
+def source_images(soup: BeautifulSoup, body_selector: str) -> tuple[str, ...]:
+    """원문 영역 안의 이미지 주소. 원문과 같은 영역을 본다. 같은 주소는 한 번만 담는다.
+
+    `src` 가 없고 `data-src` 에만 주소를 둔 지연 로딩 이미지도 담는다. `data:` 로 박힌 이미지는
+    받을 주소가 아니고 대개 아이콘이라 뺀다.
+    """
+    container = _source_container(soup, body_selector)
+    if container is None:
+        return ()
+    found: dict[str, None] = {}
+    for image in container.find_all("img"):
+        raw = image.get("src") or image.get("data-src") or ""
+        source = (" ".join(raw) if isinstance(raw, list) else str(raw)).strip()
+        if source and not source.startswith("data:"):
+            found[source] = None
+    return tuple(found)
+
+
+def _source_container(soup: BeautifulSoup, body_selector: str) -> Tag | None:
+    """원문을 뽑는 노드. 본문 노드의 부모에서 페이지 부속을 뺀 사본이다. 못 잡으면 None 이다."""
     if not body_selector.strip():
-        return ""
+        return None
 
     nodes = select_nodes(soup, body_selector, "detail.body")
     if not nodes:
-        return ""
+        return None
 
     body = nodes[0]
     parent = body.parent
     if parent is None or parent.name in ("body", "html", "[document]"):
-        return block_text(body)
+        return body
 
     container = copy.copy(parent)
     for tag in container.select(PAGE_FURNITURE):
         tag.decompose()
-    return block_text(container)
+    return container
 
 
 def _link(node: Tag, selectors: ListSelectors, index: int) -> LinkResult:
@@ -353,3 +392,72 @@ def _link(node: Tag, selectors: ListSelectors, index: int) -> LinkResult:
         return resolve_link(node, selectors)
     except SelectorSyntaxError as exc:
         raise FieldParseError(f"list.link[{index}] 셀렉터 문법 오류: {exc}") from exc
+
+
+# 검색엔진이 읽는 표준 채용공고 데이터의 형 이름 (schema.org)
+_JOB_POSTING = "JobPosting"
+_SPACES = re.compile(r"\s+")
+
+
+def structured_text(soup: BeautifulSoup, known: str) -> str:
+    """페이지의 JSON-LD `JobPosting` 값을 `키: 값` 줄로 편 글자. 붙일 것이 없으면 빈 문자열이다.
+
+    화면 글자에는 없고 이 데이터에만 있는 값이 있다 — 네이버는 근무지 주소(`streetAddress`)와
+    고용형태(`employmentType: INTERN`)가 그렇다. 원문 컨테이너를 조상으로 넓히는 대신 이것을
+    붙인다. 일곱 픽스처에서 조상으로 올라가면 메뉴·검색 필터·푸터만 늘었다 (2026-09-12 측정).
+
+    `@` 로 시작하는 키(`@type`, `@context`)는 스키마의 표시라 빼고, `known`(컨테이너 원문)에 이미
+    있는 값은 다시 적지 않는다 — 제목과 본문을 되풀이한 `description` 이 그렇다. 코드값은 거르지
+    않는다. 고용형태가 `INTERN` 같은 대문자 코드로 온다. 읽지 못하는 JSON 은 건너뛴다.
+    """
+    seen = _compact(known)
+    added: set[str] = set()
+    lines: list[str] = []
+    for script in soup.select('script[type="application/ld+json"]'):
+        try:
+            data = json.loads(script.get_text())
+        except ValueError:
+            continue
+        for posting in _job_postings(data):
+            for key, value in _structured_leaves(posting):
+                text = BeautifulSoup(value, "html.parser").get_text("\n") if "<" in value else value
+                for raw in text.splitlines():
+                    line = raw.strip()
+                    compact = _compact(line)
+                    if not compact or compact in seen or compact in added:
+                        continue
+                    added.add(compact)
+                    lines.append(f"{key}: {line}")
+    return "\n".join(lines)
+
+
+def _job_postings(data: Any) -> Iterator[Mapping[str, Any]]:
+    """JSON-LD 안의 `JobPosting` 객체들. 목록이나 `@graph` 안에 들어 있기도 하다."""
+    if isinstance(data, list):
+        for item in data:
+            yield from _job_postings(item)
+    elif isinstance(data, Mapping):
+        kinds = data.get("@type")
+        if kinds == _JOB_POSTING or (isinstance(kinds, list) and _JOB_POSTING in kinds):
+            yield data
+        yield from _job_postings(data.get("@graph", []))
+
+
+def _structured_leaves(value: Any, key: str = "") -> Iterator[tuple[str, str]]:
+    """값을 차례대로. 값마다 바로 위 키 이름이 붙는다. `@` 키와 빈 값은 건너뛴다."""
+    if isinstance(value, Mapping):
+        for name, inner in value.items():
+            if not str(name).startswith("@"):
+                yield from _structured_leaves(inner, str(name))
+    elif isinstance(value, list):
+        for inner in value:
+            yield from _structured_leaves(inner, key)
+    elif isinstance(value, str | int | float) and not isinstance(value, bool):
+        text = str(value).strip()
+        if text:
+            yield key, text
+
+
+def _compact(text: str) -> str:
+    """공백과 대소문자를 뺀 글자. 이미 원문에 있는 값인지 볼 때만 쓴다."""
+    return _SPACES.sub("", text).casefold()

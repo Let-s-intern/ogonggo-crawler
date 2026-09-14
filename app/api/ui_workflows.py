@@ -82,10 +82,12 @@ from app.api import crawlers, workflows
 from app.api.ui import format_time, mode_word, render
 from app.api.ui_crawlers import crawler_rows, error_detail
 from app.config import get_settings
+from app.crawler import recollect
 from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchPolicy
 from app.crawler.runner import (
     MANUAL,
+    RECOLLECT,
     SCHEDULE,
     TEST,
     consecutive_failures,
@@ -105,7 +107,12 @@ RUN_WORDS: dict[str, str] = {SUCCESS: "성공", "timeout": "시간 초과", "fai
 
 # 실행 출처를 사람이 읽는 단어로. `crawl_runs.trigger` 가 NULL 인 옛 행은 `알 수 없음` 이다 —
 # 그 실행이 어디서 왔는지는 기록되지 않았고, 추측해서 적으면 없는 사실을 만드는 것이다
-TRIGGER_WORDS: dict[str, str] = {SCHEDULE: "주기 실행", MANUAL: "수동 1회", TEST: "테스트"}
+TRIGGER_WORDS: dict[str, str] = {
+    SCHEDULE: "주기 실행",
+    MANUAL: "수동 1회",
+    TEST: "테스트",
+    RECOLLECT: "원문 다시 수집",
+}
 UNKNOWN_TRIGGER = "알 수 없음"
 
 # 이 프로세스가 지금 화면에서 돌리고 있는 워크플로우. `crawl_runs` 행은 브라우저를 띄우고 나서야
@@ -114,6 +121,12 @@ _running: set[int] = set()
 
 # 실행이 도는 동안 카드에 적는 문구. 시작한 자리와 폴링이 같은 말을 해야 한다
 RUNNING_MESSAGE = "수집이 도는 중이다. 이 카드가 몇 초마다 스스로 갱신하고, 끝나면 결과로 바뀐다"
+
+# 원문 다시 수집을 시작한 자리에 적는 문구
+RECOLLECT_STARTED = (
+    "원문 다시 수집을 시작했다. 이 카드가 몇 초마다 진행 상황을 갱신한다. 공고 수에 따라 "
+    "다시 분류까지 한 시간이 넘을 수 있다"
+)
 
 # 임계치가 없는 워크플로우의 연속 실패를 어디까지 거슬러 세는가. 임계치가 있으면 그 값까지만
 # 세는 것(자동 중지가 보는 것과 같은 값)과 달리, 여기서는 화면에 적을 숫자를 만들 뿐이라
@@ -175,6 +188,8 @@ class CardView:
     running: bool = False
     # 폴링하던 카드가 방금 끝난 실행으로 갈리는 순간인가. 그 한 번만 강조한다
     settled: bool = False
+    # 원문 다시 수집을 시작하기 전 확인. 누르기 전에 건수를 보여 준다
+    recollect_preview: recollect.RecollectPreview | None = None
 
 
 def _streak(conn: sqlite3.Connection, item: workflows.WorkflowItem) -> int:
@@ -308,6 +323,8 @@ def _finished_message(conn: sqlite3.Connection, workflow_id: int) -> str:
     row = _last_run(conn, workflow_id)
     if row is None:
         return "실행이 끝났는데 기록이 없다. 서버 로그를 본다"
+    if row["trigger"] == RECOLLECT:
+        return _recollect_message(conn, row)
     word = RUN_WORDS.get(row["status"], row["status"] or "알 수 없음")
     if row["status"] != SUCCESS:
         return f"실행 {row['id']} 이 {word}로 끝났다. 사유는 아래 최근 실패 사유에 있다"
@@ -318,6 +335,38 @@ def _finished_message(conn: sqlite3.Connection, workflow_id: int) -> str:
     )
 
 
+def _recollect_message(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
+    """원문 다시 수집이 끝났을 때 적는 한 줄.
+
+    갈아 끼운 건수는 이력 표가, 다시 분류 결과는 실행 메모가 들고 있다 (`app/crawler/recollect.py`).
+    """
+    changed = conn.execute(
+        "SELECT count(*) AS n FROM raw_job_history WHERE run_id = ?", (row["id"],)
+    ).fetchone()["n"]
+    note = conn.execute(
+        """
+        SELECT message FROM crawl_run_failures
+         WHERE run_id = ? AND reason IS NULL AND message LIKE ?
+         ORDER BY id DESC LIMIT 1
+        """,
+        (row["id"], f"{recollect.CLASSIFY_NOTE}:%"),
+    ).fetchone()
+    word = RUN_WORDS.get(row["status"], row["status"] or "알 수 없음")
+    ending = "으로" if row["status"] == SUCCESS else "로"
+    head = (
+        f"원문 다시 수집 {row['id']} 이 {word}{ending} 끝났다 — 다시 가져옴 "
+        f"{row['success_count']}건(바뀜 {changed}건), 마감 건너뜀 {row['skipped_count']}건, "
+        f"실패 {row['fail_count']}건"
+    )
+    return f"{head}. {note['message']}" if note is not None else head
+
+
+def _running_message(workflow_id: int) -> str:
+    """실행이 도는 동안 카드에 적는 문구. 원문 다시 수집이면 진행 상황을 적는다."""
+    progress = recollect.PROGRESS.get(workflow_id)
+    return progress.line() if progress is not None else RUNNING_MESSAGE
+
+
 def _view(
     conn: sqlite3.Connection,
     item: workflows.WorkflowItem,
@@ -326,6 +375,7 @@ def _view(
     next_run_at: datetime | None = None,
     running: bool | None = None,
     settled: bool = False,
+    recollect_preview: recollect.RecollectPreview | None = None,
 ) -> CardView:
     streak = _streak(conn, item)
     tone, attention = _attention(item, streak)
@@ -343,6 +393,7 @@ def _view(
         message=message,
         running=_in_flight(conn, item.id) if running is None else running,
         settled=settled,
+        recollect_preview=recollect_preview,
     )
 
 
@@ -355,6 +406,7 @@ def _card(
     scheduler: WorkflowScheduler,
     running: bool | None = None,
     settled: bool = False,
+    recollect_preview: recollect.RecollectPreview | None = None,
 ) -> HTMLResponse:
     return render(
         request,
@@ -366,6 +418,7 @@ def _card(
             next_run_at=scheduler.next_run_times().get(item.id),
             running=running,
             settled=settled,
+            recollect_preview=recollect_preview,
         ),
     )
 
@@ -404,13 +457,16 @@ def _in_flight(conn: sqlite3.Connection, workflow_id: int) -> bool:
     시작한 지 `RUN_TIMEOUT_SECONDS` 를 넘긴 행은 세지 않는다. 모든 실행은 그 시간으로 감싸여
     있으므로 그보다 오래된 미완 행은 도는 실행이 아니라 프로세스가 죽으면서 남긴 자국이다.
     그것을 진행 중으로 읽으면 카드가 영원히 폴링하고 1회 실행이 영영 막힌다.
+
+    원문 다시 수집(`recollect`)은 시간 제한으로 감싸지 않아 오래 걸려도 진행 중이다. 프로세스가
+    죽으며 남긴 그 행은 기동 시 `close_orphan_runs` 가 닫는다.
     """
     stale_after = get_settings().run_timeout_seconds + 60
     row = conn.execute(
         """
         SELECT 1 FROM crawl_runs
          WHERE workflow_id = ? AND status IS NULL AND finished_at IS NULL
-           AND started_at > datetime('now', ?)
+           AND (trigger = 'recollect' OR started_at > datetime('now', ?))
          LIMIT 1
         """,
         (workflow_id, f"-{stale_after} seconds"),
@@ -652,7 +708,12 @@ def workflow_card_fragment(
     running = workflow_id in _running or _in_flight(conn, workflow_id)
     if running:
         return _card(
-            request, conn, item, scheduler=scheduler, message=RUNNING_MESSAGE, running=True
+            request,
+            conn,
+            item,
+            scheduler=scheduler,
+            message=_running_message(workflow_id),
+            running=True,
         )
     # 폴링하던 카드가 결과로 갈리는 순간이다. 그 한 번만 결과를 적고 강조한다
     message = _finished_message(conn, workflow_id) if polled else ""
@@ -712,4 +773,115 @@ async def run_now_fragment(
     launch(
         _execute_run(workflow_id, fetcher=fetcher, scheduler=scheduler, gate=gate, connect=connect)
     )
-    return _card(request, conn, current, scheduler=scheduler, message=RUNNING_MESSAGE, running=True)
+    return _card(
+        request,
+        conn,
+        current,
+        scheduler=scheduler,
+        message=_running_message(workflow_id),
+        running=True,
+    )
+
+
+@router.get("/ui/workflows/{workflow_id}/recollect", response_class=HTMLResponse)
+def recollect_confirm_fragment(
+    request: Request,
+    workflow_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(workflows.get_connection)],
+    scheduler: Annotated[WorkflowScheduler, Depends(workflows.get_workflow_scheduler)],
+) -> HTMLResponse:
+    """원문 다시 수집을 시작하기 전 확인. 몇 건을 다시 가져오고 몇 건을 다시 분류하는지 적는다.
+
+    브라우저 `confirm()` 으로 묻지 않는다. 건수가 없는 확인은 무엇에 동의하는지 모르는 채로
+    누르게 한다 — 이 조작은 공고마다 AI 호출이 나간다.
+    """
+    item = _find(conn, workflow_id)
+    if item is None:
+        return _missing(request, workflow_id)
+    if workflow_id in _running or _in_flight(conn, workflow_id):
+        return _card(
+            request,
+            conn,
+            item,
+            scheduler=scheduler,
+            message=_running_message(workflow_id),
+            running=True,
+        )
+    return _card(
+        request,
+        conn,
+        item,
+        scheduler=scheduler,
+        recollect_preview=recollect.preview(conn, workflow_id),
+    )
+
+
+@router.post("/ui/workflows/{workflow_id}/recollect", response_class=HTMLResponse)
+async def recollect_fragment(
+    request: Request,
+    workflow_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(workflows.get_connection)],
+    scheduler: Annotated[WorkflowScheduler, Depends(workflows.get_workflow_scheduler)],
+    fetcher: Annotated[FetchPolicy, Depends(crawlers.get_crawl_fetcher)],
+    gate: Annotated[RunGate, Depends(get_run_gate)],
+    launch: Annotated[Launcher, Depends(get_run_launcher)],
+    connect: Annotated[Connect, Depends(get_run_connect)],
+) -> HTMLResponse:
+    """이미 담은 공고의 원문을 다시 수집하고 워크플로우 공고를 전부 다시 분류한다. 시작만 한다.
+
+    지금 1회 실행과 같은 자리를 막는다 — 같은 워크플로우의 실행이 돌고 있으면 시작하지 않는다.
+    """
+    current = _find(conn, workflow_id)
+    if current is None:
+        return _missing(request, workflow_id)
+
+    if workflow_id in _running or _in_flight(conn, workflow_id):
+        return _card(
+            request,
+            conn,
+            current,
+            scheduler=scheduler,
+            message="이미 실행 중이다. 새로 시작하지 않았다. 끝나면 이 카드가 갱신된다",
+            running=True,
+        )
+    if not recollect.preview(conn, workflow_id).total:
+        return _card(
+            request,
+            conn,
+            current,
+            scheduler=scheduler,
+            message="이 워크플로우에 담은 공고가 없어 다시 수집할 것이 없다",
+        )
+
+    _running.add(workflow_id)
+    launch(
+        _execute_recollect(
+            workflow_id, fetcher=fetcher, scheduler=scheduler, gate=gate, connect=connect
+        )
+    )
+    return _card(
+        request, conn, current, scheduler=scheduler, message=RECOLLECT_STARTED, running=True
+    )
+
+
+async def _execute_recollect(
+    workflow_id: int,
+    *,
+    fetcher: FetchPolicy,
+    scheduler: WorkflowScheduler,
+    gate: RunGate,
+    connect: Connect,
+) -> None:
+    """요청이 끝난 뒤에도 끝까지 가는 원문 다시 수집.
+
+    동시 실행 상한은 페이지를 가져오는 동안만 잡는다 (`app/crawler/recollect.py`).
+    """
+    conn = connect()
+    try:
+        await recollect.recollect_workflow(conn, workflow_id, fetcher=fetcher, slot=gate.slot)
+    except Exception:
+        logger.exception("workflow %s: 원문 다시 수집이 예외로 끝났다", workflow_id)
+    finally:
+        _running.discard(workflow_id)
+        scheduler.sync(conn)
+        conn.close()

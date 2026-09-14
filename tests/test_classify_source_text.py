@@ -27,7 +27,6 @@ from app import db
 from app.classify.batch import ClassifyProgress, classify_ids
 from app.classify.classifier import MAX_BODY_CHARS, classify_body
 from app.classify.grounding import NO_EVIDENCE, NOT_IN_SOURCE, ground
-from app.classify.schema import RESPONSE_FIELDS
 from app.classify.store import (
     pending_count,
     pending_ids,
@@ -35,6 +34,7 @@ from app.classify.store import (
     read_source,
 )
 from app.config import Settings
+from tests.classify_fakes import response
 from tests.test_selector_generator import FakeClient
 from tests.test_source_text import HTML_DETAIL, parsed
 
@@ -53,10 +53,6 @@ SOURCE = f"{ONLY_IN_SOURCE}\n{EVIDENCE_IN_SOURCE}\n{BODY}"
 
 def settings_with_key() -> Settings:
     return Settings(gemini_api_key="테스트키", gemini_model="gemini-3.5-flash")
-
-
-def response(**fields: str) -> str:
-    return json.dumps({name: fields.get(name, "") for name in RESPONSE_FIELDS})
 
 
 ANSWER = response(duties="제휴사 데이터 연동 구조 기획")
@@ -185,18 +181,24 @@ async def test_실행이_원문에서_뽑은_칸을_버리지_않는다(conn: sq
 
 
 def test_상한을_넘는_원문은_잘리고_그_사실이_남는다() -> None:
-    """자른 것으로 무엇을 놓쳤는지는 응답을 보는 사람이 알아야 한다."""
+    """자른 것으로 무엇을 놓쳤는지는 응답을 보는 사람이 알아야 한다.
+
+    상한을 넘는 글은 짜임부터 묻는다. 짜임에서 직무를 못 읽으면 앞부분만 보내 한 번에 나눈다
+    (`app/classify/classifier.py` 의 `_classify_long`).
+    """
     긴_원문 = BODY + "가" * MAX_BODY_CHARS
-    client = FakeClient(ANSWER)
+    직무를_못_읽은_짜임 = json.dumps({"roles": [], "common_lines": []})
+    client = FakeClient(직무를_못_읽은_짜임, ANSWER)
 
     result = asyncio.run(
         classify_body(긴_원문, title="공고 1", settings=settings_with_key(), client=client)
     )
 
-    보낸_글 = client.calls[0]["contents"]
+    보낸_글 = client.calls[1]["contents"]
     assert "가" * MAX_BODY_CHARS not in 보낸_글
-    assert result.notes and str(len(긴_원문)) in result.notes[0]
-    assert str(MAX_BODY_CHARS) in result.notes[0]
+    assert any(
+        str(len(긴_원문)) in note and str(MAX_BODY_CHARS) in note for note in result.notes
+    ), result.notes
 
 
 def test_상한은_잰_원문_전부를_담는다() -> None:

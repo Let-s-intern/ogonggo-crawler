@@ -225,4 +225,4 @@ async def test_fixing_selectors_calls_its_own_provider_not_the_generators(
 def test_the_recorded_answers_are_the_shapes_the_parsers_expect() -> None:
     """가짜 응답이 스키마를 벗어나면 위의 테스트가 엉뚱한 이유로 통과한다."""
     assert json.loads(VALID_RESPONSE)["list"]
-    assert json.loads(CLASSIFICATION)["work_location"] == "판교"
+    assert json.loads(CLASSIFICATION)["postings"][0]["work_location"][0]["text"] == "판교"

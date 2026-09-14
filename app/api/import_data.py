@@ -25,6 +25,12 @@ SSH 와 `docker cp` 로 파일을 밀어 넣게 되고, 그것은 이 서비스�
 규칙이 들어 있고, 그것이 들어오면 `load_rules` 가 터져 그 뒤의 정규화가 한 건도 되지 않는다
 (`migrations/0016_drop_department_category_headcount.sql`).
 
+**이 서버가 읽지 못하는 규칙도 들이지 않는다.** 들어오는 규칙은 화면에서 저장할 때와 같은
+`build_rule` 검증을 지난다. 다만 `date_parse` 의 연도 없는 형식(`%m/%d`)은 그 형식만 빼고
+들인다 — 0027 이전에 뜬 파일의 마감일 규칙이 거기 걸리는데, 규칙을 통째로 버리면 가져온
+공고의 마감일이 날짜로 정리되지 않는다. 운영 DB 에서 같은 일을 한 것이
+`migrations/0027_drop_yearless_date_formats.sql` 이다.
+
 같은 규칙인지는 `field_name`, `rule_type`, `rule_config_json`, `priority` 넷으로 가른다.
 `note` 는 사람이 읽는 이름표라 판정에 넣지 않는다 — 넣으면 메모만 다른 같은 규칙이
 두 벌 쌓이고, 정규화는 그 둘을 차례로 태운다.
@@ -70,7 +76,7 @@ from app.normalize.engine import (
     insert_normalized,
     load_rules,
 )
-from app.normalize.rules import NORMALIZED_FIELDS
+from app.normalize.rules import RuleConfigError, build_rule, without_yearless_formats
 
 logger = logging.getLogger(__name__)
 
@@ -436,9 +442,13 @@ def _merge_rules(conn: sqlite3.Connection, source: sqlite3.Connection) -> tuple[
     `note` 는 사람이 읽는 이름표라 판정에 넣지 않는다 — 넣으면 메모만 다른 같은 규칙이 두 벌
     쌓이고, 정규화는 그 둘을 차례로 태운다.
 
-    `NORMALIZED_FIELDS` 에 없는 칸의 규칙은 건너뛴 것으로 센다. 화면으로는 저장할 수 없는
-    규칙이라 (`app/normalize/rules.py` 의 `build_rule`) 파일로 들어오는 길만 열어 둘 이유가
-    없고, 들어오면 `load_rules` 가 그 파일의 공고 전부를 정규화하지 못한다.
+    이 서버가 읽지 못하는 규칙은 건너뛴 것으로 센다 — 지워진 칸에 걸린 규칙도, 설정이 지금의
+    검증을 통과하지 못하는 규칙도. 화면으로는 저장할 수 없는 규칙이라
+    (`app/normalize/rules.py` 의 `build_rule`) 파일로 들어오는 길만 열어 둘 이유가 없고,
+    들어오면 `load_rules` 가 그 파일의 공고 전부를 정규화하지 못한다.
+
+    연도 없는 날짜 형식만은 그 형식을 빼고 들인다. 운영 DB 에서 같은 일을 한 것이
+    `migrations/0027_drop_yearless_date_formats.sql` 이고, 빼는 모양도 그것과 같다.
     """
     columns = "field_name, rule_type, rule_config_json, priority"
     known = {
@@ -449,13 +459,14 @@ def _merge_rules(conn: sqlite3.Connection, source: sqlite3.Connection) -> tuple[
     for row in source.execute(
         f"SELECT {columns}, enabled, note FROM normalization_rules ORDER BY id"
     ):
+        rule_type = str(row["rule_type"])
         key = (
             str(row["field_name"]),
-            str(row["rule_type"]),
-            str(row["rule_config_json"]),
+            rule_type,
+            without_yearless_formats(rule_type, str(row["rule_config_json"])),
             int(row["priority"]),
         )
-        if key in known or row["field_name"] not in NORMALIZED_FIELDS:
+        if key in known or not _readable(*key):
             skipped += 1
             continue
         conn.execute(
@@ -469,6 +480,15 @@ def _merge_rules(conn: sqlite3.Connection, source: sqlite3.Connection) -> tuple[
         known.add(key)
         added += 1
     return added, skipped
+
+
+def _readable(field_name: str, rule_type: str, config: str, priority: int) -> bool:
+    """이 서버의 `load_rules` 가 읽을 수 있는 규칙인가. 화면에서 저장할 때와 같은 검증이다."""
+    try:
+        build_rule(field_name, rule_type, config, priority=priority)
+    except RuleConfigError:
+        return False
+    return True
 
 
 def _merge_llm_settings(conn: sqlite3.Connection, source: sqlite3.Connection) -> tuple[int, int]:
@@ -489,19 +509,17 @@ def _merge_llm_settings(conn: sqlite3.Connection, source: sqlite3.Connection) ->
         # 이 표가 없는 옛 파일도 나머지는 다 가져올 수 있다
         return 0, 0
 
+    # 화면에서 추가한 회사의 정의와 키는 이름이 정해져 있지 않아 행 목록으로 고를 수 없다.
+    # 전부 읽고 이 저장소의 행만 남긴다 (`app/llm/settings.py` 의 `is_llm_row`)
     known = {
         str(row["key"])
-        for row in conn.execute(
-            f"SELECT key FROM app_settings WHERE key IN ({','.join('?' * len(llm_settings.ROWS))})",
-            llm_settings.ROWS,
-        )
+        for row in conn.execute("SELECT key FROM app_settings")
+        if llm_settings.is_llm_row(str(row["key"]))
     }
     added = skipped = 0
-    for row in source.execute(
-        f"SELECT key, value FROM app_settings "
-        f"WHERE key IN ({','.join('?' * len(llm_settings.ROWS))}) ORDER BY key",
-        llm_settings.ROWS,
-    ):
+    for row in source.execute("SELECT key, value FROM app_settings ORDER BY key"):
+        if not llm_settings.is_llm_row(str(row["key"])):
+            continue
         if str(row["key"]) in known:
             skipped += 1
             continue
@@ -595,20 +613,26 @@ def _merge_overrides(
 ) -> tuple[int, int]:
     """사람이 검수한 값을 가져온다. 다시 만들 수 없는 값이라 빠뜨리지 않는다.
 
-    이 서버에 이미 그 공고의 그 필드가 있으면 건너뛴다. 이쪽 사람이 고쳐 둔 값을 저쪽 값으로
+    이 서버에 이미 그 공고·그 번호의 그 필드가 있으면 건너뛴다. 이쪽 사람이 고쳐 둔 값을 저쪽 값으로
     덮지 않는다.
 
     중복이라 건너뛴 공고에 붙은 보정도 가져온다. 그 공고의 확정 값은 다음 재정규화에서 바뀐다 —
     보정을 저장하는 검수 화면이 이미 그 순서로 동작한다 (`app/api/review.py`).
     """
     known = {
-        (int(row["raw_job_id"]), str(row["field_name"]))
-        for row in conn.execute("SELECT raw_job_id, field_name FROM job_field_overrides")
+        (int(row["raw_job_id"]), int(row["part"]), str(row["field_name"]))
+        for row in conn.execute("SELECT raw_job_id, part, field_name FROM job_field_overrides")
     }
+    columns = {
+        str(row["name"])
+        for row in source.execute("PRAGMA table_info(job_field_overrides)").fetchall()
+    }
+    # 0029 전에 내보낸 파일에는 번호 칸이 없다. 그때는 공고를 나누지 않았으니 전부 1번이다
+    part = "part" if "part" in columns else "1 AS part"
     added = skipped = 0
     for row in source.execute(
-        """
-        SELECT raw_job_id, field_name, value, created_at, updated_at
+        f"""
+        SELECT raw_job_id, {part}, field_name, value, created_at, updated_at
           FROM job_field_overrides ORDER BY id
         """
     ):
@@ -618,17 +642,24 @@ def _merge_overrides(
                 "broken_reference",
                 f"보정이 없는 공고 {row['raw_job_id']} 를 가리킨다",
             )
-        key = (raw_job_id, str(row["field_name"]))
+        key = (raw_job_id, int(row["part"]), str(row["field_name"]))
         if key in known:
             skipped += 1
             continue
         conn.execute(
             """
-            INSERT INTO job_field_overrides (raw_job_id, field_name, value, created_at,
+            INSERT INTO job_field_overrides (raw_job_id, part, field_name, value, created_at,
                                              updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (raw_job_id, row["field_name"], row["value"], row["created_at"], row["updated_at"]),
+            (
+                raw_job_id,
+                row["part"],
+                row["field_name"],
+                row["value"],
+                row["created_at"],
+                row["updated_at"],
+            ),
         )
         known.add(key)
         added += 1

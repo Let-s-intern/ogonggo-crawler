@@ -114,6 +114,11 @@ FIELD_LABELS: dict[str, str] = {
     "etc_info": "기타",
     "job_major": "직무 대분류",
     "job_minor": "직무 소분류",
+    "company_and_team_introduction": "회사·팀 소개",
+    "compensation": "급여·처우",
+    "benefits": "복지·혜택",
+    "education_level": "학력",
+    "recruitment_headcount": "모집인원",
 }
 
 # `빈 값인 필드` 조건에서 "아무 필드나 하나라도 비었다" 를 가리키는 값
@@ -149,6 +154,12 @@ EMPTY_NOTES: dict[str, str] = {
     # 돌리지 않았거나 본문으로 판단이 갈리지 않으면 빈다
     "job_major": "아직 분류를 돌리지 않았거나 본문으로 판단할 근거가 없으면 빈다",
     "job_minor": "대분류만 정해지고 소분류가 본문으로 갈리지 않는 공고는 이 칸만 빈다",
+    # 0028 이 더한 칸. 분류가 채우고, 공고가 그 내용을 적지 않으면 빈다
+    "company_and_team_introduction": "회사·팀 소개 구역이 따로 없는 공고는 빈다",
+    "compensation": "급여를 적지 않는 공고는 빈다",
+    "benefits": "복지를 적지 않는 공고는 빈다",
+    "education_level": "학력을 말하지 않는 공고는 빈다. 오공고로는 학력 무관으로 나간다",
+    "recruitment_headcount": "모집 인원을 적지 않는 공고는 빈다",
 }
 
 # 같은 공고가 두 번 들어왔는지 보는 기준. 무엇을 중복으로 볼지가 상황마다 달라 고르게 둔다.
@@ -341,7 +352,8 @@ def shown_value(field: str) -> str:
     """
     return (
         "COALESCE((SELECT o.value FROM job_field_overrides o"
-        f" WHERE o.raw_job_id = n.raw_job_id AND o.field_name = '{field}'), n.{field})"
+        " WHERE o.raw_job_id = n.raw_job_id AND o.part = n.part"
+        f" AND o.field_name = '{field}'), n.{field})"
     )
 
 
@@ -450,7 +462,11 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
 
     # 어느 칸의 제안인지는 보지 않는다 — "제안이 붙어 있다" 만 가른다. 칸별로 좁히고 싶으면
     # 모달을 열어 본다 (11.6)
-    _suggestion_exists = "EXISTS (SELECT 1 FROM job_field_suggestions s WHERE s.raw_job_id = r.id)"
+    # 나눈 공고는 번호마다 따로 본다 — 한 직무에 붙은 제안으로 형제 공고까지 걸리지 않게 한다
+    _suggestion_exists = (
+        "EXISTS (SELECT 1 FROM job_field_suggestions s"
+        " WHERE s.raw_job_id = n.raw_job_id AND s.part = n.part)"
+    )
     if picked.has_suggestion == "yes":
         clauses.append(_suggestion_exists)
     elif picked.has_suggestion == "no":
@@ -846,6 +862,8 @@ def _delete_rows(conn: sqlite3.Connection, raw_job_ids: Sequence[int]) -> tuple[
             normalized += conn.execute(
                 f"DELETE FROM normalized_jobs WHERE raw_job_id IN ({marks})", part
             ).rowcount
+            # 원문 다시 수집이 남긴 이전 값. 공고를 지우면 그 이력도 가리킬 곳이 없다
+            conn.execute(f"DELETE FROM raw_job_history WHERE raw_job_id IN ({marks})", part)
             raw += conn.execute(f"DELETE FROM raw_jobs WHERE id IN ({marks})", part).rowcount
         conn.execute("COMMIT")
     except BaseException:

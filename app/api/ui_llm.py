@@ -9,6 +9,8 @@
 **저장한 키를 화면에 다시 그리지 않는다.** 폼의 입력 칸은 언제나 비어 있고, 저장된 값은
 있음·없음과 끝 네 자리로만 나온다. 빈 칸을 저장하면 그 키를 지우고 환경변수로 돌아간다 —
 지우는 길이 없으면 잘못 넣은 키를 화면에서 뺄 방법이 없다.
+
+화면에서 추가한 회사의 정의·삭제·연결 테스트도 이 조각으로 돌아온다 (`app/llm/custom.py`).
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from fastapi.responses import HTMLResponse
 
 from app.api.settings import get_connection
 from app.api.ui import render
-from app.llm import providers as registry
+from app.llm import custom
 from app.llm import settings as store
 
 logger = logging.getLogger(__name__)
@@ -36,15 +38,24 @@ def _form(
     *,
     message: str = "",
     error: dict[str, str] | None = None,
+    draft: store.CustomView | None = None,
 ) -> HTMLResponse:
-    """제공자 설정 폼 하나. 키 저장도 기능 저장도 이 조각으로 돌아온다."""
+    """제공자 설정 폼 하나. 키 저장도 기능 저장도 회사 정의도 이 조각으로 돌아온다.
+
+    `draft` 는 거절된 회사 정의다. 폼을 다시 그릴 때 적은 값을 되돌려 채운다 — JSON 을 적어
+    넣고 한 글자 틀렸다고 전부 다시 쓰게 하지 않는다.
+    """
+    config = store.read_config(conn)
     return render(
         request,
         "fragments/llm_form.html",
-        config=store.read_config(conn),
-        provider_names=sorted(registry.PROVIDERS),
+        config=config,
+        provider_names=list(config.provider_names),
+        custom_names=[item.name for item in config.customs],
+        schema_mode_labels=custom.SCHEMA_MODE_LABELS,
         message=message,
         error=error,
+        draft=draft,
     )
 
 
@@ -131,3 +142,97 @@ def update_feature_fragment(
             f"{view.label}: {view.provider} 의 {view.model} 로 저장했다. 다음 호출부터 이 값을 쓴다"
         ),
     )
+
+
+@router.put("/ui/llm/custom", response_class=HTMLResponse)
+def update_custom_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    name: Annotated[str, Form()] = "",
+    label: Annotated[str, Form()] = "",
+    base_url: Annotated[str, Form()] = "",
+    schema_mode: Annotated[str, Form()] = "",
+    temperature: Annotated[str, Form()] = "",
+    max_tokens: Annotated[str, Form()] = "",
+    images: Annotated[str, Form()] = "",
+    list_models: Annotated[str, Form()] = "",
+    models_url: Annotated[str, Form()] = "",
+    extra_body: Annotated[str, Form()] = "",
+    prices: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """화면에서 추가한 회사 하나의 정의를 저장한다. 같은 이름이면 고친다.
+
+    체크 칸은 켜졌을 때만 값이 온다. 값이 없으면 꺼진 것이다.
+    """
+    try:
+        store.write_custom(
+            conn,
+            name,
+            label=label,
+            base_url=base_url,
+            schema_mode=schema_mode,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            images=bool(images),
+            list_models=bool(list_models),
+            models_url=models_url,
+            extra_body=extra_body,
+            prices=prices,
+        )
+    except store.LlmSettingError as exc:
+        draft = store.CustomView(
+            name=name.strip(),
+            label=label,
+            base_url=base_url,
+            schema_mode=schema_mode,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            images=bool(images),
+            list_models=bool(list_models),
+            models_url=models_url,
+            extra_body=extra_body,
+            prices=prices,
+        )
+        return _form(
+            request, conn, error={"reason": "invalid_value", "message": str(exc)}, draft=draft
+        )
+
+    trimmed = name.strip()
+    logger.info("추가한 회사 정의를 저장했다 name=%s", trimmed)
+    return _form(
+        request,
+        conn,
+        message=f"`{trimmed}` 정의를 저장했다. 키를 넣고 기능에 지정하면 다음 호출부터 쓴다",
+    )
+
+
+@router.delete("/ui/llm/custom/{name}", response_class=HTMLResponse)
+def delete_custom_fragment(
+    request: Request,
+    name: str,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+) -> HTMLResponse:
+    """화면에서 추가한 회사 하나와 그 키를 지운다. 쓰는 기능이 있으면 거절한다."""
+    try:
+        store.delete_custom(conn, name)
+    except store.LlmSettingError as exc:
+        return _form(request, conn, error={"reason": "invalid_value", "message": str(exc)})
+    logger.info("추가한 회사를 지웠다 name=%s", name)
+    return _form(request, conn, message=f"`{name}` 의 정의와 키를 지웠다")
+
+
+@router.post("/ui/llm/custom/{name}/check", response_class=HTMLResponse)
+async def check_custom_fragment(
+    request: Request,
+    name: str,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    model: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """화면에서 추가한 회사를 실제로 한 번 부른다. 결과를 폼 위에 적는다."""
+    try:
+        result = await store.check_connection(conn, name, model)
+    except store.LlmSettingError as exc:
+        return _form(request, conn, error={"reason": "invalid_value", "message": str(exc)})
+    if result.ok:
+        return _form(request, conn, message=result.message)
+    return _form(request, conn, error={"reason": "connection_failed", "message": result.message})

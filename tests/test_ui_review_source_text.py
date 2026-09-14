@@ -49,8 +49,9 @@ HEAD_CELL = re.compile(r'<th scope="col"')
 # 열이 바뀌는 날 이 수를 함께 고친다 — 머리글과 `empty_row` 의 colspan 이 서로 맞는지는
 # `tests/test_ui_review_columns.py` 가 따로 본다
 # 0025 가 `job_major`/`job_minor` 를 `NORMALIZED_FIELDS`(=`OVERRIDABLE_FIELDS`)에 더해
-# 23 -> 25 다. 표의 필드 반복(`{% for field in fields %}`)이 그 목록을 그대로 따라간다
-TABLE_COLUMNS = 25
+# 23 -> 25 다. 표의 필드 반복(`{% for field in fields %}`)이 그 목록을 그대로 따라간다.
+# 0028 이 오공고가 받는 다섯 칸을 더해 25 -> 30 이다
+TABLE_COLUMNS = 30
 
 INPUT_TAG = re.compile(r"<(?:input|textarea)\b[^>]*>")
 TEXTAREA_BODY = re.compile(r"<textarea\b[^>]*>(.*?)</textarea>", re.DOTALL)
@@ -199,11 +200,11 @@ def test_원문이_없으면_무엇으로_분류됐는지_적는다(client: Test
 
 
 def test_상세가_API_인_사이트는_사유를_따로_적는다(client: TestClient) -> None:
-    """앞으로 수집하는 건에도 원문이 없다. 재수집을 기다릴 일이 아니다."""
+    """응답을 원문으로 펴기 전에 모은 건이다. 수집은 아는 주소를 다시 열지 않는다."""
     text = flat(modal(client, 3))
 
     assert "이 건은 본문으로 분류됐다" in text
-    assert "상세를 API 로 받아 원문을 뽑지 않는다" in text
+    assert "API 응답을 원문으로 펴기 전에 모은 건이다" in text
     assert "다시 수집해도 붙지 않는다" in text
     assert "다시 수집하면 원문이 붙고" not in text
 

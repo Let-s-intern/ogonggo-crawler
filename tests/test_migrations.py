@@ -61,6 +61,16 @@ EXPECTED_COLUMNS = {
         "content_hash",
         "crawled_at",
     },
+    # 0030 이 만든 이력. 원문 다시 수집이 갈아 끼우기 전 raw_jobs 값을 그대로 남긴다
+    "raw_job_history": {
+        "id",
+        "raw_job_id",
+        "run_id",
+        "raw_data_json",
+        "content_hash",
+        "crawled_at",
+        "replaced_at",
+    },
     "normalized_jobs": {
         "id",
         "raw_job_id",
@@ -88,6 +98,14 @@ EXPECTED_COLUMNS = {
         # 0025 가 더한 직무 분류. job_taxonomy 의 이름을 그대로 옮겨 담는다
         "job_major",
         "job_minor",
+        # 0028 이 더한 다섯 칸. 오공고가 받는 칸이고 분류가 채운다
+        "company_and_team_introduction",
+        "compensation",
+        "benefits",
+        "education_level",
+        "recruitment_headcount",
+        # 0029 가 더한 번호. 수집 건 하나를 나눈 몇 번째 공고인지다
+        "part",
     },
     "normalization_rules": {
         "id",
@@ -106,6 +124,7 @@ EXPECTED_COLUMNS = {
     "job_field_overrides": {
         "id",
         "raw_job_id",
+        "part",
         "field_name",
         "value",
         "created_at",
@@ -161,6 +180,7 @@ EXPECTED_COLUMNS = {
     "job_field_suggestions": {
         "id",
         "raw_job_id",
+        "part",
         "field_name",
         "value",
         "reason",
@@ -216,6 +236,10 @@ ALL_VERSIONS = [
     "0024",
     "0025",
     "0026",
+    "0027",
+    "0028",
+    "0029",
+    "0030",
 ]
 
 
@@ -1562,7 +1586,7 @@ def test_a_new_suggestion_on_the_same_column_overwrites_the_old_one(
             """
             INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
             VALUES (1, 'deadline', ?, '원문과 다르다')
-            ON CONFLICT (raw_job_id, field_name) DO UPDATE
+            ON CONFLICT (raw_job_id, part, field_name) DO UPDATE
                SET value = excluded.value, reason = excluded.reason,
                    created_at = datetime('now')
             """,
@@ -1611,3 +1635,174 @@ def test_job_field_suggestions_up_after_down_restores_the_table(conn: sqlite3.Co
 
     db.migrate_up(conn)
     assert _columns(conn, "job_field_suggestions") == EXPECTED_COLUMNS["job_field_suggestions"]
+
+
+def _at_0027(connection: sqlite3.Connection) -> None:
+    """0028 직전 상태로 만든다. 오공고가 받는 다섯 칸이 아직 없는 스키마다."""
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0028"))
+
+
+POSTING_DETAIL_COLUMNS = (
+    "company_and_team_introduction",
+    "compensation",
+    "benefits",
+    "education_level",
+    "recruitment_headcount",
+)
+
+
+def test_posting_detail_fields_are_added_to_both_tables(conn: sqlite3.Connection) -> None:
+    """분류가 앉히는 자리와 소비 측이 읽는 자리 둘 다에 있어야 값이 끝까지 간다."""
+    _at_0027(conn)
+    for table in ("normalized_jobs", "job_classifications"):
+        assert not set(POSTING_DETAIL_COLUMNS) & _columns(conn, table), table
+
+    db.migrate_up(conn)
+
+    for table in ("normalized_jobs", "job_classifications"):
+        assert set(POSTING_DETAIL_COLUMNS) <= _columns(conn, table), table
+
+
+def test_posting_detail_fields_leave_the_old_headcount_alone(conn: sqlite3.Connection) -> None:
+    """모집인원은 새 이름이다. 0016 이전 분류기가 남긴 `headcount` 는 지우지 않는다."""
+    db.migrate_up(conn)
+
+    assert "headcount" in _columns(conn, "job_classifications")
+    assert "headcount" not in _columns(conn, "normalized_jobs")
+
+
+def test_the_posting_detail_down_drops_the_columns_and_their_corrections(
+    conn: sqlite3.Connection,
+) -> None:
+    """되돌리면 다섯 칸의 값과 거기 걸린 보정·제안만 사라진다. 나머지는 그대로다."""
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+    conn.executemany(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+        [("title", "사람이 고친 제목"), ("compensation", "연봉 협의")],
+    )
+    conn.executemany(
+        """
+        INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
+        VALUES (1, ?, '제안 값', '원문과 다르다')
+        """,
+        [("title",), ("education_level",)],
+    )
+
+    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0028"))
+
+    for table in ("normalized_jobs", "job_classifications"):
+        assert not set(POSTING_DETAIL_COLUMNS) & _columns(conn, table), table
+    overrides = conn.execute("SELECT field_name FROM job_field_overrides").fetchall()
+    assert [row["field_name"] for row in overrides] == ["title"]
+    suggestions = conn.execute("SELECT field_name FROM job_field_suggestions").fetchall()
+    assert [row["field_name"] for row in suggestions] == ["title"]
+
+
+def _at_0028(connection: sqlite3.Connection) -> None:
+    """0029 직전 상태로 만든다. 공고를 나눌 번호 칸이 아직 없는 스키마다."""
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0029"))
+
+
+SPLIT_TABLES = (
+    "normalized_jobs",
+    "job_classifications",
+    "job_field_overrides",
+    "job_field_suggestions",
+)
+
+
+def _seed_postings(connection: sqlite3.Connection, parts: tuple[int, ...] | None) -> None:
+    """네 표에 행을 하나씩. `parts` 가 None 이면 번호 칸이 없던 때처럼 번호를 적지 않는다."""
+    _seed_raw_job(connection)
+    for part in parts or (None,):
+        number = "" if part is None else ", part"
+        value = "" if part is None else f", {part}"
+        connection.execute(
+            f"INSERT INTO job_classifications (raw_job_id, model, duties{number})"
+            f" VALUES (1, 'model', '결제 서버 개발'{value})"
+        )
+        connection.execute(
+            f"INSERT INTO normalized_jobs (raw_job_id, source_url, title{number})"
+            f" VALUES (1, 'https://example.test/1', '백엔드'{value})"
+        )
+        connection.execute(
+            f"INSERT INTO job_field_overrides (raw_job_id, field_name, value{number})"
+            f" VALUES (1, 'title', '사람이 고친 제목'{value})"
+        )
+        connection.execute(
+            f"INSERT INTO job_field_suggestions (raw_job_id, field_name, value{number})"
+            f" VALUES (1, 'title', '제안 값'{value})"
+        )
+
+
+def test_existing_rows_become_the_first_posting(conn: sqlite3.Connection) -> None:
+    """나누지 않은 공고는 1번 하나다. 값은 그대로 옮겨진다."""
+    _at_0028(conn)
+    _seed_postings(conn, None)
+
+    db.migrate_up(conn)
+
+    for table in SPLIT_TABLES:
+        rows = conn.execute(f"SELECT part FROM {table}").fetchall()
+        assert [row["part"] for row in rows] == [1], table
+    row = conn.execute("SELECT duties, part_role, part_lines FROM job_classifications").fetchone()
+    assert (row["duties"], row["part_role"], row["part_lines"]) == ("결제 서버 개발", None, None)
+
+
+def test_one_raw_job_holds_several_postings_but_each_number_once(
+    conn: sqlite3.Connection,
+) -> None:
+    """삼성 공고 하나가 열두 공고가 된다. 같은 번호의 같은 칸은 여전히 하나다."""
+    db.migrate_up(conn)
+    _seed_postings(conn, (1, 2))
+
+    for table in SPLIT_TABLES:
+        assert conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 2, table
+    for sql in (
+        "INSERT INTO job_classifications (raw_job_id, part, model) VALUES (1, 2, 'model')",
+        "INSERT INTO job_field_overrides (raw_job_id, part, field_name, value)"
+        " VALUES (1, 2, 'title', '또 고친 제목')",
+        "INSERT INTO job_field_suggestions (raw_job_id, part, field_name, value)"
+        " VALUES (1, 2, 'title', '또 다른 제안')",
+    ):
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(sql)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "INSERT INTO normalized_jobs (raw_job_id, source_url, part)"
+        " VALUES (1, 'https://example.test/1', 0)",
+        "INSERT INTO job_classifications (raw_job_id, model, part) VALUES (1, 'model', 0)",
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value, part)"
+        " VALUES (1, 'title', '값', 0)",
+        "INSERT INTO job_field_suggestions (raw_job_id, field_name, value, part)"
+        " VALUES (1, 'title', '값', 0)",
+    ],
+)
+def test_a_posting_number_starts_at_one(conn: sqlite3.Connection, sql: str) -> None:
+    db.migrate_up(conn)
+    _seed_raw_job(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(sql)
+
+
+def test_the_split_down_keeps_only_the_first_posting(conn: sqlite3.Connection) -> None:
+    """되돌리면 2번 이후 행이 네 표 모두에서 떨어지고 번호 칸이 사라진다."""
+    db.migrate_up(conn)
+    _seed_postings(conn, (1, 2))
+
+    # 0030 이 뒤에 붙어 둘을 되돌려야 0029 앞이다
+    db.migrate_down(conn, steps=2)
+
+    for table in SPLIT_TABLES:
+        assert "part" not in _columns(conn, table), table
+        assert conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 1, table
+    assert not {"part_role", "part_lines"} & _columns(conn, "job_classifications")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO job_classifications (raw_job_id, model) VALUES (1, 'model')")

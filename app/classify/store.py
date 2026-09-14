@@ -23,8 +23,10 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Final
 
+from app.classify.pieces import from_ranges, to_ranges
 from app.classify.schema import COLLECTED_REVIEW_FIELDS, STORED_CLASSIFY_FIELDS
 
 # `raw_jobs.raw_data_json` 에서 원문·본문·제목을 꺼내는 자리. JSON 함수는 SQLite 3.38+ 에 있다
@@ -38,9 +40,8 @@ _SOURCE_TEXT = "json_extract(r.raw_data_json, '$.source_text')"
 # 없다. 원문만 대상으로 삼으면 그 공고들이 분류에서 통째로 사라진다
 # (`.claude/tasks/todo/prd-side-workflows.md` 4절).
 #
-# 상세가 API 인 사이트는 앞으로 수집하는 건에도 원문이 없다. 응답 전체는 다른 공고 목록을
-# 담고 본문 경로의 부모 객체도 하나로 정해지지 않아 원문을 뽑지 않기로 했다
-# (`.claude/site-recipes/source-text-container.md`). 그 넷은 계속 본문으로 돈다
+# 상세가 API 인 사이트는 응답 전체를 편 원문이 붙는다 (`app/crawler/api_source.py`). 그것을
+# 붙이기 전에 모은 건은 키가 없어 본문으로 돈다
 _CLASSIFY_TEXT = f"coalesce(nullif({_SOURCE_TEXT}, ''), {_BODY}, '')"
 
 
@@ -146,8 +147,10 @@ def scope_ids(
     """
     body, params = _scope_from(scope, days)
     bound = "" if limit is None else " LIMIT ?"
+    # 나눈 공고는 수집 건 하나에 분류 행이 여럿이다. 분류 표를 잇는 범위에서 같은 수집 건이
+    # 여러 번 나오면 한 실행이 같은 공고를 몇 번이고 다시 부른다
     rows = conn.execute(
-        f"SELECT r.id AS id {body} ORDER BY r.id DESC{bound}",
+        f"SELECT DISTINCT r.id AS id {body} ORDER BY r.id DESC{bound}",
         params if limit is None else (*params, limit),
     ).fetchall()
     return [int(row["id"]) for row in rows]
@@ -164,8 +167,26 @@ def scope_count(conn: sqlite3.Connection, scope: str, *, days: int | None = None
     건이냐" 이고, 그중 몇 건씩 끊어 도는지는 실행이 정한다.
     """
     body, params = _scope_from(scope, days)
-    row = conn.execute(f"SELECT count(*) AS n {body}", params).fetchone()
+    row = conn.execute(f"SELECT count(DISTINCT r.id) AS n {body}", params).fetchone()
     return int(row["n"])
+
+
+def workflow_ids(conn: sqlite3.Connection, workflow_id: int) -> list[int]:
+    """그 워크플로우에서 보낼 글이 있는 공고 전부. **최근 수집한 것부터다.** 읽기 전용이다.
+
+    분류 여부를 보지 않는다. 원문 다시 수집이 그 워크플로우의 공고를 전부 다시 분류할 때 쓴다
+    (`app/crawler/recollect.py`).
+    """
+    rows = conn.execute(
+        f"""
+        SELECT r.id AS id
+          FROM raw_jobs r
+         WHERE r.workflow_id = ? AND {_CLASSIFY_TEXT} <> ''
+         ORDER BY r.id DESC
+        """,
+        (workflow_id,),
+    ).fetchall()
+    return [int(row["id"]) for row in rows]
 
 
 def pending_ids(conn: sqlite3.Connection, limit: int | None = None) -> list[int]:
@@ -250,25 +271,58 @@ def read_current_values(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, 
     }
 
 
-def read_classification(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, str]:
+@dataclass(frozen=True)
+class StoredPart:
+    """이미 나눈 공고 하나. 번호와 직무 이름, 긴 공고였으면 그때 보낸 원문 줄 번호."""
+
+    part: int
+    role: str
+    lines: tuple[int, ...]
+
+
+def read_parts(conn: sqlite3.Connection, raw_job_id: int) -> list[StoredPart]:
+    """그 수집 건을 나눈 공고들. 번호 순이다. 아직 분류되지 않았으면 빈 목록이다. 읽기 전용이다.
+
+    보낸 줄을 읽지 못하면(손으로 고친 행) 줄이 없는 공고로 읽는다. 그 공고는 한 번에 나눈
+    공고처럼 다시 분류된다.
+    """
+    rows = conn.execute(
+        "SELECT part, part_role, part_lines FROM job_classifications"
+        " WHERE raw_job_id = ? ORDER BY part",
+        (raw_job_id,),
+    ).fetchall()
+    parts: list[StoredPart] = []
+    for row in rows:
+        try:
+            ranges = json.loads(row["part_lines"] or "[]")
+            lines = tuple(from_ranges(ranges))
+        except (TypeError, ValueError):
+            lines = ()
+        parts.append(StoredPart(int(row["part"]), str(row["part_role"] or ""), lines))
+    return parts
+
+
+def read_classification(conn: sqlite3.Connection, raw_job_id: int, part: int = 1) -> dict[str, str]:
     """그 공고의 분류 결과. 아직 분류되지 않았으면 빈 dict 다. 읽기 전용이다.
 
     빈 dict 와 "전부 빈 문자열인 dict" 는 뜻이 다르다. 앞은 아직 돌지 않은 것이고 뒤는
     돌았는데 본문이 아무것도 주지 않은 것이다.
     """
     row = conn.execute(
-        f"SELECT {', '.join(STORED_CLASSIFY_FIELDS)} FROM job_classifications WHERE raw_job_id = ?",
-        (raw_job_id,),
+        f"SELECT {', '.join(STORED_CLASSIFY_FIELDS)} FROM job_classifications"
+        " WHERE raw_job_id = ? AND part = ?",
+        (raw_job_id, part),
     ).fetchone()
     if row is None:
         return {}
     return {name: str(row[name] or "") for name in STORED_CLASSIFY_FIELDS}
 
 
-def read_evidence(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, str]:
+def read_evidence(conn: sqlite3.Connection, raw_job_id: int, part: int = 1) -> dict[str, str]:
     """판정 칸의 근거 문장. 아직 분류되지 않았거나 판정이 없으면 빈 dict 다. 읽기 전용이다."""
     row = conn.execute(
-        "SELECT evidence_json FROM job_classifications WHERE raw_job_id = ?", (raw_job_id,)
+        "SELECT evidence_json FROM job_classifications WHERE raw_job_id = ? AND part = ?",
+        (raw_job_id, part),
     ).fetchone()
     if row is None:
         return {}
@@ -287,8 +341,16 @@ def save_classification(
     model: str,
     dropped: Sequence[str] = (),
     evidence: Mapping[str, str] | None = None,
+    part: int = 1,
+    part_role: str | None = None,
+    part_lines: Sequence[int] = (),
 ) -> None:
     """분류 결과를 넣거나 덮는다. 빈 값은 NULL 로 들어간다.
+
+    `part` 는 공고를 나눈 몇 번째 공고인지다. 나누지 않은 공고는 1번 하나다. `part_role` 은
+    나눈 직무의 이름이고 나누지 않은 공고는 None 이다. `part_lines` 는 긴 공고에서 이 공고를
+    나눌 때 보낸 원문 줄 번호이고, 이어진 범위로 묶어 적는다. 한 번에 나눈 공고는 NULL 이다
+    (`migrations/0029_split_postings.sql`).
 
     덮는 것이 맞다. 분류는 본문에서 다시 만들 수 있는 값이라 이력을 쌓을 이유가 없고,
     한 공고에 결과가 둘이면 어느 쪽이 지금 값인지 알 수 없다.
@@ -296,20 +358,29 @@ def save_classification(
     `evidence` 는 판정 칸을 그렇게 고른 근거 문장이다. 남기지 않으면 나중에 "이 공고가 왜
     경력으로 분류됐나" 에 답할 수 없다 (`migrations/0015_classification_evidence.sql`).
     """
-    columns = (*STORED_CLASSIFY_FIELDS, "dropped_fields", "model", "evidence_json")
+    columns = (
+        *STORED_CLASSIFY_FIELDS,
+        "dropped_fields",
+        "model",
+        "evidence_json",
+        "part_role",
+        "part_lines",
+    )
     values = [fields.get(name, "").strip() or None for name in STORED_CLASSIFY_FIELDS]
     values.append(", ".join(dropped))
     values.append(model)
     values.append(json.dumps(dict(evidence or {}), ensure_ascii=False))
+    values.append(part_role)
+    values.append(json.dumps(to_ranges(part_lines)) if part_lines else None)
     assignments = ", ".join(f"{name} = excluded.{name}" for name in columns)
     conn.execute(
         f"""
-        INSERT INTO job_classifications (raw_job_id, {", ".join(columns)})
-        VALUES ({", ".join("?" for _ in range(len(columns) + 1))})
-        ON CONFLICT (raw_job_id) DO UPDATE
+        INSERT INTO job_classifications (raw_job_id, part, {", ".join(columns)})
+        VALUES ({", ".join("?" for _ in range(len(columns) + 2))})
+        ON CONFLICT (raw_job_id, part) DO UPDATE
            SET {assignments}, classified_at = datetime('now')
         """,
-        (raw_job_id, *values),
+        (raw_job_id, part, *values),
     )
 
 
@@ -318,6 +389,8 @@ def save_suggestions(
     raw_job_id: int,
     suggestions: Mapping[str, str],
     reasons: Mapping[str, str] | None = None,
+    *,
+    part: int = 1,
 ) -> None:
     """값이 있는 칸에 원문이 다르다고 낸 값을 `job_field_suggestions` 에 넣거나 덮는다.
 
@@ -325,8 +398,8 @@ def save_suggestions(
     해서 옛 제안이 틀렸다고 볼 근거는 없다. 사람이 검수 화면에서 수락하거나 거절해야 그 행이
     사라진다.
 
-    같은 칸에 제안이 둘이면 어느 것을 보고 있는지 알 수 없어(`(raw_job_id, field_name)`
-    UNIQUE), 새 제안이 옛 제안을 덮는다.
+    같은 칸에 제안이 둘이면 어느 것을 보고 있는지 알 수 없어(`(raw_job_id, part,
+    field_name)` UNIQUE), 새 제안이 옛 제안을 덮는다.
     """
     reasons = reasons or {}
     for field_name, value in suggestions.items():
@@ -334,17 +407,19 @@ def save_suggestions(
             continue
         conn.execute(
             """
-            INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT (raw_job_id, field_name) DO UPDATE
+            INSERT INTO job_field_suggestions (raw_job_id, part, field_name, value, reason)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (raw_job_id, part, field_name) DO UPDATE
                SET value = excluded.value, reason = excluded.reason,
                    created_at = datetime('now')
             """,
-            (raw_job_id, field_name, value, reasons.get(field_name, "").strip()),
+            (raw_job_id, part, field_name, value, reasons.get(field_name, "").strip()),
         )
 
 
-def read_suggestions(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, dict[str, str]]:
+def read_suggestions(
+    conn: sqlite3.Connection, raw_job_id: int, part: int = 1
+) -> dict[str, dict[str, str]]:
     """그 공고에 남아 있는 제안. 필드명이 키고, 값은 `value`·`reason` 이다. 읽기 전용이다.
 
     검수 화면(11.6)이 "제안 있음" 을 보이는 자리다. 수락은 `job_field_overrides` 에 넣는
@@ -352,8 +427,9 @@ def read_suggestions(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, dic
     일이라 여기는 읽기만 한다.
     """
     rows = conn.execute(
-        "SELECT field_name, value, reason FROM job_field_suggestions WHERE raw_job_id = ?",
-        (raw_job_id,),
+        "SELECT field_name, value, reason FROM job_field_suggestions"
+        " WHERE raw_job_id = ? AND part = ?",
+        (raw_job_id, part),
     ).fetchall()
     return {
         str(row["field_name"]): {"value": str(row["value"]), "reason": str(row["reason"] or "")}
@@ -362,25 +438,29 @@ def read_suggestions(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, dic
 
 
 def read_suggestions_batch(
-    conn: sqlite3.Connection, raw_job_ids: Sequence[int]
-) -> dict[int, dict[str, dict[str, str]]]:
+    conn: sqlite3.Connection, postings: Sequence[tuple[int, int]]
+) -> dict[tuple[int, int], dict[str, dict[str, str]]]:
     """`read_suggestions` 의 여러 건 버전. 검수 표 한 페이지가 이것으로 N+1 조회를 피한다.
+
+    키는 (수집 건, 번호) 다. 나눈 공고는 수집 건 하나에 공고가 여럿이고 제안도 번호마다 따로다.
 
     행마다 `read_suggestions` 를 부르면 한 페이지(최대 100건)에 조회가 100번 붙는다. 표는
     "이 칸에 제안이 있다" 는 배지만 필요하지만, 모달과 같은 모양(값·이유)으로 돌려주는 것이
     두 자리가 서로 다른 것을 반환하는 것보다 낫다 — 호출하는 쪽이 값을 쓰지 않으면 그만이다.
     """
-    if not raw_job_ids:
+    if not postings:
         return {}
+    raw_job_ids = sorted({raw_job_id for raw_job_id, _ in postings})
     marks = ",".join("?" for _ in raw_job_ids)
     rows = conn.execute(
-        "SELECT raw_job_id, field_name, value, reason FROM job_field_suggestions"
+        "SELECT raw_job_id, part, field_name, value, reason FROM job_field_suggestions"
         f" WHERE raw_job_id IN ({marks})",
-        list(raw_job_ids),
+        raw_job_ids,
     ).fetchall()
-    found: dict[int, dict[str, dict[str, str]]] = {}
+    found: dict[tuple[int, int], dict[str, dict[str, str]]] = {}
     for row in rows:
-        found.setdefault(int(row["raw_job_id"]), {})[str(row["field_name"])] = {
+        key = (int(row["raw_job_id"]), int(row["part"]))
+        found.setdefault(key, {})[str(row["field_name"])] = {
             "value": str(row["value"]),
             "reason": str(row["reason"] or ""),
         }

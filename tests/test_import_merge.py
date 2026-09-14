@@ -26,7 +26,7 @@ import pytest
 from app import db
 from app.api.import_data import ImportRejected, ImportResult, import_database
 from app.crawler.hashing import content_hash
-from app.normalize.rules import NORMALIZED_FIELDS
+from app.normalize.rules import NORMALIZED_FIELDS, without_yearless_formats
 
 SNAPSHOT = pathlib.Path(__file__).resolve().parent.parent / "seeds" / "snapshot" / "jobs.db"
 
@@ -311,6 +311,32 @@ def test_이_서버에_이미_있는_보정은_덮지_않는다(
     assert values == [("이_서버가_고친_제목",)]
 
 
+def test_나눈_공고의_보정은_번호마다_따로_들어온다(
+    conn: sqlite3.Connection, tmp_path: pathlib.Path
+) -> None:
+    """같은 칸이어도 번호가 다르면 다른 보정이다. 1번 보정이 있다고 2번을 건너뛰지 않는다."""
+    path = make_upload(
+        tmp_path / "upload.db", jobs=[job("가")], overrides=[(1, "benefits", "1번_복지")]
+    )
+    upload = db.connect(path)
+    upload.execute(
+        """
+        INSERT INTO job_field_overrides (raw_job_id, part, field_name, value, created_at,
+                                         updated_at)
+        VALUES (1, 2, 'benefits', '2번_복지', '2026-08-02 10:00:00', '2026-08-02 10:00:00')
+        """
+    )
+    upload.close()
+
+    result = import_database(conn, path)
+
+    assert (result.overrides_added, result.overrides_skipped) == (2, 0)
+    assert rows(conn, "SELECT part, value FROM job_field_overrides ORDER BY part") == [
+        (1, "1번_복지"),
+        (2, "2번_복지"),
+    ]
+
+
 def test_저쪽_서버의_실행_기록은_따라오지_않는다(
     conn: sqlite3.Connection, tmp_path: pathlib.Path
 ) -> None:
@@ -456,3 +482,48 @@ def _added(result: ImportResult) -> tuple[int, int, int, int, int]:
         result.raw_added,
         result.overrides_added,
     )
+
+
+def test_연도_없는_날짜_형식은_빼고_들이고_읽지_못하는_규칙은_건너뛴다(
+    conn: sqlite3.Connection, tmp_path: pathlib.Path
+) -> None:
+    """0027 이전에 뜬 파일의 마감일 규칙이 그대로 들어오면 `load_rules` 가 터져 가져온 공고가
+    한 건도 정규화되지 않는다. 형식만 빼고 들이고, 그래도 못 읽는 규칙은 건너뛴다."""
+    upload = make_upload(
+        tmp_path / "upload.db",
+        jobs=[job("공고", deadline="2026.12.31")],
+        rules=[
+            ("deadline", "date_parse", json.dumps({"formats": ["%Y.%m.%d", "%m/%d"]}), 10, None),
+            ("deadline", "date_parse", json.dumps({"formats": ["%m.%d"]}), 20, None),
+            ("title", "regex", json.dumps({"pattern": "([unclosed"}), 30, None),
+        ],
+    )
+
+    result = import_database(conn, upload)
+
+    assert result.rules_added == 1
+    assert result.rules_skipped == 2
+    stored = conn.execute("SELECT rule_config_json FROM normalization_rules").fetchall()
+    assert [json.loads(row[0])["formats"] for row in stored] == [["%Y.%m.%d"]]
+    assert result.normalize_failed == 0
+    assert result.normalized_added == 1
+    assert rows(conn, "SELECT deadline FROM normalized_jobs") == [("2026-12-31",)]
+
+
+def test_연도_없는_형식을_빼는_모양이_0027_과_같다() -> None:
+    """같은 규칙이 이미 0027 로 정리돼 있으면 가져온 규칙과 글자 그대로 같아야 중복으로 걸린다."""
+    config = json.dumps({"formats": ["%Y.%m.%d", "%m/%d", "%m.%d"], "output_format": "%Y-%m-%d"})
+    migration = (
+        pathlib.Path(__file__).resolve().parent.parent
+        / "migrations"
+        / "0027_drop_yearless_date_formats.sql"
+    ).read_text(encoding="utf-8")
+    up = migration.partition("-- migrate:up")[2].partition("-- migrate:down")[0]
+    memory = sqlite3.connect(":memory:")
+    memory.execute("CREATE TABLE normalization_rules (rule_type TEXT, rule_config_json TEXT)")
+    memory.execute("INSERT INTO normalization_rules VALUES ('date_parse', ?)", (config,))
+    memory.executescript(up)
+    (migrated,) = memory.execute("SELECT rule_config_json FROM normalization_rules").fetchone()
+
+    assert without_yearless_formats("date_parse", config) == migrated
+    assert without_yearless_formats("regex", '{"pattern": "%m/%d"}') == '{"pattern": "%m/%d"}'

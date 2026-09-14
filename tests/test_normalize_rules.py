@@ -32,6 +32,10 @@ VALID: list[tuple[str, dict[str, Any]]] = [
     ("trim", {"collapse_whitespace": False, "strip_chars": "-·"}),
     ("date_parse", {"formats": ["%Y.%m.%d"]}),
     ("date_parse", {"formats": ["%Y.%m.%d", "%Y년 %m월 %d일"], "output_format": "%Y-%m-%d"}),
+    # 두 자리 연도도 연도다
+    ("date_parse", {"formats": ["%y.%m.%d"]}),
+    # 리터럴 퍼센트 뒤에 붙은 연도 지시자는 지시자로 읽는다
+    ("date_parse", {"formats": ["%%%Y-%m-%d"]}),
     ("html_text", {}),
 ]
 
@@ -49,6 +53,16 @@ INVALID: list[tuple[str, Any, str]] = [
     ("regex", {"pattern": "([unclosed"}, "invalid_config"),
     ("date_parse", {"formats": []}, "invalid_config"),
     ("date_parse", {"formats": ["%Y-%m-%d"], "output_format": ""}, "invalid_config"),
+    # 연도가 없는 형식. `strptime` 이 1900 으로 채우므로 읽기에 **성공한 채로** 늘 오늘보다
+    # 이전이 되고, 그 공고는 마감으로 읽혀 상세를 열지 않는다. 실패가 아니라 건너뜀이라
+    # 실행은 성공으로 닫히고 그 사이트가 조용히 통째로 걸러진다
+    # (`migrations/0027_drop_yearless_date_formats.sql`)
+    ("date_parse", {"formats": ["%m/%d"]}, "invalid_config"),
+    ("date_parse", {"formats": ["%m.%d"]}, "invalid_config"),
+    # 하나라도 섞여 있으면 거부한다. 앞 형식이 잡아 주기를 기대할 수 없다
+    ("date_parse", {"formats": ["%Y-%m-%d", "%m.%d"]}, "invalid_config"),
+    # `%%` 는 리터럴 퍼센트라 연도 지시자가 아니다
+    ("date_parse", {"formats": ["%%Y"]}, "invalid_config"),
     # 타입 자체가 틀렸다
     ("upper", {}, "unknown_type"),
     ("mapping", {"map": "영업직"}, "invalid_config"),

@@ -32,6 +32,7 @@ from app.classify.store import (
     pending_count,
     pending_ids,
     read_current_values,
+    read_parts,
     read_source,
     read_title,
     save_classification,
@@ -128,6 +129,26 @@ class ClassifyRun:
         thread.join(timeout)
         return not thread.is_alive()
 
+    def claim(self) -> ClassifyProgress:
+        """분류 자리만 잡는다. 이미 돌고 있으면 `ClassifyRunningError`.
+
+        원문 다시 수집이 워크플로우 공고를 다시 분류할 때 쓴다 (`app/crawler/recollect.py`).
+        잡는 동안 `POST /api/classify` 와 부가 워크플로우의 분류가 물러난다 — 같은 공고에 두 번
+        돈을 쓰지 않는다. 돌려주는 진행 상황을 `classify_ids` 에 그대로 넘기고, 끝나면
+        `release()` 를 부른다.
+        """
+        with self._lock:
+            if self._progress.running:
+                raise ClassifyRunningError("분류가 이미 돌고 있다")
+            self._progress = ClassifyProgress(running=True, started_at=_now())
+            return self._progress
+
+    def release(self) -> None:
+        """`claim()` 으로 잡은 자리를 놓는다."""
+        with self._lock:
+            self._progress.running = False
+            self._progress.finished_at = _now()
+
     def _work(self, connect: ConnectFactory, limit: int) -> None:
         conn = connect()
         try:
@@ -211,6 +232,12 @@ async def classify_ids(
         # 분류가 원문과 "다르다" 를 말할 수 없다
         current_values = read_current_values(conn, raw_job_id)
 
+        # 이미 나눈 공고는 나눈 목록을 그대로 두고 칸만 다시 채운다 (2026-09-11 결정). 번호에
+        # 사람 보정과 전달된 공고 주소가 붙어 있어 개수나 순서가 바뀌면 그 값이 다른 직무로
+        # 옮겨 붙는다. 한 번도 나누지 않은 공고(1번 하나, 보낸 줄 없음)는 나눌 수 있다
+        stored = read_parts(conn, raw_job_id)
+        known = stored if len(stored) > 1 or any(part.lines for part in stored) else []
+
         def counted(usage: Usage) -> None:
             # 호출 하나가 행 하나다. 깨진 응답으로 한 번 더 물었으면 두 행이 남는다
             progress.count(usage)
@@ -223,6 +250,7 @@ async def classify_ids(
                 current_values=current_values,
                 taxonomy_tree=taxonomy_tree,
                 response_model=response_model,
+                known_parts=[(part.role, part.lines) for part in known],
                 settings=resolved,
                 client=resolved_client,
                 on_call=counted,
@@ -232,18 +260,30 @@ async def classify_ids(
             progress.note(f"raw_jobs {raw_job_id}: {exc}")
             continue
 
-        save_classification(
-            conn,
-            raw_job_id,
-            result.fields,
-            model=result.usage.model,
-            dropped=result.dropped,
-            evidence=result.evidence,
-        )
-        progress.dropped += len(result.dropped)
-        # 같은 호출의 다른 갈래다. 값이 있는 칸에 원문이 다른 값을 낸 것은 여기로 간다 —
-        # `normalize/engine.py` 는 이 표를 읽지 않는다 (PRD 6절)
-        save_suggestions(conn, raw_job_id, result.suggestions, result.suggestion_reasons)
+        # 직무마다 나뉘었으면 번호마다 한 행이다. 나누지 않은 공고는 1번 하나이고 직무 이름을
+        # 따로 남기지 않는다 — 그 직무는 제목에서 온 `job_role` 그대로다
+        # 목록을 고정한 공고는 직무 이름도 저장된 것을 쓴다
+        split = len(known) > 1 if known else result.split
+        for part, posting in enumerate(result.postings, start=1):
+            role = known[part - 1].role if known else posting.fields.get("job_role", "").strip()
+            save_classification(
+                conn,
+                raw_job_id,
+                posting.fields,
+                model=result.usage.model,
+                dropped=posting.dropped,
+                evidence=posting.evidence,
+                part=part,
+                part_role=(role or None) if split else None,
+                part_lines=posting.sent_lines,
+            )
+            progress.dropped += len(posting.dropped)
+            # 같은 호출의 다른 갈래다. 값이 있는 칸에 원문이 다른 값을 낸 것은 여기로 간다 —
+            # `normalize/engine.py` 는 이 표를 읽지 않는다 (PRD 6절). 회사명·마감일은 공고 한
+            # 건 전체의 값이라 나눈 공고마다 같은 제안이 붙는다
+            save_suggestions(
+                conn, raw_job_id, result.suggestions, result.suggestion_reasons, part=part
+            )
         try:
             # 분류가 채운 칸이 `normalized_jobs` 까지 가야 소비 측이 본다. 규칙 -> 분류 ->
             # 사람 보정 순서는 정규화 경로 하나가 정한다 (`app/normalize/engine.py`)
@@ -283,9 +323,10 @@ def _note_failed_call(
     """응답을 받지 못한 호출도 남긴다. 토큰은 알 수 없어 0 이다.
 
     `empty_body` 는 모델을 부르지 않은 것이라 남기지 않는다 — 부르지 않은 호출을 기록하면
-    호출 수가 실제보다 많아진다.
+    호출 수가 실제보다 많아진다. `parts_mismatch` 는 모델이 답한 뒤의 거절이라 그 호출은 이미
+    남았다.
     """
-    if exc.reason == "empty_body":
+    if exc.reason in ("empty_body", "parts_mismatch"):
         return
     record_call(
         conn,

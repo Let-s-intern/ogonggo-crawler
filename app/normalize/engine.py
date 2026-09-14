@@ -98,13 +98,14 @@ import json
 import re
 import sqlite3
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 
 from bs4 import BeautifulSoup
 
 from app import companies
 from app.classify.schema import STORED_CLASSIFY_FIELDS
-from app.classify.store import read_classification
+from app.classify.store import read_classification, read_parts
 
 # 어디서 줄이 바뀌어야 하는지는 HTML 이 정하고, 그 목록은 저기 하나뿐이다. 여기에 같은
 # 목록을 두 벌 두면 한쪽만 늘어나는 날이 오고 그때 어느 쪽이 진실인지 알 수 없다
@@ -303,14 +304,15 @@ def read_raw(conn: sqlite3.Connection, raw_job_id: int) -> tuple[str, dict[str, 
     return str(row["source_url"]), data
 
 
-def read_overrides(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, str]:
+def read_overrides(conn: sqlite3.Connection, raw_job_id: int, part: int = 1) -> dict[str, str]:
     """그 건에 사람이 고쳐 둔 값. 필드명이 키다. 읽기 전용이다.
 
     허용 목록 밖의 필드명은 버린다. CHECK 가 이미 막고 있지만, 그 방어가 사라지는 경로는
     누군가 DB 를 직접 고친 경우뿐이고 그때 정규화가 엉뚱한 컬럼을 쓰게 두지 않는다.
     """
     rows = conn.execute(
-        "SELECT field_name, value FROM job_field_overrides WHERE raw_job_id = ?", (raw_job_id,)
+        "SELECT field_name, value FROM job_field_overrides WHERE raw_job_id = ? AND part = ?",
+        (raw_job_id, part),
     ).fetchall()
     return {
         str(row["field_name"]): str(row["value"])
@@ -334,30 +336,73 @@ def apply_overrides(
     return fields
 
 
+@dataclass(frozen=True)
+class PostingPart:
+    """정규화할 공고 하나. 나누지 않은 공고는 1번 하나이고 `split` 이 False 다."""
+
+    number: int = 1
+    role: str = ""
+    split: bool = False
+
+
+def posting_parts(conn: sqlite3.Connection, raw_job_id: int) -> list[PostingPart]:
+    """그 수집 건에서 나올 공고들. 분류가 나눈 대로이고, 아직 분류되지 않았으면 1번 하나다."""
+    stored = read_parts(conn, raw_job_id)
+    if not stored:
+        return [PostingPart()]
+    split = len(stored) > 1
+    return [PostingPart(number=part.part, role=part.role, split=split) for part in stored]
+
+
 def normalized_values(
-    conn: sqlite3.Connection, raw_job_id: int, rules: Sequence[Rule]
+    conn: sqlite3.Connection,
+    raw_job_id: int,
+    rules: Sequence[Rule],
+    part: PostingPart | None = None,
 ) -> tuple[str, dict[str, str | None]]:
-    """한 건의 `source_url` 과 확정 값. 규칙을 먼저 태우고 그 위에 사람 보정을 덮는다.
+    """공고 하나의 `source_url` 과 확정 값. 규칙을 먼저 태우고 그 위에 사람 보정을 덮는다.
 
     최초 정규화와 재정규화가 같은 값을 내려면 두 경로가 이 함수 하나를 지나야 한다. 순서를
     각자 조립하면 한쪽에서만 보정이 빠지고, 그 차이는 재정규화를 돌린 뒤에야 드러난다.
+
+    나눈 공고는 제목 뒤에 직무 이름을 붙이고(`원래 제목 - 직무 이름`) 주소 뒤에 번호를
+    붙인다(`...#2`) (2026-09-11 결정). 주소가 같으면 소비 측이 같은 공고로 보고 뒤의 것을
+    버린다. 사람이 고친 제목은 그 위에 덮인다.
+
+    직무가 조직 아래 나뉜 공고는 직무 이름에 조직 이름 줄이 함께 온다(`HS사업본부` / `기계`).
+    제목과 `job_role` 에는 한 줄로 이어 넣는다 — 줄바꿈이 든 제목은 목록에서 잘려 보인다.
     """
+    part = part or PostingPart()
     source_url, data = read_raw(conn, raw_job_id)
     fields = normalize_fields(
         data,
         rules,
         read_parent_company(conn, raw_job_id),
-        read_classification(conn, raw_job_id),
+        read_classification(conn, raw_job_id, part.number),
     )
-    return source_url, apply_overrides(fields, read_overrides(conn, raw_job_id))
+    if fields.get("job_role"):
+        fields["job_role"] = " ".join(str(fields["job_role"]).split())
+    if part.split:
+        source_url = f"{source_url}#{part.number}"
+        role = " ".join(part.role.split())
+        if role:
+            title = fields.get("title")
+            fields["title"] = f"{title} - {role}" if title else role
+    return source_url, apply_overrides(fields, read_overrides(conn, raw_job_id, part.number))
 
 
-def insert_normalized(conn: sqlite3.Connection, raw_job_id: int, rules: Sequence[Rule]) -> int:
+def insert_normalized(
+    conn: sqlite3.Connection,
+    raw_job_id: int,
+    rules: Sequence[Rule],
+    part: PostingPart | None = None,
+) -> int:
     """`raw_jobs` 한 행을 정규화해 `normalized_jobs` 에 넣는다. 새 행의 id 를 돌려준다.
 
     `delivered_at` 은 쓰지 않는다. 제공 API 경로만 쓴다 (`.claude/rules/data-safety.md`).
     """
-    source_url, fields = normalized_values(conn, raw_job_id, rules)
+    part = part or PostingPart()
+    source_url, fields = normalized_values(conn, raw_job_id, rules, part)
     companies.register(conn, fields["company"], fields[PARENT_COMPANY])
     # 컬럼 이름은 이 모듈의 상수에서만 온다. 밖에서 오는 값이 들어오지 않는다. 손으로 적은
     # 목록을 두면 칸이 늘 때마다 여기와 `NORMALIZED_FIELDS` 가 갈리고, 갈린 순간 새 칸은
@@ -366,10 +411,10 @@ def insert_normalized(conn: sqlite3.Connection, raw_job_id: int, rules: Sequence
     cursor = conn.execute(
         f"""
         INSERT INTO normalized_jobs
-               (raw_job_id, source_url, {", ".join(columns)})
-        VALUES (?, ?, {", ".join("?" for _ in columns)})
+               (raw_job_id, part, source_url, {", ".join(columns)})
+        VALUES (?, ?, ?, {", ".join("?" for _ in columns)})
         """,
-        (raw_job_id, source_url, *(fields[name] for name in columns)),
+        (raw_job_id, part.number, source_url, *(fields[name] for name in columns)),
     )
     return int(cursor.lastrowid or 0)
 

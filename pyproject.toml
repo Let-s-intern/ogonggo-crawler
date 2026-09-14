@@ -22,6 +22,8 @@ dependencies = [
     # 로고 파일 저장소. MinIO 도 실제 S3 도 같은 API 라 붙는 코드가 하나다
     # (.claude/rules/core.md 의 두 번째 컨테이너 예외, 2026-08-28)
     "boto3",
+    # 본문이 이미지로만 올라온 공고의 긴 이미지를 조각내 읽는다 (app/crawler/images.py)
+    "pillow",
 ]
 
 [project.optional-dependencies]

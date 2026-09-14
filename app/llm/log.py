@@ -24,8 +24,10 @@ logger = logging.getLogger(__name__)
 SELECTOR_GENERATE = "selector_generate"
 SELECTOR_REPAIR = "selector_repair"
 CLASSIFY = "classify"
+# 본문이 이미지로만 올라온 공고의 글자를 수집할 때 읽는다 (`app/crawler/images.py`)
+IMAGE_READ = "image_read"
 
-FEATURES: tuple[str, ...] = (SELECTOR_GENERATE, SELECTOR_REPAIR, CLASSIFY)
+FEATURES: tuple[str, ...] = (SELECTOR_GENERATE, SELECTOR_REPAIR, CLASSIFY, IMAGE_READ)
 
 
 def record_call(

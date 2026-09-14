@@ -164,7 +164,7 @@ async def test_해시는_원문을_담기_전과_같은_값이다(conn: sqlite3.
 
 
 class HanwhaDetail:
-    """상세가 API 인 사이트. 저장된 한화 응답을 그대로 읽어 원문 없는 상세를 만든다."""
+    """상세가 API 인 사이트. 저장된 한화 응답을 그대로 읽는다."""
 
     async def collect(self, item: ListItem) -> DetailParseResult:
         payload = json.loads((FIXTURES / "hanwha-detail-20260825.json").read_text(encoding="utf-8"))
@@ -174,7 +174,23 @@ class HanwhaDetail:
 
 
 async def test_원문이_없어도_공고는_그대로_적재된다(conn: sqlite3.Connection) -> None:
-    """상세가 API 인 네 사이트가 그렇다. 원문이 없다고 공고를 버리면 이미 되는 것을 잃는다."""
+    """원문 자리가 아무것도 못 잡은 건이다. 원문이 없다고 공고를 버리면 이미 되는 것을 잃는다."""
+    result = await run_once(conn, target(), collectors=collectors(StubDetail()), limit=1)
+
+    assert (result.new_count, result.fail_count) == (1, 0)
+    assert result.status == "success"
+    assert stored(conn)["body"] == "본문이다"
+
+
+async def test_원문이_없는_건은_원문을_뽑기_전과_같은_모양이다(conn: sqlite3.Connection) -> None:
+    """키가 늘지 않는다. 소비 측과 정규화가 보던 모양 그대로다."""
+    await run_once(conn, target(), collectors=collectors(StubDetail()), limit=1)
+
+    assert set(stored(conn)) == RECORD_KEYS
+
+
+async def test_상세가_API_인_사이트는_응답을_편_원문이_적재된다(conn: sqlite3.Connection) -> None:
+    """본문 경로 밖의 근무지·모집인원까지 분류가 읽게 된다."""
     collect = Collectors(
         list_mode="static", detail_mode="api", list=StubList(), detail=HanwhaDetail()
     )
@@ -182,20 +198,10 @@ async def test_원문이_없어도_공고는_그대로_적재된다(conn: sqlite
     result = await run_once(conn, target(), collectors=collect, limit=1)
 
     assert (result.new_count, result.fail_count) == (1, 0)
-    assert result.status == "success"
     data = stored(conn)
     assert "LIFEPLUS TV" in data["body"]
-
-
-async def test_원문이_없는_건은_원문을_뽑기_전과_같은_모양이다(conn: sqlite3.Connection) -> None:
-    """키가 늘지 않는다. 소비 측과 정규화가 보던 모양 그대로다."""
-    collect = Collectors(
-        list_mode="static", detail_mode="api", list=StubList(), detail=HanwhaDetail()
-    )
-
-    await run_once(conn, target(), collectors=collect, limit=1)
-
-    assert set(stored(conn)) == RECORD_KEYS
+    assert "ruWorkpl: 본사(서울 63빌딩)" in data["source_text"]
+    assert conn.execute("SELECT count(*) FROM normalized_jobs").fetchone()[0] == 1
 
 
 async def test_공백뿐인_원문은_없는_것으로_본다(conn: sqlite3.Connection) -> None:
@@ -207,11 +213,7 @@ async def test_공백뿐인_원문은_없는_것으로_본다(conn: sqlite3.Conn
 
 async def test_원문이_없는_건도_정규화까지_간다(conn: sqlite3.Connection) -> None:
     """적재만 되고 정규화에서 걸리면 소비 측에는 없는 것과 같다."""
-    collect = Collectors(
-        list_mode="static", detail_mode="api", list=StubList(), detail=HanwhaDetail()
-    )
-
-    await run_once(conn, target(), collectors=collect, limit=1)
+    await run_once(conn, target(), collectors=collectors(StubDetail()), limit=1)
 
     rows = conn.execute("SELECT title FROM normalized_jobs").fetchall()
     assert len(rows) == 1

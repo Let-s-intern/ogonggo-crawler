@@ -13,7 +13,7 @@ PROVIDER` 로 상수를 가져다 박고 있었던 것처럼, 제공자 하나�
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -56,6 +56,18 @@ class Usage:
     latency_ms: int
 
 
+@dataclass(frozen=True)
+class ImageInput:
+    """호출에 함께 싣는 이미지 한 장. 바이트와 그 형식(`image/jpeg` 같은)이다.
+
+    본문이 이미지로만 올라온 공고를 읽을 때만 쓴다 (`app/crawler/images.py`). 이미지가 없는
+    호출은 지금까지와 똑같이 글자 하나만 보낸다.
+    """
+
+    data: bytes
+    mime_type: str
+
+
 class CallModel(Protocol):
     """제공자 항목이 내놓는 호출 1회.
 
@@ -74,6 +86,7 @@ class CallModel(Protocol):
         response_schema: Any,
         system_instruction: str,
         temperature: float = 0.0,
+        images: Sequence[ImageInput] = (),
     ) -> Awaitable[tuple[str, Usage]]: ...
 
 
@@ -114,6 +127,26 @@ class Provider:
     # 응답을 스키마로 강제하는 모델. `None` 은 모든 모델이 강제한다는 뜻이다.
     # 값이 있으면 그것으로 시작하는 모델만 강제한다 — 문서가 지원을 시리즈 단위로 적는다
     schema_models: tuple[str, ...] | None = None
+    # 이미지를 함께 받는가. 코드에 든 다섯은 받는다고 두어 지금까지와 같고, 화면에서 추가한
+    # 회사는 정의가 정한다 (`app/llm/custom.py`)
+    images: bool = True
+    # 키와 모델을 어디서 읽는가. 비어 있으면 `key_setting`·`model_setting` 이 가리키는 설정
+    # 칸이다. 화면에서 추가한 회사는 이름이 정해져 있지 않아 칸을 미리 만들 수 없으므로 이
+    # 함수로 설정의 사전에서 읽는다
+    read_key: Callable[[Settings], str] | None = None
+    read_model: Callable[[Settings], str] | None = None
+
+    def key_of(self, settings: Settings) -> str:
+        """이 제공자의 키. 설정에서만 읽는다."""
+        if self.read_key is not None:
+            return self.read_key(settings)
+        return str(getattr(settings, self.key_setting))
+
+    def model_of(self, settings: Settings) -> str:
+        """이 제공자로 부를 모델 ID. 설정에서만 읽는다."""
+        if self.read_model is not None:
+            return self.read_model(settings)
+        return str(getattr(settings, self.model_setting))
 
     def forces_schema(self, model: str) -> bool:
         """이 모델이 응답을 스키마대로 내는 것을 보장하는가.

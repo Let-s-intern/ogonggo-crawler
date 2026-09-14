@@ -60,7 +60,8 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 # 더했다 — 지운 직군과 달리 닫힌 목록이 아니라 제목에서 옮기는 자유 텍스트다
 # (`migrations/0017_job_role.sql`). 0025 가 `job_major`·`job_minor` 를 더했다 — `career_level`
 # 처럼 셀렉터가 채우는 칸이 아니라 분류가 `job_taxonomy` 표에서 골라 덮는 칸이다
-# (`migrations/0025_job_major_minor.sql`).
+# (`migrations/0025_job_major_minor.sql`). 0028 이 오공고가 받는 다섯 칸을 더했다
+# (`migrations/0028_add_posting_detail_fields.sql`).
 NORMALIZED_FIELDS: tuple[str, ...] = (
     "company",
     "title",
@@ -78,6 +79,11 @@ NORMALIZED_FIELDS: tuple[str, ...] = (
     "etc_info",
     "job_major",
     "job_minor",
+    "company_and_team_introduction",
+    "compensation",
+    "benefits",
+    "education_level",
+    "recruitment_headcount",
 )
 
 # `normalization_rules.rule_type` 의 CHECK 제약과 같은 값이어야 한다.
@@ -85,6 +91,13 @@ RULE_TYPES: tuple[str, ...] = ("mapping", "regex", "trim", "date_parse", "html_t
 
 # `output_format` 이 실제로 렌더되는지 확인할 때만 쓰는 값. 어떤 날짜든 상관없다.
 _FORMAT_PROBE = datetime(2000, 1, 2, 3, 4, 5)
+
+# `date_parse` 의 `formats` 한 줄에 연도가 들어 있는지 본다. `%%` 는 리터럴 퍼센트라 지시자가
+# 아니므로 먼저 걸러낸다 — `100%%Y` 같은 값이 연도를 가진 것으로 읽히면 안 된다.
+#
+# `%c` 와 `%x` 는 연도를 포함하지만 받지 않는다. 로케일이 정하는 형식이라 컨테이너의 로케일에
+# 따라 같은 값이 다르게 읽히고, 그것은 여기서 막으려는 "조용히 틀린 날짜" 와 같은 종류다.
+_YEAR_DIRECTIVE = re.compile(r"(?<!%)(?:%%)*%[Yy]")
 
 
 class RuleConfigError(ValueError):
@@ -156,6 +169,16 @@ class DateParseConfig(_Config):
         for item in value:
             if not item.strip():
                 raise ValueError("formats 에 빈 문자열이 있다")
+            if not _YEAR_DIRECTIVE.search(item):
+                # 연도가 없으면 `strptime` 이 1900 으로 채운다. 그 값은 늘 오늘보다 이전이라
+                # `app/crawler/deadline.py` 가 마감으로 읽고 그 공고의 상세를 열지 않는다.
+                # 읽기에 실패한 것이 아니라 성공했는데 값이 틀린 것이라, 못 읽은 값을 진행
+                # 중으로 두는 판정이 이 경우를 막지 못한다 — 그 사이트의 공고가 조용히 한
+                # 건도 들어오지 않는다 (`migrations/0027_drop_yearless_date_formats.sql`).
+                raise ValueError(
+                    f"연도가 없는 형식은 받지 않는다: {item!r}. "
+                    "%Y 나 %y 를 넣거나, 앞 순번의 regex 규칙으로 연도를 붙인 뒤 읽는다"
+                )
         return value
 
     @field_validator("output_format")
@@ -257,6 +280,31 @@ def build_rule(
         enabled=enabled,
         id=rule_id,
     )
+
+
+def without_yearless_formats(rule_type: str, config: str) -> str:
+    """`date_parse` 설정 문자열에서 연도가 없는 형식만 뺀다. 다른 규칙은 그대로 돌려준다.
+
+    `migrations/0027_drop_yearless_date_formats.sql` 가 저장된 규칙에 한 일을, 그 마이그레이션을
+    거치지 않고 들어오는 규칙(`app/api/import_data.py`)에 똑같이 한다. 형식이 하나도 남지 않으면
+    빈 목록이 되고, 그 설정은 `DateParseConfig` 가 거절한다.
+
+    JSON 은 공백 없이 다시 쓴다. 마이그레이션이 쓴 SQLite `json_set` 결과와 같은 모양이라,
+    이미 정리된 같은 규칙과 글자 그대로 견줄 수 있다.
+    """
+    if rule_type != "date_parse":
+        return config
+    try:
+        data = json.loads(config)
+    except json.JSONDecodeError:
+        return config
+    formats = data.get("formats") if isinstance(data, dict) else None
+    if not isinstance(formats, list):
+        return config
+    kept = [item for item in formats if not isinstance(item, str) or _YEAR_DIRECTIVE.search(item)]
+    if len(kept) == len(formats):
+        return config
+    return json.dumps({**data, "formats": kept}, ensure_ascii=False, separators=(",", ":"))
 
 
 def _explain(rule_type: str, exc: ValidationError) -> str:

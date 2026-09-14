@@ -66,6 +66,8 @@ class FetchResult:
     url: str
     status_code: int
     text: str
+    # 응답 바이트. 이미지처럼 글자가 아닌 응답을 읽는 자리가 쓴다 (`app/crawler/images.py`)
+    content: bytes = b""
 
 
 class PageSource(Protocol):
@@ -263,6 +265,7 @@ class Fetcher:
                         url=str(response.url),
                         status_code=response.status_code,
                         text=response.text,
+                        content=response.content,
                     )
                 if response.status_code < 500:
                     raise ResponseStatusError(

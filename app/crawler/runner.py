@@ -53,6 +53,7 @@ from app.crawler.failures import (
 )
 from app.crawler.fetcher import FetchPolicy, PageSource, get_fetcher
 from app.crawler.hashing import content_hash
+from app.crawler.images import LlmImageReader
 from app.crawler.parser import ListItem
 from app.normalize.engine import NormalizeError, insert_normalized, load_rules
 from app.normalize.rules import Rule
@@ -84,6 +85,9 @@ PREVIEW = "preview"
 SCHEDULE = "schedule"
 MANUAL = "manual"
 TEST = "test"
+# 이미 담은 공고의 원문을 다시 가져온 실행 (`app/crawler/recollect.py`). 자동 중지의 연속 실패에
+# 세지 않는다 — 다시 수집이 실패했다고 주기 수집이 멈추면 안 된다
+RECOLLECT = "recollect"
 
 
 @dataclass(frozen=True)
@@ -111,6 +115,8 @@ class ItemResult:
     fields: dict[str, str]
     # 적재한 건만 값이 있다. 정규화가 읽을 `raw_jobs` 행이다
     raw_job_id: int | None = None
+    # 공고는 다뤘지만 실행 기록에 남길 일. 이미지를 읽지 못한 것이 그렇다
+    notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -220,6 +226,8 @@ async def run_workflow(
         # 쪽을 넘기는 목록에서 아는 공고만 있는 쪽을 만나면 거기서 멈춘다. 목록이 새것부터
         # 오므로 그 뒤는 더 옛것이다 (`app/crawler/api_source.py`)
         known=lambda link: _is_known(conn, workflow_id, "source_url", link),
+        # 본문이 이미지로만 올라온 공고의 이미지를 수집할 때 한 번 읽는다 (`app/crawler/images.py`)
+        image_reader=LlmImageReader(conn),
     ) as collectors:
         result = await run_once(
             conn,
@@ -346,12 +354,14 @@ def consecutive_failures(conn: sqlite3.Connection, workflow_id: int, limit: int)
     자동 중지 판정과 화면의 임계치 표시가 같은 값을 봐야 해서 공개해 둔다. 세는 곳이 둘이면
     화면이 말하는 연속 실패와 실제로 중지되는 시점이 어긋난다.
 
-    아직 끝나지 않은 실행(`status` 가 NULL)은 성공도 실패도 아니라 세지 않는다.
+    아직 끝나지 않은 실행(`status` 가 NULL)은 성공도 실패도 아니라 세지 않는다. 원문 다시 수집
+    (`recollect`)도 세지 않는다 — 주기 수집이 도는지와 상관없는 실행이다.
     """
     rows = conn.execute(
         """
         SELECT status FROM crawl_runs
          WHERE workflow_id = ? AND status IS NOT NULL
+           AND (trigger IS NULL OR trigger <> 'recollect')
          ORDER BY id DESC LIMIT ?
         """,
         (workflow_id, limit),
@@ -480,6 +490,12 @@ async def _crawl(
 
         result.items.append(collected)
         result.success_count += 1
+        for note in collected.notes:
+            # 공고는 다뤘지만 남길 일이 있다(이미지를 읽지 못했다). 실패로 세지 않는다 —
+            # 사유 칸을 비워 여섯 실패와 섞이지 않게 한다
+            result.failures.append(
+                ItemFailure(source_url=item.link, error_class=None, message=note, title=item.title)
+            )
         if collected.state == KNOWN:
             # 이미 아는 공고라 적재하지 않았다. 마감으로 넘긴 것과 같은 자리에 센다
             result.skipped_count += 1
@@ -520,10 +536,10 @@ async def _collect(
 
     if target.workflow_id is None:
         # 테스트 실행. 미리보기만 돌려주고 적재하지 않는다.
-        return ItemResult(source_url=item.link, state=PREVIEW, fields=record)
+        return ItemResult(source_url=item.link, state=PREVIEW, fields=record, notes=detail.notes)
 
     if _is_known(conn, target.workflow_id, "content_hash", digest):
-        return ItemResult(source_url=item.link, state=KNOWN, fields=record)
+        return ItemResult(source_url=item.link, state=KNOWN, fields=record, notes=detail.notes)
 
     cursor = conn.execute(
         """
@@ -542,6 +558,7 @@ async def _collect(
         state=STORED,
         fields=record,
         raw_job_id=int(cursor.lastrowid or 0),
+        notes=detail.notes,
     )
 
 

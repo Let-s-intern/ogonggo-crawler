@@ -87,7 +87,7 @@ def test_표에서_한_건을_여는_입구가_하나다(client: TestClient) -> 
     """상세와 수정을 갈라 두지 않는다. `수정` 하나가 그 공고를 통째로 연다."""
     html = client.get("/ui/review").text
 
-    assert 'id="review-open-7"' in html
+    assert 'id="review-open-3"' in html
     assert "data-modal-open" in html
     assert 'hx-target="#app-modal-body"' in html
     # 읽기 전용 상세로 가던 옛 입구는 남기지 않는다
@@ -105,7 +105,7 @@ def test_페이지에_표_아래_상세_자리가_없다(client: TestClient) -> 
 
 
 def test_모달이_본문과_자격요건을_자르지_않는다(client: TestClient) -> None:
-    html = client.get("/ui/review/modal/7").text
+    html = client.get("/ui/review/modal/3").text
 
     assert "본문 시작" in html and "본문 끝" in html
     assert "자격요건 시작" in html and "자격요건 끝" in html
@@ -114,7 +114,7 @@ def test_모달이_본문과_자격요건을_자르지_않는다(client: TestCli
 
 
 def test_원문_링크가_모달_안에_있다(client: TestClient) -> None:
-    html = client.get("/ui/review/modal/7").text
+    html = client.get("/ui/review/modal/3").text
 
     assert f'href="{SOURCE_URL}"' in html
     assert "원문 열기" in html
@@ -122,7 +122,7 @@ def test_원문_링크가_모달_안에_있다(client: TestClient) -> None:
 
 def test_수집_건_번호와_내용_해시가_모달에_있다(client: TestClient) -> None:
     """읽기 전용 상세에만 있던 값이다. 합치면서 사라지지 않았다."""
-    html = client.get("/ui/review/modal/7").text
+    html = client.get("/ui/review/modal/3").text
 
     assert "raw_jobs 7" in html
     assert "hash-7" in html
@@ -131,7 +131,7 @@ def test_수집_건_번호와_내용_해시가_모달에_있다(client: TestClie
 def test_없는_건은_모달_안에_사유를_적는다(client: TestClient) -> None:
     html = client.get("/ui/review/modal/999").text
 
-    assert "수집 건 999" in html
+    assert "공고 999" in html
     assert "modal-body" in html
 
 

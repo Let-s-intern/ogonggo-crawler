@@ -28,7 +28,7 @@
 </div>
 {% else %}
 <form class="modal-body"
-      hx-put="/ui/review/jobs/{{ job.raw_job_id }}"
+      hx-put="/ui/review/jobs/{{ job.id }}"
       hx-target="#app-modal-body" hx-swap="innerHTML"
       hx-disabled-elt="find button[type=submit]">
   <header class="modal-head">
@@ -123,8 +123,8 @@
          떨어진다 (side Push 9, `app/classify/store.py`) #}
       {% elif source.api_detail %}
       <p class="mt-1 text-sm text-slate-600">
-        원문이 없다. 이 사이트는 상세를 API 로 받아 원문을 뽑지 않는다 — 이 건은 본문으로
-        분류됐다. 다시 수집해도 붙지 않는다.
+        원문이 없다. API 응답을 원문으로 펴기 전에 모은 건이다 — 이 건은 본문으로 분류됐다.
+        다시 수집해도 붙지 않는다.
       </p>
       {% else %}
       <p class="mt-1 text-sm text-slate-600">
@@ -151,7 +151,7 @@
            되돌릴 것은 바로 아래 `규칙이 만든 값` 에 그대로 적혀 있다 — 되돌릴 수 없는 일이
            아니다. 고치는 동안 여섯 필드를 오가며 누르는 자리라 그때마다 브라우저 창이 뜨면
            고치는 일 자체가 막힌다 #}
-        <button type="button" hx-put="/ui/review/jobs/{{ job.raw_job_id }}"
+        <button type="button" hx-put="/ui/review/jobs/{{ job.id }}"
                 hx-include="closest form" hx-vals='{"drop": "{{ field.field }}"}'
                 hx-target="#app-modal-body" hx-swap="innerHTML"
                 hx-disabled-elt="this" hx-indicator="#review-drop-wait-{{ field.field }}"
@@ -191,12 +191,12 @@
           제안: {{ field.suggestion_value }} (이유: {{ field.suggestion_reason or "적힌 이유 없음" }})
         </p>
         <p class="mt-2 flex flex-wrap gap-2">
-          <button type="button" hx-post="/ui/review/suggestions/{{ job.raw_job_id }}/{{ field.field }}"
+          <button type="button" hx-post="/ui/review/suggestions/{{ job.id }}/{{ field.field }}"
                   hx-vals='{"action": "accept"}'
                   hx-target="#app-modal-body" hx-swap="innerHTML"
                   hx-disabled-elt="this" hx-indicator="#review-suggestion-wait-{{ field.field }}"
                   title="이 제안 값을 사람 보정으로 저장한다">수락</button>
-          <button type="button" hx-post="/ui/review/suggestions/{{ job.raw_job_id }}/{{ field.field }}"
+          <button type="button" hx-post="/ui/review/suggestions/{{ job.id }}/{{ field.field }}"
                   hx-vals='{"action": "reject"}'
                   hx-target="#app-modal-body" hx-swap="innerHTML"
                   hx-disabled-elt="this" hx-indicator="#review-suggestion-wait-{{ field.field }}"
@@ -224,6 +224,6 @@
 {# 뒤에 있는 표의 그 행. 닫았더니 옛 값이 남아 있으면 저장이 안 된 줄 안다.
    표를 다시 그리지 않는다 — 이 행의 자리들만 제자리로 들어간다 #}
 {% for field in fields %}{{ review_cell_inner(field, oob=True, changed=field.field in changed_fields) }}{% endfor %}
-{{ review_override_count(job.raw_job_id, override_count, oob=True) }}
-{{ review_delivery(job.raw_job_id, job.delivered_at, override_count, oob=True) }}
+{{ review_override_count(job.id, override_count, oob=True) }}
+{{ review_delivery(job.id, job.delivered_at, override_count, oob=True) }}
 {% endif %}
