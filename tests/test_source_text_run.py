@@ -34,10 +34,10 @@ RECORD_KEYS = {
     "source_url",
     "title",
     "body",
-    "requirements",
-    "deadline",
+    "qualifications",
+    "recruitment_end_at",
     "department",
-    "company",
+    "company_name",
     "list_title",
     "list_date",
     *SPLIT_DETAIL_FIELDS,
@@ -49,8 +49,8 @@ SELECTORS = validate_selectors(
         "detail": {
             "title": "p.title",
             "body": "div.body",
-            "requirements": "",
-            "deadline": "",
+            "qualifications": "",
+            "recruitment_end_at": "",
             "department": "",
         },
     }
@@ -147,7 +147,7 @@ async def test_원문이_바뀌어도_같은_공고가_다시_쌓이지_않는�
 
 
 async def test_해시는_원문을_담기_전과_같은_값이다(conn: sqlite3.Connection) -> None:
-    """`HASH_FIELDS` 는 source_url·title·deadline·body 넷 그대로다 (8.3)."""
+    """`HASH_FIELDS` 는 source_url·title·recruitment_end_at·body 넷 그대로다 (8.3)."""
     await run_once(
         conn,
         target(),
@@ -159,7 +159,7 @@ async def test_해시는_원문을_담기_전과_같은_값이다(conn: sqlite3.
     data = json.loads(row["raw_data_json"])
     assert data["source_text"]
 
-    without = {name: data[name] for name in ("source_url", "title", "deadline", "body")}
+    without = {name: data[name] for name in ("source_url", "title", "recruitment_end_at", "body")}
     assert row["content_hash"] == content_hash(without)
 
 

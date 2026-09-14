@@ -1,7 +1,7 @@
 """중복 감지용 content hash.
 
 해시에 들어가는 필드는 `.claude/docs/data-model.md` 의 "중복 감지 hash" 절이 정한다.
-`source_url`, `title`, `deadline`, `body` 넷뿐이고, 그 밖의 키는 무엇이 들어오든 무시한다.
+`source_url`, `title`, `recruitment_end_at`, `body` 넷뿐이고, 그 밖의 키는 무엇이 들어오든 무시한다.
 
 조회수, "3일 전" 같은 상대 날짜, 광고 문구, 정렬 순서, 크롤링 시각이 하나라도 섞이면 매 크롤마다
 값이 달라져 같은 공고가 매번 신규로 적재된다. 그래서 넣을 것을 고르는 대신 뺄 것을 무시하는
@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from typing import Any
 
 # 순서가 해시의 일부다. 바꾸면 기존 값과 맞지 않는다.
-HASH_FIELDS: tuple[str, ...] = ("source_url", "title", "deadline", "body")
+HASH_FIELDS: tuple[str, ...] = ("source_url", "title", "recruitment_end_at", "body")
 
 # 추출된 텍스트에 나올 일이 없는 구분자. 필드 경계가 값 안에서 흉내내지지 않게 한다.
 _FIELD_SEPARATOR = "\x1f"

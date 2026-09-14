@@ -22,7 +22,7 @@ import pytest
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi.testclient import TestClient
 
-from app import db
+from app import db, field_names
 from app.api import settings as settings_api
 from app.api import workflows as workflows_api
 from app.main import app
@@ -185,13 +185,13 @@ def _snapshot_counts() -> dict[str, int]:
             for table in ("crawlers", "workflows", "normalization_rules", "raw_jobs")
         }
         # 지워진 칸의 규칙은 들어오지 않는다. 이 파일은 0016 이전에 뜬 것이라
-        # `department` 규칙 둘이 들어 있다 (`app/api/import_data.py`)
-        placeholders = ", ".join("?" for _ in NORMALIZED_FIELDS)
-        counts["normalization_rules_kept"] = int(
-            source.execute(
-                f"SELECT count(*) FROM normalization_rules WHERE field_name IN ({placeholders})",
-                NORMALIZED_FIELDS,
-            ).fetchone()[0]
+        # `department` 규칙 둘이 들어 있다 (`app/api/import_data.py`). 0031 전에 뜬 파일이라 칸
+        # 이름도 옛 이름이고, 가져오기가 새 이름으로 옮겨 들이므로 같은 표로 옮겨 센다
+        names = [
+            str(row[0]) for row in source.execute("SELECT field_name FROM normalization_rules")
+        ]
+        counts["normalization_rules_kept"] = sum(
+            1 for name in names if field_names.field_name(name) in NORMALIZED_FIELDS
         )
         return counts
     finally:

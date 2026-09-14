@@ -21,7 +21,7 @@
 목록 전용은 `list.link` 와 `list.link_template` 이 둘 다 비어 있는 크롤러다
 (`app/crawler/parser.py` 의 `list_only()`). 상세 페이지를 아예 열지 않으므로 상세 셀렉터가
 무엇이든 값이 채워질 수 없고, 그것을 실패로 적으면 운영자가 고칠 수 없는 것을 고치려 든다.
-`detail.title` 과 `detail.deadline` 에 값이 있는 것은 실행이 목록에서 읽은 값을 그 자리에
+`detail.title` 과 `detail.recruitment_end_at` 에 값이 있는 것은 실행이 목록에서 읽은 값을 그 자리에
 넣기 때문이다 (`app/crawler/runner.py` 의 `_record`).
 
 실행 전체가 실패한 경우의 사유는 `crawl_runs.error_class` 그대로다. 놓친 공고 하나하나는
@@ -82,8 +82,8 @@ FIELDS: tuple[tuple[str, str], ...] = (
     ("list_date", "list.date"),
     ("title", "detail.title"),
     ("body", "detail.body"),
-    ("requirements", "detail.requirements"),
-    ("deadline", "detail.deadline"),
+    ("qualifications", "detail.qualifications"),
+    ("recruitment_end_at", "detail.recruitment_end_at"),
     ("department", "detail.department"),
 )
 

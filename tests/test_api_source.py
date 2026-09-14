@@ -122,7 +122,7 @@ async def test_the_list_carries_the_affiliate_name() -> None:
     result = await fetch_list(client, LIST_CONFIG)
     await client.aclose()
 
-    companies = {item.company for item in result.items}
+    companies = {item.company_name for item in result.items}
     assert "LG유플러스" in companies
     assert len(companies) > 1
     assert "" not in companies
@@ -133,7 +133,7 @@ async def test_the_list_fields_are_filled() -> None:
 
     assert first.title == "[정보보안센터] IT보안 담당자 경력채용"
     assert first.date == "2026.08.30 23:00"
-    assert first.company == "LG유플러스"
+    assert first.company_name == "LG유플러스"
     # 상세 API 에 넘길 id 다. 목록이 API 라 응답에서 그대로 온다
     assert first.detail_key == "1002029"
 
@@ -147,9 +147,9 @@ async def test_the_detail_api_fills_the_fields() -> None:
     await client.aclose()
 
     assert detail.fields["title"] == "[정보보안센터] IT보안 담당자 경력채용"
-    assert detail.fields["company"] == "LG유플러스"
+    assert detail.fields["company_name"] == "LG유플러스"
     assert detail.fields["department"] == "정보보안센터"
-    assert detail.fields["deadline"] == "2026.08.30 23:00"
+    assert detail.fields["recruitment_end_at"] == "2026.08.30 23:00"
     assert detail.missing == []
 
 
@@ -171,7 +171,7 @@ def test_the_body_keeps_the_html_fragment() -> None:
 
     assert detail.fields["body"].startswith("<!--StartFragment-->")
     assert "<p" in detail.fields["body"]
-    assert "<p" in detail.fields["requirements"]
+    assert "<p" in detail.fields["qualifications"]
 
 
 def test_an_empty_array_is_a_failure_not_an_empty_success() -> None:

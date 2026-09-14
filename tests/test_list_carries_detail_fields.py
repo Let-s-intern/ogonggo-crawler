@@ -33,13 +33,13 @@ KAKAO_LIST: dict[str, Any] = {
         "items_path": "jobList",
         "fields": {
             "title": "jobOfferTitle",
-            "company": "companyName",
+            "company_name": "companyName",
             "job_category": "jobPartName",
             "employment_type": "employeeTypeName",
-            "work_location": "locationName",
+            "region": "locationName",
             "headcount": "displayRecruitCount",
-            "duties": "workContentDesc",
-            "requirements": "qualification",
+            "responsibilities": "workContentDesc",
+            "qualifications": "qualification",
             "hiring_process": "jobOfferProcessDesc",
         },
         "id_field": "realId",
@@ -61,7 +61,7 @@ def test_the_list_section_accepts_detail_column_names() -> None:
     config = validate_api_config(KAKAO_LIST)
 
     assert config.list is not None
-    assert config.list.fields["duties"] == "workContentDesc"
+    assert config.list.fields["responsibilities"] == "workContentDesc"
 
 
 def test_a_name_that_is_in_neither_schema_is_still_refused() -> None:
@@ -83,12 +83,12 @@ def test_the_kakao_list_carries_the_columns_its_detail_cannot_split() -> None:
     first = result.items[0]
     assert first.extra["job_category"] == "서비스비즈"
     assert first.extra["employment_type"] == "정규직"
-    assert first.extra["work_location"] == "판교"
-    assert first.extra["duties"].startswith("- 카카오비즈니스와 외부 제휴사 간")
+    assert first.extra["region"] == "판교"
+    assert first.extra["responsibilities"].startswith("- 카카오비즈니스와 외부 제휴사 간")
     assert first.extra["hiring_process"].startswith("서류전형")
     # 목록 자신의 세 값은 `extra` 에 들어가지 않는다. 이미 제 자리가 있다
     assert "title" not in first.extra
-    assert "company" not in first.extra
+    assert "company_name" not in first.extra
 
 
 def test_an_empty_value_is_not_carried() -> None:
@@ -106,14 +106,18 @@ def test_the_detail_wins_when_both_have_a_value() -> None:
         title="목록 제목",
         link="https://careers.kakao.com/jobs/P-14503",
         date="",
-        extra={"duties": "목록이 준 업무", "work_location": "판교"},
+        extra={"responsibilities": "목록이 준 업무", "region": "판교"},
     )
-    detail = empty_detail() | {"title": "상세 제목", "body": "본문", "duties": "상세가 준 업무"}
+    detail = empty_detail() | {
+        "title": "상세 제목",
+        "body": "본문",
+        "responsibilities": "상세가 준 업무",
+    }
 
     record = _record(item, detail)
 
-    assert record["duties"] == "상세가 준 업무"
-    assert record["work_location"] == "판교"
+    assert record["responsibilities"] == "상세가 준 업무"
+    assert record["region"] == "판교"
 
 
 def test_a_column_neither_side_gives_stays_empty() -> None:
@@ -123,5 +127,5 @@ def test_a_column_neither_side_gives_stays_empty() -> None:
 
     record = _record(item, detail)
 
-    assert record["preferred"] == ""
+    assert record["preferred_qualifications"] == ""
     assert record["department"] == ""

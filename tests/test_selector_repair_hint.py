@@ -57,16 +57,16 @@ LG: dict[str, Any] = {
         "title": "p.css-1pvxq8e",
         "link": "",
         "date": "div.css-5q0q11 > p:nth-of-type(1)",
-        "company": "p.css-1swfevn",
+        "company_name": "p.css-1swfevn",
         "link_template": "",
     },
     "detail": {
         "title": "p.css-bhz39n",
         "body": "div.css-fk1prp",
-        "requirements": "",
-        "deadline": "div.css-ouk44v",
+        "qualifications": "",
+        "recruitment_end_at": "div.css-ouk44v",
         "department": "",
-        "company": "p.css-1vxtqzb",
+        "company_name": "p.css-1vxtqzb",
     },
 }
 
@@ -388,9 +388,9 @@ async def test_a_hinted_change_that_breaks_the_field_is_reported_as_unresolved()
 async def test_a_skipped_field_is_never_a_hinted_target() -> None:
     """사이트에 없는 항목을 억지로 만들면 잘못된 값이 공고마다 붙는다."""
     outcome, _ = await working(
-        working_answer(detail={"requirements": "div.made-up"}),
+        working_answer(detail={"qualifications": "div.made-up"}),
         hint="자격요건도 좀 채워 줘",
     )
 
-    assert "detail.requirements" not in outcome.targets
-    assert outcome.selectors.detail.requirements == ""
+    assert "detail.qualifications" not in outcome.targets
+    assert outcome.selectors.detail.qualifications == ""

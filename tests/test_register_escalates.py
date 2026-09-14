@@ -35,8 +35,8 @@ SELECTORS: dict[str, Any] = {
     "detail": {
         "title": "h1",
         "body": "div.body",
-        "requirements": "",
-        "deadline": "",
+        "qualifications": "",
+        "recruitment_end_at": "",
         "department": "",
     },
 }

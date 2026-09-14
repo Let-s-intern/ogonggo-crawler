@@ -29,8 +29,8 @@ SELECTORS = validate_selectors(
         "detail": {
             "title": "p.title",
             "body": "div.body",
-            "requirements": "",
-            "deadline": "",
+            "qualifications": "",
+            "recruitment_end_at": "",
             "department": "",
         },
     }

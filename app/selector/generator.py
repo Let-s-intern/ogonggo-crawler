@@ -61,22 +61,23 @@ script, style, 주석은 이미 걷어냈고 반복되는 목록 항목은 앞�
 - link_template 은 항상 빈 문자열로 둔다. 상세 URL 형식은 이 HTML 만으로 알 수 없고,
   필요하면 운영자가 채운다. 주소를 지어내지 않는다.
 - detail.title 과 detail.body 는 반드시 채운다.
-- detail.requirements, detail.deadline, detail.department 는 페이지에 해당 항목이 없으면
+- detail.qualifications, detail.recruitment_end_at, detail.department 는 페이지에 해당 항목이 없으면
   빈 문자열로 둔다. 아무 요소나 억지로 고르지 않는다.
-- detail.start_date(모집 시작일), detail.job_category(직군), detail.employment_type(정규직
-  /인턴/기간제), detail.career_level(신입/경력), detail.work_location(근무지),
-  detail.headcount(모집인원), detail.duties(주요 업무), detail.preferred(우대 조건),
-  detail.hiring_process(전형 절차), detail.etc_info(기타) 도 같다. **그 값만 따로 담은
-  요소가 있을 때만** 채우고, 본문 안에 문장으로 섞여 있을 뿐이면 빈 문자열로 둔다.
-  본문 전체를 가리키는 셀렉터를 이 자리에 넣지 않는다 — 그러면 같은 본문이 칸마다 반복된다.
+- detail.recruitment_start_at(모집 시작일), detail.job_category(직군), detail.employment_type(정규직
+  /인턴/기간제), detail.experience_type(신입/경력), detail.region(근무지),
+  detail.headcount(모집인원), detail.responsibilities(주요 업무),
+  detail.preferred_qualifications(우대 조건), detail.hiring_process(전형 절차),
+  detail.recruitment_notice(기타) 도 같다. **그 값만 따로 담은 요소가 있을 때만** 채우고, 본문 안에
+  문장으로 섞여 있을 뿐이면 빈 문자열로 둔다. 본문 전체를 가리키는 셀렉터를 이 자리에 넣지 않는다 —
+  그러면 같은 본문이 칸마다 반복된다.
 - list.date 도 마찬가지다. 항목 안에 게시일이나 모집 기간이 보이지 않으면 빈 문자열로 둔다.
   날짜가 아닌 값을 날짜 자리에 넣지 않는다.
 - 클래스명이 `css-1d3w5wq` 처럼 자동 생성된 해시로 보이면 고르지 않는다. 그런 이름은 페이지나
   배포마다 바뀌어 다음 실행에서 0개 매칭이 된다. 의미 있는 클래스명이나 구조(태그, 부모-자식
   관계)로 대신 잡는다.
-- list.company 와 detail.company 는 그 공고를 낸 회사 이름이 적힌 요소다. 사이트 하나에
+- list.company_name 와 detail.company_name 는 그 공고를 낸 회사 이름이 적힌 요소다. 사이트 하나에
   여러 계열사 공고가 섞이는 경우가 있어서 공고마다 다른 값이 나올 수 있다.
-- 회사 이름이 페이지에 없으면 list.company 와 detail.company 를 빈 문자열로 둔다.
+- 회사 이름이 페이지에 없으면 list.company_name 와 detail.company_name 를 빈 문자열로 둔다.
   사이트 이름이나 로고 문구를 회사명으로 대신 고르지 않는다. 없는 것을 지어내면 잘못된
   회사명이 공고마다 붙는다.
 

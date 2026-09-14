@@ -351,7 +351,7 @@ def build_html_items(html: str, config: ApiListConfig) -> ListParseResult:
                 title=values.get("title", ""),
                 link=config.link_template.replace(ID_PLACEHOLDER, item_id),
                 date=values.get("date", ""),
-                company=values.get("company", ""),
+                company_name=values.get("company_name", ""),
                 detail_key=item_id,
                 extra=_extra(values),
             )
@@ -550,7 +550,7 @@ def _item(
             title=values.get("title", ""),
             link=config.link_template.replace(ID_PLACEHOLDER, item_id),
             date=values.get("date", ""),
-            company=values.get("company", ""),
+            company_name=values.get("company_name", ""),
             detail_key=item_id,
             extra=_extra(values),
         ),

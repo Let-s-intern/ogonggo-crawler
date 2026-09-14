@@ -10,7 +10,7 @@
 
 `raw_jobs` 는 읽기만 한다. `delivered_at` 도 그대로 둔다 — 소비 측이 이미 가져간 표시를
 지우면 같은 데이터가 다시 넘어간다 (`.claude/rules/data-safety.md`). 아래 UPDATE 문이
-규칙이 만드는 컬럼과 `parent_company`, `source_url`, `normalized_at` 만 적는 것이 그 보장이다.
+규칙이 만드는 컬럼과 `parent_company_name`, `source_url`, `normalized_at` 만 적는 것이 그 보장이다.
 
 `job_field_overrides` 도 읽기만 한다. 재정규화는 규칙을 다시 태우는 동작이지 사람이 검수한
 값을 지우는 동작이 아니다. 규칙 위에 보정을 덮는 순서는 `app/normalize/engine.py` 가 정한다.
@@ -187,7 +187,8 @@ def renormalize(conn: sqlite3.Connection, progress: BackfillProgress) -> Backfil
 def rewrite_one(conn: sqlite3.Connection, raw_job_id: int, rules: list[Rule]) -> None:
     """한 건을 다시 정규화한다. 행이 없으면 새로 넣는다.
 
-    UPDATE 가 적는 컬럼은 `NORMALIZED_FIELDS` 와 `parent_company`, `source_url`, `normalized_at`
+    UPDATE 가 적는 컬럼은 `NORMALIZED_FIELDS` 와 `parent_company_name`, `source_url`,
+    `normalized_at`
     뿐이다. 주소는 분류가 공고를 나누면 번호가 붙어 달라진다.
     `delivered_at` 은 목록에 없고, 그래서 소비 측이 가져간 표시는 재정규화를 몇 번 돌려도
     그대로다.
@@ -199,8 +200,8 @@ def rewrite_one(conn: sqlite3.Connection, raw_job_id: int, rules: list[Rule]) ->
     회사 행도 여기서 보장한다. 이 경로는 UPDATE 라 `insert_normalized` 의 등록을 지나지
     않는데, 이미 쌓인 공고에는 재정규화가 유일한 등록 길이다.
 
-    운영자가 `crawlers.default_company` 를 고쳤으면 그 값이 이 경로로 `parent_company` 에
-    반영된다. 공고에서 뽑은 `company` 는 그 영향을 받지 않는다 — 두 칸이 갈린 뒤로 한쪽을
+    운영자가 `crawlers.default_company` 를 고쳤으면 그 값이 이 경로로 `parent_company_name` 에
+    반영된다. 공고에서 뽑은 `company_name` 는 그 영향을 받지 않는다 — 두 칸이 갈린 뒤로 한쪽을
     고치는 일이 다른 쪽을 건드리지 않는다.
 
     사람이 고친 필드는 규칙을 다시 태워도 사람 값으로 남는다. 규칙이 좋아지는 것은 보정하지
@@ -212,7 +213,7 @@ def rewrite_one(conn: sqlite3.Connection, raw_job_id: int, rules: list[Rule]) ->
     # 그대로 1번 공고가 되고, 그 행의 전달 표시도 따라간다
     for part in posting_parts(conn, raw_job_id):
         source_url, fields = normalized_values(conn, raw_job_id, rules, part)
-        companies.register(conn, fields["company"], fields[PARENT_COMPANY])
+        companies.register(conn, fields["company_name"], fields[PARENT_COMPANY])
         cursor = conn.execute(
             f"""
             UPDATE normalized_jobs

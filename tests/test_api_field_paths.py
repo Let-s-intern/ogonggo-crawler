@@ -99,7 +99,7 @@ def test_the_hyundai_body_gathers_the_places_it_is_split_across() -> None:
         {
             "title": "data.applyInfo.recuNoticeNm",
             "body": ["data.applyInfo.privJdDtl", "data.applyInfo.aboutTeamNtc"],
-            "requirements": ["data.applyInfo.privMustReq", "data.applyInfo.prefReq"],
+            "qualifications": ["data.applyInfo.privMustReq", "data.applyInfo.prefReq"],
         }
     )
 
@@ -108,7 +108,7 @@ def test_the_hyundai_body_gathers_the_places_it_is_split_across() -> None:
     info = data["data"]["applyInfo"]
     assert info["privJdDtl"] in fields["body"]
     assert info["aboutTeamNtc"] in fields["body"]
-    assert info["prefReq"] in fields["requirements"]
+    assert info["prefReq"] in fields["qualifications"]
 
 
 def test_an_empty_place_is_skipped_instead_of_leaving_a_hole() -> None:

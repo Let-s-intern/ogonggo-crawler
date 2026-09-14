@@ -38,7 +38,7 @@ _UNTITLED = "제목 없음"
 class NewJob:
     """알림에 한 줄로 들어가는 공고."""
 
-    company: str
+    company_name: str
     title: str
     # 공고 원본 주소. 알림에서 이 자리를 눌러 바로 열게 한다. 비어 있으면 링크 없이 글자만
     # 적는다 — 목록만 긁고 상세로 가지 못한 공고가 그렇다
@@ -116,10 +116,10 @@ def _line(job: NewJob) -> str:
     if url:
         # 마크다운 링크. 제목에 든 대괄호가 링크를 깨뜨리므로 먼저 지운다
         title = f"[{title.replace('[', '').replace(']', '')}]({url})"
-    company = job.company.strip()
-    if not company:
+    company_name = job.company_name.strip()
+    if not company_name:
         return title
-    return f"**{_clip(company)}** {title}"
+    return f"**{_clip(company_name)}** {title}"
 
 
 def _clip(text: str) -> str:

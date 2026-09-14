@@ -10,7 +10,7 @@
 읽어야 하고, 그 셈이 저장소 모듈에 들어가면 표 한 행을 고치는 일과 공고를 세는 일이 한
 자리에 섞인다(`app/api/ui_companies.py` 와 같은 이유).
 
-이름으로 잇는다. `job_taxonomy` 는 아이디를 갖지만 `normalized_jobs.job_major`/`job_minor`
+이름으로 잇는다. `job_taxonomy` 는 아이디를 갖지만 `normalized_jobs.job_field`/`job_role`
 는 이름을 저장하므로(PRD 1절 — 재정규화로 다시 만들어지는 파생 표라 id 를 넣으면 소비 측이
 표를 한 벌 더 갖게 된다), 세는 것도 이름으로 잇는다.
 """
@@ -47,7 +47,7 @@ class TaxonomyRow:
 
 
 def _job_counts(conn: sqlite3.Connection, column: str) -> dict[str, int]:
-    """`column`(`job_major` 또는 `job_minor`) 값별 공고 수. 호출부가 고정된 두 이름만 넘긴다."""
+    """`column`(`job_field` 또는 `job_role`) 값별 공고 수. 호출부가 고정된 두 이름만 넘긴다."""
     rows = conn.execute(
         f"SELECT {column} AS name, COUNT(*) AS n FROM normalized_jobs"
         f" WHERE {column} IS NOT NULL GROUP BY {column}"
@@ -65,8 +65,8 @@ def _name_count(conn: sqlite3.Connection, column: str, name: str) -> int:
 
 def build_tree(conn: sqlite3.Connection) -> list[tuple[TaxonomyRow, list[TaxonomyRow]]]:
     """대분류와 그 아래 소분류를 묶어, 각자의 공고 수와 함께 늘어놓는다."""
-    major_counts = _job_counts(conn, "job_major")
-    minor_counts = _job_counts(conn, "job_minor")
+    major_counts = _job_counts(conn, "job_field")
+    minor_counts = _job_counts(conn, "job_role")
     tree: list[tuple[TaxonomyRow, list[TaxonomyRow]]] = []
     for major in taxonomy.list_majors(conn):
         major_row = TaxonomyRow(major, major_counts.get(major.name, 0))
@@ -145,7 +145,7 @@ def update_node_fragment(
             request, conn, error={"reason": "not_found", "message": f"id {node_id} 가 없다"}
         )
 
-    column = "job_major" if existing.parent_id is None else "job_minor"
+    column = "job_field" if existing.parent_id is None else "job_role"
     old_name = existing.name
     old_count = _name_count(conn, column, old_name)
 

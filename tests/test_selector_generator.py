@@ -38,8 +38,8 @@ VALID_RESPONSE = json.dumps(
         "detail": {
             "title": "h1.title",
             "body": "div.body",
-            "requirements": "",
-            "deadline": "",
+            "qualifications": "",
+            "recruitment_end_at": "",
             "department": "",
         },
     }

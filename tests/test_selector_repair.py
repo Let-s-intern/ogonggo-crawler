@@ -43,16 +43,16 @@ BROKEN: dict[str, Any] = {
         "title": "a.card-link",
         "link": "a.card-link",
         "date": "span.regdate",
-        "company": "span.company",
+        "company_name": "span.company",
         "link_template": "",
     },
     "detail": {
         "title": "h2.view-title",
         "body": "div.view-body",
-        "requirements": "",
-        "deadline": "dd.view-deadline",
+        "qualifications": "",
+        "recruitment_end_at": "dd.view-deadline",
         "department": "",
-        "company": "",
+        "company_name": "",
     },
 }
 
@@ -100,9 +100,9 @@ def test_only_failed_fields_become_targets() -> None:
         "list.title",
         "list.link",
         "list.date",
-        "list.company",
+        "list.company_name",
     ]
-    assert "detail.requirements" in report.skipped
+    assert "detail.qualifications" in report.skipped
     assert "detail.department" in report.skipped
     assert not set(targets) & set(report.skipped)
 
@@ -145,13 +145,13 @@ async def test_failed_fields_change_and_working_fields_stay() -> None:
     # 잘 되던 상세 필드는 그대로다
     assert outcome.selectors.detail.title == BROKEN["detail"]["title"]
     assert outcome.selectors.detail.body == BROKEN["detail"]["body"]
-    assert outcome.selectors.detail.deadline == BROKEN["detail"]["deadline"]
+    assert outcome.selectors.detail.recruitment_end_at == BROKEN["detail"]["recruitment_end_at"]
     assert outcome.repaired == [
         "list.item",
         "list.title",
         "list.link",
         "list.date",
-        "list.company",
+        "list.company_name",
     ]
     assert outcome.unresolved == []
     assert outcome.ok
@@ -159,21 +159,23 @@ async def test_failed_fields_change_and_working_fields_stay() -> None:
 
 async def test_a_model_answer_that_rewrites_a_working_field_is_discarded() -> None:
     """모델이 맞던 필드를 다른 값으로 내놔도 버린다. 프롬프트가 아니라 코드가 보장한다."""
-    outcome, _ = await repair(response(detail={"title": "h1", "body": "body", "deadline": "span"}))
+    outcome, _ = await repair(
+        response(detail={"title": "h1", "body": "body", "recruitment_end_at": "span"})
+    )
 
     assert outcome.selectors.detail.title == "h2.view-title"
     assert outcome.selectors.detail.body == "div.view-body"
-    assert outcome.selectors.detail.deadline == "dd.view-deadline"
+    assert outcome.selectors.detail.recruitment_end_at == "dd.view-deadline"
     assert [change.name for change in outcome.changes] == ["list.item"]
 
 
 async def test_a_skipped_field_is_never_filled() -> None:
     """모델이 건너뜀 필드에 값을 채워 보내도 반영하지 않는다."""
     outcome, _ = await repair(
-        response(detail={"requirements": "div.view-body p", "department": "dd.view-dept"})
+        response(detail={"qualifications": "div.view-body p", "department": "dd.view-dept"})
     )
 
-    assert outcome.selectors.detail.requirements == ""
+    assert outcome.selectors.detail.qualifications == ""
     assert outcome.selectors.detail.department == ""
 
 
@@ -188,7 +190,7 @@ async def test_an_empty_answer_keeps_the_original_selector() -> None:
         "list.title",
         "list.link",
         "list.date",
-        "list.company",
+        "list.company_name",
     ]
     assert not outcome.ok
 
@@ -215,7 +217,7 @@ async def test_prompt_carries_current_selectors_and_failure_reasons() -> None:
     assert "- list.title: 지금 `a.card-link`" in prompt
     assert "항목 4건 중 어디에도 없다" in prompt
     # 건너뜀 필드는 고칠 목록에 없다
-    assert "- detail.requirements" not in prompt
+    assert "- detail.qualifications" not in prompt
 
 
 async def test_prompt_sends_cleaned_html_not_the_raw_page() -> None:

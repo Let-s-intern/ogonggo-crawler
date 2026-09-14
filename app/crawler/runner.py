@@ -14,7 +14,7 @@
 `fail_count` 로 세어져, 규칙을 고친 뒤 재정규화로 복구된다.
 
 신규 판정을 두 단계로 나눈 이유가 하나 있다. `content_hash` 는 상세에서 오는 `body` 와
-`deadline` 까지 넣어 만드는데, 상세를 가져오기 전에는 그 값이 없다. 그래서 목록 단계에서는
+`recruitment_end_at` 까지 넣어 만드는데, 상세를 가져오기 전에는 그 값이 없다. 그래서 목록 단계에서는
 `source_url` 로 아는 공고인지만 보고, 아는 공고면 상세를 가져오지 않는다. 상세까지 간 건에
 대해서만 `content_hash` 를 만들어 마지막으로 한 번 더 확인한다.
 
@@ -250,7 +250,7 @@ async def run_workflow(
         new_count=result.new_count,
         jobs=[
             NewJob(
-                company=item.fields["company"],
+                company_name=item.fields["company_name"],
                 title=item.fields["title"],
                 # 알림에서 눌러 바로 열 자리다
                 url=item.source_url,
@@ -269,7 +269,9 @@ async def run_workflow(
 # 요구하면, 아무도 읽지 않는 값이 없다는 이유로 실행이 멈춘다
 _EMPTY_SELECTORS = SelectorSet(
     list=ListSelectors(item="", title="", link="", date=""),
-    detail=DetailSelectors(title="", body="", requirements="", deadline="", department=""),
+    detail=DetailSelectors(
+        title="", body="", qualifications="", recruitment_end_at="", department=""
+    ),
 )
 
 
@@ -607,15 +609,15 @@ def _normalize(
 def _record(item: ListItem, detail: dict[str, str], source_text: str = "") -> dict[str, str]:
     """`raw_jobs.raw_data_json` 에 그대로 들어가는 값. 정제하지 않는다.
 
-    `company` 는 상세에서 뽑은 값을 먼저 쓰고, 없으면 목록에서 뽑은 값을 쓴다. 상세가 그
+    `company_name` 는 상세에서 뽑은 값을 먼저 쓰고, 없으면 목록에서 뽑은 값을 쓴다. 상세가 그
     공고 한 건만 다루는 페이지라 계열사가 섞인 사이트에서 더 정확하다. 둘 다 없으면 빈
     문자열이고, 그 자리를 무엇으로 채울지는 정규화 단계가 정한다.
 
     운영자가 적어 둔 `crawlers.default_company` 는 여기 들어오지 않는다. 추출한 것만 담는
     테이블이다 (`.claude/rules/data-safety.md`).
 
-    상세가 없는 사이트에서는 `title` 과 `deadline` 이 목록에서 온다. 상세를 따라가지 않으니
-    그쪽에서 올 값이 없고, 목록에 있는 것을 두고 빈 칸으로 남기면 공고를 알아볼 수 없다.
+    상세가 없는 사이트에서는 `title` 과 `recruitment_end_at` 이 목록에서 온다. 상세를 따라가지
+    않으니 그쪽에서 올 값이 없고, 목록에 있는 것을 두고 빈 칸으로 남기면 공고를 알아볼 수 없다.
 
     상세가 비운 칸은 `item.extra` 가 채운다. 목록 응답이 상세 칸의 값까지 들고 있는 사이트가
     있어서다 — 카카오 목록 API 는 직군·근무지·모집인원·주요 업무·전형 절차를 항목마다 담아
@@ -635,10 +637,12 @@ def _record(item: ListItem, detail: dict[str, str], source_text: str = "") -> di
         "source_url": item.link,
         "title": detail["title"] or item.title,
         "body": detail["body"] or carried.get("body", ""),
-        "requirements": detail["requirements"] or carried.get("requirements", ""),
-        "deadline": detail["deadline"] or carried.get("deadline", "") or item.date,
+        "qualifications": detail["qualifications"] or carried.get("qualifications", ""),
+        "recruitment_end_at": detail["recruitment_end_at"]
+        or carried.get("recruitment_end_at", "")
+        or item.date,
         "department": detail["department"] or carried.get("department", ""),
-        "company": detail["company"] or item.company,
+        "company_name": detail["company_name"] or item.company_name,
         **{name: detail.get(name, "") or carried.get(name, "") for name in SPLIT_DETAIL_FIELDS},
         "list_title": item.title,
         "list_date": item.date,

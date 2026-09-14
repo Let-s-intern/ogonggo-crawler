@@ -15,7 +15,7 @@
 | 2 | 제목의 조상 중 가장 가까운 반복 요소 | 항목 셀렉터가 아예 다른 것을 잡은 경우 |
 
 1번이 먼저인 것은 그것이 모델이 낸 셀렉터를 가장 적게 바꾸기 때문이다. 항목 안에서 찾는
-`link`·`date`·`company` 셀렉터가 그대로 살아 있어야 좁힌 것이 이득이 되고, 그래서 후보는
+`link`·`date`·`company_name` 셀렉터가 그대로 살아 있어야 좁힌 것이 이득이 되고, 그래서 후보는
 그 필드들을 여전히 품고 있을 때만 채택한다.
 
 **넓히지 않는다.** 매칭이 늘어나는 방향으로는 절대 바꾸지 않고, 후보가 제목을 하나라도
@@ -46,7 +46,7 @@ MIN_TITLES = 2
 MAX_STEPS = 4
 
 # 항목 안에서 찾는 나머지 셀렉터. 좁힌 항목이 이것들을 여전히 품어야 한다
-INNER_FIELDS: tuple[str, ...] = ("link", "date", "company")
+INNER_FIELDS: tuple[str, ...] = ("link", "date", "company_name")
 
 
 @dataclass(frozen=True)

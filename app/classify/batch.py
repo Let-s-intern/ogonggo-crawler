@@ -226,10 +226,10 @@ async def classify_ids(
     for raw_job_id in raw_job_ids:
         # 원문이 있으면 원문, 없으면 본문이다. 옛 건에는 원문이 없다 (`app/classify/store.py`)
         source = read_source(conn, raw_job_id)
-        # 제목은 `job_role` 의 출처다. 본문만 보내면 그 칸이 영원히 빈다
+        # 제목은 `position_name` 의 출처다. 본문만 보내면 그 칸이 영원히 빈다
         title = read_title(conn, raw_job_id)
-        # company·deadline·start_date 중 수집이 이미 채운 값. 무엇이 채워져 있는지 몰라서는
-        # 분류가 원문과 "다르다" 를 말할 수 없다
+        # company_name·recruitment_end_at·recruitment_start_at 중 수집이 이미 채운 값. 무엇이 채워져
+        # 있는지 몰라서는 분류가 원문과 "다르다" 를 말할 수 없다
         current_values = read_current_values(conn, raw_job_id)
 
         # 이미 나눈 공고는 나눈 목록을 그대로 두고 칸만 다시 채운다 (2026-09-11 결정). 번호에
@@ -261,11 +261,13 @@ async def classify_ids(
             continue
 
         # 직무마다 나뉘었으면 번호마다 한 행이다. 나누지 않은 공고는 1번 하나이고 직무 이름을
-        # 따로 남기지 않는다 — 그 직무는 제목에서 온 `job_role` 그대로다
+        # 따로 남기지 않는다 — 그 직무는 제목에서 온 `position_name` 그대로다
         # 목록을 고정한 공고는 직무 이름도 저장된 것을 쓴다
         split = len(known) > 1 if known else result.split
         for part, posting in enumerate(result.postings, start=1):
-            role = known[part - 1].role if known else posting.fields.get("job_role", "").strip()
+            role = (
+                known[part - 1].role if known else posting.fields.get("position_name", "").strip()
+            )
             save_classification(
                 conn,
                 raw_job_id,

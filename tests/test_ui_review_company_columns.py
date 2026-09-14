@@ -55,7 +55,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         (2, 1, PARENT, AFFILIATES[1]),
         (3, 2, LONE_PARENT, None),
     )
-    for raw_id, workflow_id, parent, company in rows:
+    for raw_id, workflow_id, parent, company_name in rows:
         source_url = f"https://{workflow_id}.example.test/{raw_id}"
         connection.execute(
             """
@@ -67,10 +67,10 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         connection.execute(
             """
             INSERT INTO normalized_jobs
-                   (raw_job_id, parent_company, company, title, body, source_url)
+                   (raw_job_id, parent_company_name, company_name, title, body, source_url)
             VALUES (?, ?, ?, ?, '본문', ?)
             """,
-            (raw_id, parent, company, f"공고 {raw_id}", source_url),
+            (raw_id, parent, company_name, f"공고 {raw_id}", source_url),
         )
     try:
         yield connection
@@ -126,13 +126,13 @@ def test_자회사가_빈_행은_모회사만_값이_있다(client: TestClient) 
 
 def test_회사_조건이_모회사와_자회사를_함께_본다(client: TestClient) -> None:
     """모회사를 고르면 계열사 공고가 전부, 자회사를 고르면 그것만 걸린다."""
-    whole_group = client.get("/ui/review", params={"company": PARENT}).text
+    whole_group = client.get("/ui/review", params={"company_name": PARENT}).text
     assert "전체 2건" in whole_group
 
-    one = client.get("/ui/review", params={"company": AFFILIATES[0]}).text
+    one = client.get("/ui/review", params={"company_name": AFFILIATES[0]}).text
     assert "전체 1건" in one
 
-    lone = client.get("/ui/review", params={"company": LONE_PARENT}).text
+    lone = client.get("/ui/review", params={"company_name": LONE_PARENT}).text
     assert "전체 1건" in lone
 
 

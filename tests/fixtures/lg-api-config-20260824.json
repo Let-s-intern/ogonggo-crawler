@@ -16,7 +16,7 @@
     "fields": {
       "title": "jobNoticeName",
       "date": "recEndDateTime",
-      "company": "companyName"
+      "company_name": "companyName"
     },
     "id_field": "jobNoticeId",
     "link_template": "https://careers.lg.com/apply/detail?id={id}"
@@ -30,10 +30,10 @@
     "fields": {
       "title": "data.jobNoticesDetail.jobNoticesDetail.jobNoticeName",
       "body": "data.jobNoticesDetail.recList.0.detailContext",
-      "requirements": "data.jobNoticesDetail.recList.0.requiredItem",
-      "deadline": "data.jobNoticesDetail.jobNoticesDetail.recEndDate",
+      "qualifications": "data.jobNoticesDetail.recList.0.requiredItem",
+      "recruitment_end_at": "data.jobNoticesDetail.jobNoticesDetail.recEndDate",
       "department": "data.jobNoticesDetail.recList.0.orgName",
-      "company": "data.jobNoticesDetail.jobNoticesDetail.companyName"
+      "company_name": "data.jobNoticesDetail.jobNoticesDetail.companyName"
     }
   }
 }

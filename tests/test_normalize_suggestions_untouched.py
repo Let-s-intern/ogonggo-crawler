@@ -1,9 +1,9 @@
 """정규화는 `job_field_suggestions` 를 읽지 않는다 (11.5.V).
 
-제안은 값이 있는 칸(`company`·`deadline`·`start_date`)을 자동으로 덮지 않는다 — 사람이 검수
-화면에서 수락해야 `job_field_overrides` 로 옮겨 간다 (`.claude/tasks/todo/prd-side-workflows.md`
-6절). 이 표를 `app/normalize/engine.py` 의 어느 경로가 읽기 시작하면 그 경계가 조용히
-사라지므로, 여기서는 동작과 소스 둘 다로 못박는다.
+제안은 값이 있는 칸(`company_name`·`recruitment_end_at`·`recruitment_start_at`)을 자동으로 덮지
+않는다 — 사람이 검수 화면에서 수락해야 `job_field_overrides` 로 옮겨 간다
+(`.claude/tasks/todo/prd-side-workflows.md` 6절). 이 표를 `app/normalize/engine.py` 의 어느 경로가
+읽기 시작하면 그 경계가 조용히 사라지므로, 여기서는 동작과 소스 둘 다로 못박는다.
 """
 
 from __future__ import annotations
@@ -41,8 +41,8 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
                     "source_url": "https://x/1",
                     "title": "마케팅 기획",
                     "body": "본문",
-                    "company": "한화생명",
-                    "deadline": "2026-08-31",
+                    "company_name": "한화생명",
+                    "recruitment_end_at": "2026-08-31",
                 },
                 ensure_ascii=False,
             ),
@@ -71,26 +71,26 @@ def test_a_suggestion_does_not_change_what_normalized_values_computes(
     rules = load_rules(conn)
     before = normalized_values(conn, 1, rules)
 
-    _add_suggestion(conn, "company", "한화솔루션")
-    _add_suggestion(conn, "deadline", "2026-09-30")
+    _add_suggestion(conn, "company_name", "한화솔루션")
+    _add_suggestion(conn, "recruitment_end_at", "2026-09-30")
 
     after = normalized_values(conn, 1, rules)
     assert after == before
-    assert after[1]["company"] == "한화생명"
-    assert after[1]["deadline"] == "2026-08-31"
+    assert after[1]["company_name"] == "한화생명"
+    assert after[1]["recruitment_end_at"] == "2026-08-31"
 
 
 def test_a_suggestion_does_not_change_the_inserted_row(conn: sqlite3.Connection) -> None:
     """`insert_normalized` 가 실제로 쓰는 값도 제안과 무관하다."""
     rules = load_rules(conn)
-    _add_suggestion(conn, "company", "한화솔루션")
+    _add_suggestion(conn, "company_name", "한화솔루션")
 
     row_id = insert_normalized(conn, 1, rules)
 
     row = conn.execute(
-        "SELECT company, deadline FROM normalized_jobs WHERE id = ?", (row_id,)
+        "SELECT company_name, recruitment_end_at FROM normalized_jobs WHERE id = ?", (row_id,)
     ).fetchone()
-    assert (row["company"], row["deadline"]) == ("한화생명", "2026-08-31")
+    assert (row["company_name"], row["recruitment_end_at"]) == ("한화생명", "2026-08-31")
 
 
 def test_engine_source_never_mentions_the_suggestions_table() -> None:

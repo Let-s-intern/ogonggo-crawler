@@ -1,7 +1,7 @@
 """토스 마감일 셀렉터가 인용문이 아니라 모집 기간을 잡는지 본다 (1.1.V).
 
 `blockquote` 하나였을 때 264건 중 138건이 인용문을 마감일로 받았다. 값이 날짜가 아니라
-`deadline` 의 `date_parse` 규칙이 실패했고, 그 실패는 필드 하나가 비는 것으로 끝나지 않고
+`recruitment_end_at` 의 `date_parse` 규칙이 실패했고, 그 실패는 필드 하나가 비는 것으로 끝나지 않고
 공고를 통째로 정규화에서 떨어뜨린다 (`app/normalize/engine.py`). 264건 중 126건만
 `normalized_jobs` 에 들어간 것이 그 결과다.
 
@@ -45,12 +45,12 @@ def read(name: str) -> str:
 
 
 def deadline_of(name: str) -> str:
-    return parse_detail(read(name), toss_selectors().detail).fields["deadline"]
+    return parse_detail(read(name), toss_selectors().detail).fields["recruitment_end_at"]
 
 
 def test_the_deadline_selector_asks_for_the_period_label() -> None:
     """`blockquote` 하나로는 어느 인용문이 먼저 오는지에 값이 걸린다."""
-    selector = toss_selectors().detail.deadline
+    selector = toss_selectors().detail.recruitment_end_at
 
     assert selector != "blockquote"
     assert "모집 기간" in selector

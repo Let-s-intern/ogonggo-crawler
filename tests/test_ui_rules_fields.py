@@ -95,7 +95,9 @@ def test_지운_세_칸은_고를_수_없고_직무는_고를_수_있다(client:
 
     for field in DROPPED_FIELDS:
         assert field not in options
+    # 직무 분류 소분류다. 0031 전의 자유 글자 직무(`position_name`)는 규칙을 걸 칸이 아니다
     assert "job_role" in options
+    assert "position_name" not in options
 
 
 def test_기존_규칙의_필드_목록도_같다(client: TestClient) -> None:

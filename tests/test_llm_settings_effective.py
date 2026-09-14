@@ -42,7 +42,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         "VALUES (1, '테스트', 'https://x', 'promoted')"
     )
     connection.execute("INSERT INTO workflows (id, crawler_id, name) VALUES (1, 1, '테스트')")
-    raw = {"source_url": "https://x/1", "title": "공고", "body": BODY, "company": "테스트회사"}
+    raw = {"source_url": "https://x/1", "title": "공고", "body": BODY, "company_name": "테스트회사"}
     connection.execute(
         "INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash) "
         "VALUES (1, ?, ?, 'hash1')",

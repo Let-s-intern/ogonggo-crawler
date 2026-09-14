@@ -71,33 +71,32 @@ EXPECTED_COLUMNS = {
         "crawled_at",
         "replaced_at",
     },
+    # 0031 이 이름을 오공고(Spring) Job 엔티티의 칼럼 이름에 맞췄다
     "normalized_jobs": {
         "id",
         "raw_job_id",
-        "company",
+        "company_name",
         "title",
-        "deadline",
+        "recruitment_end_at",
         "body",
-        "requirements",
+        "qualifications",
         "source_url",
         "normalized_at",
         "delivered_at",
         # 0011 이 더한 열 칸에서 0016 이 셋을 뺀 나머지
-        "start_date",
+        "recruitment_start_at",
         "employment_type",
-        "career_level",
-        "work_location",
-        "duties",
-        "preferred",
+        "experience_type",
+        "region",
+        "responsibilities",
+        "preferred_qualifications",
         "hiring_process",
-        "etc_info",
-        # 0017 이 더한 직무. 제목에서 뽑는 자유 텍스트다
-        "job_role",
+        "recruitment_notice",
         # 0018 이 더한 모회사. 크롤러가 아는 값을 옮기는 칸이라 규칙도 보정도 걸리지 않는다
-        "parent_company",
-        # 0025 가 더한 직무 분류. job_taxonomy 의 이름을 그대로 옮겨 담는다
-        "job_major",
-        "job_minor",
+        "parent_company_name",
+        # 0025 가 더한 직무 분류. job_taxonomy 의 대분류(직군)·소분류(직무) 이름을 옮겨 담는다
+        "job_field",
+        "job_role",
         # 0028 이 더한 다섯 칸. 오공고가 받는 칸이고 분류가 채운다
         "company_and_team_introduction",
         "compensation",
@@ -200,7 +199,14 @@ EXPECTED_COLUMNS = {
 }
 
 # 사람이 고칠 수 있는 필드. `source_url` 과 `delivered_at` 은 여기에 없다
-OVERRIDABLE = ["company", "title", "department", "deadline", "body", "requirements"]
+OVERRIDABLE = [
+    "company_name",
+    "title",
+    "department",
+    "recruitment_end_at",
+    "body",
+    "qualifications",
+]
 
 EXPECTED_INDEXES = {
     "idx_raw_jobs_content_hash",
@@ -240,6 +246,7 @@ ALL_VERSIONS = [
     "0028",
     "0029",
     "0030",
+    "0031",
 ]
 
 
@@ -260,6 +267,23 @@ def _names(connection: sqlite3.Connection, kind: str) -> set[str]:
 def _columns(connection: sqlite3.Connection, table: str) -> set[str]:
     rows = connection.execute(f"PRAGMA table_info({table})").fetchall()
     return {row["name"] for row in rows}
+
+
+def _up_to_0030(connection: sqlite3.Connection) -> None:
+    """0031 이 칸 이름을 오공고 이름으로 바꾸기 직전까지 올린다.
+
+    그보다 앞선 마이그레이션을 보는 검사는 그때의 이름(`company`, `deadline` 등)으로 값을 넣고
+    읽는다. 끝까지 올리면 0031 이 이름을 바꿔 그 검사가 0031 탓으로 깨진다.
+    """
+    db.migrate_up(connection)
+    db.migrate_down(connection, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0031"))
+
+
+def _down_to_before(connection: sqlite3.Connection, version: str) -> None:
+    """`version` 과 그 뒤를 전부 되돌린다. 지금 몇 번까지 올라와 있든 걸음 수를 맞춘다."""
+    db.migrate_down(
+        connection, steps=len(db.applied_versions(connection)) - ALL_VERSIONS.index(version)
+    )
 
 
 def test_initial_migration_is_the_first_version() -> None:
@@ -488,7 +512,7 @@ def test_one_override_per_field_of_one_job(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
         INSERT INTO job_field_overrides (raw_job_id, field_name, value)
-        VALUES (1, 'company', '회사')
+        VALUES (1, 'company_name', '회사')
         """
     )
     assert conn.execute("SELECT count(*) AS n FROM job_field_overrides").fetchone()["n"] == 2
@@ -924,7 +948,7 @@ def test_split_body_only_adds_columns_and_keeps_the_existing_values(
     _seed_normalized(conn)
     before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
 
-    db.migrate_up(conn)
+    _up_to_0030(conn)
 
     after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
     assert [tuple(row) for row in after] == [tuple(row) for row in before]
@@ -936,7 +960,7 @@ def test_split_body_leaves_the_new_columns_empty(conn: sqlite3.Connection) -> No
     _at_0010(conn)
     _seed_normalized(conn)
 
-    db.migrate_up(conn)
+    _up_to_0030(conn)
 
     row = conn.execute(f"SELECT {', '.join(SPLIT_BODY_KEPT)} FROM normalized_jobs").fetchone()
     assert [row[name] for name in SPLIT_BODY_KEPT] == [None] * len(SPLIT_BODY_KEPT)
@@ -944,12 +968,12 @@ def test_split_body_leaves_the_new_columns_empty(conn: sqlite3.Connection) -> No
 
 def test_split_body_down_drops_only_the_ten_it_added(conn: sqlite3.Connection) -> None:
     """역적용은 더한 열 칸만 지운다. 공고와 여섯 칸의 값은 그대로다."""
-    db.migrate_up(conn)
+    _up_to_0030(conn)
     _seed_normalized(conn)
     conn.execute("UPDATE normalized_jobs SET work_location = '서울', duties = '기획'")
     before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
 
-    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0011"))
+    _down_to_before(conn, "0011")
 
     after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
     assert [tuple(row) for row in after] == [tuple(row) for row in before]
@@ -1011,15 +1035,15 @@ def test_the_override_down_drops_the_corrections_the_old_check_cannot_hold(
     conn: sqlite3.Connection,
 ) -> None:
     """되돌리면 새 칸의 보정은 사라진다. 옛 CHECK 에 담을 자리가 없다."""
-    db.migrate_up(conn)
+    _up_to_0030(conn)
     _seed_raw_job(conn)
     conn.executemany(
         "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
         [("title", "사람이 고친 제목"), ("work_location", "서울")],
     )
 
-    # 0012 까지 되돌린다. 뒤에 붙은 마이그레이션 수만큼 걸음이 늘어난다
-    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0012"))
+    # 0012 까지 되돌린다
+    _down_to_before(conn, "0012")
 
     rows = conn.execute("SELECT field_name FROM job_field_overrides").fetchall()
     assert [row["field_name"] for row in rows] == ["title"]
@@ -1094,7 +1118,7 @@ def test_dropping_the_three_keeps_the_rows_and_the_other_values(
     _seed_normalized_with_dropped(conn)
     before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
 
-    db.migrate_up(conn)
+    _up_to_0030(conn)
 
     after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
     assert [tuple(row) for row in after] == [tuple(row) for row in before]
@@ -1149,7 +1173,7 @@ def test_job_role_starts_empty_and_leaves_the_other_values_alone(
     )
     before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
 
-    db.migrate_up(conn)
+    _up_to_0030(conn)
 
     after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
     assert [tuple(row) for row in after] == [tuple(row) for row in before]
@@ -1240,7 +1264,7 @@ def test_parent_company_is_added_to_normalized_jobs(conn: sqlite3.Connection) ->
     _at_0017(conn)
     assert "parent_company" not in _columns(conn, "normalized_jobs")
 
-    db.migrate_up(conn)
+    _up_to_0030(conn)
 
     assert "parent_company" in _columns(conn, "normalized_jobs")
     assert "company" in _columns(conn, "normalized_jobs")
@@ -1262,7 +1286,7 @@ def test_parent_company_starts_empty_and_leaves_the_other_values_alone(
     )
     before = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
 
-    db.migrate_up(conn)
+    _up_to_0030(conn)
 
     after = conn.execute(f"SELECT id, {KEPT_COLUMNS} FROM normalized_jobs").fetchall()
     assert [tuple(row) for row in after] == [tuple(row) for row in before]
@@ -1297,7 +1321,7 @@ def test_the_parent_company_migration_leaves_the_two_neighbour_tables_alone(
 
 def test_the_parent_company_down_drops_only_that_column(conn: sqlite3.Connection) -> None:
     """되돌리면 모회사 값만 사라진다. 그 값은 `crawlers` 에 그대로 있어 재정규화로 돌아온다."""
-    db.migrate_up(conn)
+    _up_to_0030(conn)
     _seed_raw_job(conn)
     conn.execute(
         """
@@ -1306,7 +1330,7 @@ def test_the_parent_company_down_drops_only_that_column(conn: sqlite3.Connection
         """
     )
 
-    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0018"))
+    _down_to_before(conn, "0018")
 
     assert "parent_company" not in _columns(conn, "normalized_jobs")
     row = conn.execute("SELECT company, title FROM normalized_jobs").fetchone()
@@ -1325,7 +1349,7 @@ def test_company_source_is_dropped(conn: sqlite3.Connection) -> None:
     _at_0018(conn)
     assert "company_source" in _columns(conn, "normalized_jobs")
 
-    db.migrate_up(conn)
+    _up_to_0030(conn)
 
     assert "company_source" not in _columns(conn, "normalized_jobs")
     # 회사명 두 칸은 그대로다. 지운 것은 출처 열 하나뿐이다
@@ -1345,7 +1369,7 @@ def test_dropping_company_source_keeps_the_rows_and_the_two_company_columns(
         """
     )
 
-    db.migrate_up(conn)
+    _up_to_0030(conn)
 
     row = conn.execute("SELECT parent_company, company, title FROM normalized_jobs").fetchone()
     assert (row["parent_company"], row["company"], row["title"]) == (
@@ -1359,7 +1383,7 @@ def test_the_company_source_down_restores_the_column_empty_with_its_check(
     conn: sqlite3.Connection,
 ) -> None:
     """컬럼은 돌아오지만 값은 돌아오지 않는다. CHECK 는 같은 모양으로 돌아와야 한다."""
-    db.migrate_up(conn)
+    _up_to_0030(conn)
     _seed_raw_job(conn)
     conn.execute(
         """
@@ -1368,7 +1392,7 @@ def test_the_company_source_down_restores_the_column_empty_with_its_check(
         """
     )
 
-    db.migrate_down(conn, steps=len(ALL_VERSIONS) - ALL_VERSIONS.index("0019"))
+    _down_to_before(conn, "0019")
 
     assert "company_source" in _columns(conn, "normalized_jobs")
     row = conn.execute("SELECT company, company_source FROM normalized_jobs").fetchone()
@@ -1585,7 +1609,7 @@ def test_a_new_suggestion_on_the_same_column_overwrites_the_old_one(
         conn.execute(
             """
             INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
-            VALUES (1, 'deadline', ?, '원문과 다르다')
+            VALUES (1, 'recruitment_end_at', ?, '원문과 다르다')
             ON CONFLICT (raw_job_id, part, field_name) DO UPDATE
                SET value = excluded.value, reason = excluded.reason,
                    created_at = datetime('now')
@@ -1604,7 +1628,7 @@ def test_job_field_suggestions_needs_an_existing_raw_job(conn: sqlite3.Connectio
         conn.execute(
             """
             INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
-            VALUES (99, 'deadline', '2026-09-30', '다르다')
+            VALUES (99, 'recruitment_end_at', '2026-09-30', '다르다')
             """
         )
 
@@ -1616,7 +1640,7 @@ def test_job_field_suggestions_down_drops_only_its_own_table(conn: sqlite3.Conne
     conn.execute(
         """
         INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
-        VALUES (1, 'deadline', '2026-09-30', '원문과 다르다')
+        VALUES (1, 'recruitment_end_at', '2026-09-30', '원문과 다르다')
         """
     )
 
@@ -1717,11 +1741,15 @@ SPLIT_TABLES = (
 def _seed_postings(connection: sqlite3.Connection, parts: tuple[int, ...] | None) -> None:
     """네 표에 행을 하나씩. `parts` 가 None 이면 번호 칸이 없던 때처럼 번호를 적지 않는다."""
     _seed_raw_job(connection)
+    # 0031 이 `duties` 를 `responsibilities` 로 바꿨다. 어느 쪽 스키마에서 부르든 같은 칸에 넣는다
+    duties = (
+        "duties" if "duties" in _columns(connection, "job_classifications") else "responsibilities"
+    )
     for part in parts or (None,):
         number = "" if part is None else ", part"
         value = "" if part is None else f", {part}"
         connection.execute(
-            f"INSERT INTO job_classifications (raw_job_id, model, duties{number})"
+            f"INSERT INTO job_classifications (raw_job_id, model, {duties}{number})"
             f" VALUES (1, 'model', '결제 서버 개발'{value})"
         )
         connection.execute(
@@ -1743,7 +1771,7 @@ def test_existing_rows_become_the_first_posting(conn: sqlite3.Connection) -> Non
     _at_0028(conn)
     _seed_postings(conn, None)
 
-    db.migrate_up(conn)
+    _up_to_0030(conn)
 
     for table in SPLIT_TABLES:
         rows = conn.execute(f"SELECT part FROM {table}").fetchall()
@@ -1797,8 +1825,8 @@ def test_the_split_down_keeps_only_the_first_posting(conn: sqlite3.Connection) -
     db.migrate_up(conn)
     _seed_postings(conn, (1, 2))
 
-    # 0030 이 뒤에 붙어 둘을 되돌려야 0029 앞이다
-    db.migrate_down(conn, steps=2)
+    # 0030·0031 이 뒤에 붙었다. 몇 걸음인지 세지 않고 0029 앞까지 되돌린다
+    _down_to_before(conn, "0029")
 
     for table in SPLIT_TABLES:
         assert "part" not in _columns(conn, table), table

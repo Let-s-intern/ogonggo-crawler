@@ -23,7 +23,7 @@ from typing import Any
 
 import pytest
 
-from app import db
+from app import db, field_names
 from app.api.import_data import ImportRejected, ImportResult, import_database
 from app.crawler.hashing import content_hash
 from app.normalize.rules import NORMALIZED_FIELDS, without_yearless_formats
@@ -50,14 +50,16 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         connection.close()
 
 
-def job(title: str, *, deadline: str = "2026-12-31", body: str = "본문") -> dict[str, str]:
+def job(
+    title: str, *, recruitment_end_at: str = "2026-12-31", body: str = "본문"
+) -> dict[str, str]:
     return {
-        "company": "예시회사",
+        "company_name": "예시회사",
         "title": title,
         "department": "개발",
-        "deadline": deadline,
+        "recruitment_end_at": recruitment_end_at,
         "body": body,
-        "requirements": "무관",
+        "qualifications": "무관",
     }
 
 
@@ -121,7 +123,7 @@ def make_upload(
         )
         upload.execute(
             """
-            INSERT INTO normalized_jobs (raw_job_id, company, title, source_url, delivered_at)
+            INSERT INTO normalized_jobs (raw_job_id, company_name, title, source_url, delivered_at)
             VALUES (?, ?, ?, ?, ?)
             """,
             (index, FOREIGN_VALUE, FOREIGN_VALUE, source_url, FOREIGN_DELIVERED),
@@ -461,13 +463,13 @@ def _source_counts(path: pathlib.Path) -> dict[str, int]:
         }
         # 지워진 칸의 규칙은 들이지 않는다. 이 파일은 0016 이전에 뜬 것이라 `department`
         # 규칙 둘이 들어 있고, 들어오면 그 뒤의 정규화가 한 건도 되지 않는다
-        # (`app/api/import_data.py`)
-        placeholders = ", ".join("?" for _ in NORMALIZED_FIELDS)
-        counts["normalization_rules_kept"] = int(
-            source.execute(
-                f"SELECT count(*) FROM normalization_rules WHERE field_name IN ({placeholders})",
-                NORMALIZED_FIELDS,
-            ).fetchone()[0]
+        # (`app/api/import_data.py`). 0031 전에 뜬 파일이라 칸 이름도 옛 이름이다 — 가져오기가
+        # 새 이름으로 옮겨 들이므로 여기서도 같은 표로 옮겨 센다 (`app/field_names.py`)
+        names = [
+            str(row[0]) for row in source.execute("SELECT field_name FROM normalization_rules")
+        ]
+        counts["normalization_rules_kept"] = sum(
+            1 for name in names if field_names.field_name(name) in NORMALIZED_FIELDS
         )
         return counts
     finally:
@@ -491,10 +493,16 @@ def test_연도_없는_날짜_형식은_빼고_들이고_읽지_못하는_규칙
     한 건도 정규화되지 않는다. 형식만 빼고 들이고, 그래도 못 읽는 규칙은 건너뛴다."""
     upload = make_upload(
         tmp_path / "upload.db",
-        jobs=[job("공고", deadline="2026.12.31")],
+        jobs=[job("공고", recruitment_end_at="2026.12.31")],
         rules=[
-            ("deadline", "date_parse", json.dumps({"formats": ["%Y.%m.%d", "%m/%d"]}), 10, None),
-            ("deadline", "date_parse", json.dumps({"formats": ["%m.%d"]}), 20, None),
+            (
+                "recruitment_end_at",
+                "date_parse",
+                json.dumps({"formats": ["%Y.%m.%d", "%m/%d"]}),
+                10,
+                None,
+            ),
+            ("recruitment_end_at", "date_parse", json.dumps({"formats": ["%m.%d"]}), 20, None),
             ("title", "regex", json.dumps({"pattern": "([unclosed"}), 30, None),
         ],
     )
@@ -507,7 +515,7 @@ def test_연도_없는_날짜_형식은_빼고_들이고_읽지_못하는_규칙
     assert [json.loads(row[0])["formats"] for row in stored] == [["%Y.%m.%d"]]
     assert result.normalize_failed == 0
     assert result.normalized_added == 1
-    assert rows(conn, "SELECT deadline FROM normalized_jobs") == [("2026-12-31",)]
+    assert rows(conn, "SELECT recruitment_end_at FROM normalized_jobs") == [("2026-12-31",)]
 
 
 def test_연도_없는_형식을_빼는_모양이_0027_과_같다() -> None:

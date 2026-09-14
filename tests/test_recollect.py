@@ -59,10 +59,10 @@ def stored_record(url: str, **overrides: str) -> dict[str, str]:
         "source_url": url,
         "title": "제목",
         "body": "옛 본문",
-        "requirements": "",
-        "deadline": "",
+        "qualifications": "",
+        "recruitment_end_at": "",
         "department": "",
-        "company": "",
+        "company_name": "",
         **{name: "" for name in SPLIT_DETAIL_FIELDS},
         "list_title": "제목",
         "list_date": "",
@@ -90,10 +90,10 @@ def detail(body: str = "새 본문", source_text: str = "새 원문", **fields: 
     values = {
         "title": "제목",
         "body": body,
-        "requirements": "",
-        "deadline": "",
+        "qualifications": "",
+        "recruitment_end_at": "",
         "department": "",
-        "company": "",
+        "company_name": "",
         **{name: "" for name in SPLIT_DETAIL_FIELDS},
         **fields,
     }
@@ -229,7 +229,7 @@ async def test_값이_같으면_갈아_끼우지도_이력에_남기지도_않�
 
 async def test_저장된_마감일이_지난_공고는_열지_않는다(conn: sqlite3.Connection) -> None:
     workflow_id = add_workflow(conn)
-    add_job(conn, workflow_id, stored_record(URL_A, deadline="2020-01-01"))
+    add_job(conn, workflow_id, stored_record(URL_A, recruitment_end_at="2020-01-01"))
     add_job(conn, workflow_id, stored_record(URL_B))
     active = collectors({URL_B: detail()})
 
@@ -308,7 +308,7 @@ async def test_목록을_못_읽어도_저장된_주소로_열고_목록이_주�
 
 async def test_다시_분류는_워크플로우_공고_전부다(conn: sqlite3.Connection) -> None:
     workflow_id = add_workflow(conn)
-    closed = add_job(conn, workflow_id, stored_record(URL_A, deadline="2020-01-01"))
+    closed = add_job(conn, workflow_id, stored_record(URL_A, recruitment_end_at="2020-01-01"))
     failing = add_job(conn, workflow_id, stored_record(URL_B))
     changed = add_job(conn, workflow_id, stored_record(URL_C))
     other = add_workflow(conn, name="다른 사이트")
@@ -400,7 +400,7 @@ async def test_검수_화면_삭제가_이력까지_지운다(conn: sqlite3.Conn
 
 def test_시작_전_확인은_마감과_다시_분류_건수를_센다(conn: sqlite3.Connection) -> None:
     workflow_id = add_workflow(conn)
-    add_job(conn, workflow_id, stored_record(URL_A, deadline="2020-01-01"))
+    add_job(conn, workflow_id, stored_record(URL_A, recruitment_end_at="2020-01-01"))
     add_job(conn, workflow_id, stored_record(URL_B))
     add_job(conn, workflow_id, stored_record(URL_C))
     add_job(conn, add_workflow(conn, name="다른 사이트"), stored_record(URL_A))
@@ -430,7 +430,8 @@ def test_되돌리면_이력_표가_사라지고_recollect_실행은_수동으�
         "INSERT INTO crawl_runs (workflow_id, trigger) VALUES (?, 'recollect')", (workflow_id,)
     )
 
-    db.migrate_down(conn, steps=1)
+    # 0031 이 뒤에 붙었으니 두 걸음을 되돌려야 0030 이 풀린다
+    db.migrate_down(conn, steps=2)
 
     assert conn.execute("SELECT trigger FROM crawl_runs").fetchone()["trigger"] == "manual"
     tables = {

@@ -82,7 +82,7 @@ class ListItem:
     link: str
     date: str
     # 셀렉터가 없거나 못 찾으면 빈 문자열이다. 회사명이 없는 사이트가 흔하다
-    company: str = ""
+    company_name: str = ""
     # 상세 페이지가 없는 사이트다. 실행이 상세를 따라가지 않는다
     detail_absent: bool = False
     # 상세 API 에 넘길 공고 id. 목록이 API 면 응답의 `id_field` 값이고, HTML 이면 상세
@@ -160,9 +160,9 @@ def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseR
         title = field_text(node, selectors.title, f"list.title[{index}]")
         link = _link(node, selectors, index)
         date = field_text(node, selectors.date, f"list.date[{index}]")
-        company = (
-            field_text(node, selectors.company, f"list.company[{index}]")
-            if selectors.company
+        company_name = (
+            field_text(node, selectors.company_name, f"list.company_name[{index}]")
+            if selectors.company_name
             else ""
         )
 
@@ -186,10 +186,10 @@ def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseR
                 index=index,
                 title=title,
                 # 상세로 갈 길이 없으면 목록 주소를 남긴다. 공고를 가리키는 주소는 그것뿐이고,
-                # 같은 값이어도 content_hash 는 title·deadline·body 로 공고를 가른다
+                # 같은 값이어도 content_hash 는 title·recruitment_end_at·body 로 공고를 가른다
                 link=base_url if link_absent else urljoin(base_url, link.url),
                 date=date,
-                company=company,
+                company_name=company_name,
                 detail_absent=link_absent,
             )
         )

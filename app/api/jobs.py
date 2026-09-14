@@ -36,10 +36,10 @@ MAX_LIMIT = 500
 STORED_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 _SELECT = """
-    SELECT id, parent_company, company, title, job_role, job_major, job_minor,
-           deadline, body, requirements,
-           start_date, employment_type, career_level, work_location,
-           duties, preferred, hiring_process, etc_info,
+    SELECT id, parent_company_name, company_name, title, job_field, job_role,
+           recruitment_end_at, body, qualifications,
+           recruitment_start_at, employment_type, experience_type, region,
+           responsibilities, preferred_qualifications, hiring_process, recruitment_notice,
            company_and_team_introduction, compensation, benefits, education_level,
            recruitment_headcount,
            source_url, normalized_at
@@ -50,21 +50,18 @@ _SELECT = """
 class JobOut(BaseModel):
     """계약의 `items` 한 건. 필드 이름과 순서는 문서를 그대로 따른다.
 
-    `start_date` 아래 일곱은 0011 이 더한 칸이고, 0016 이 `department`·`job_category`·
-    `headcount` 를 뺐다. 0017 이 `job_role` 을 더했다 — 지운 직군과 달리 닫힌 목록이 아니라
-    제목에서 옮기는 자유 텍스트라 **소비 측이 이 필드로 거를 수 없다.** 셋을 지운 것도 이
-    필드를 더한 것도 소비 측이 아직 붙지 않은 동안에만 할 수 있는 일이다
-    (`.claude/docs/api-contract.md`).
+    0031 이 칸 이름을 오공고(Spring) `Job` 엔티티의 칼럼 이름에 맞췄다. 제목에서 옮기던 자유
+    텍스트 직무는 오공고에 받을 칸이 없어 뺐고, 그 이름(`job_role`)은 직무 분류의 소분류가 받았다
+    (`migrations/0031_spring_field_names.sql`).
 
-    0018 이 회사명을 두 칸으로 갈랐다. `parent_company` 는 그 채용 사이트를 운영하는 기업이고
-    거의 언제나 값이 있다. `company` 는 그 공고가 말한 계열사이고, 계열사를 말하지 않는
+    0018 이 회사명을 두 칸으로 갈랐다. `parent_company_name` 는 그 채용 사이트를 운영하는 기업이고
+    거의 언제나 값이 있다. `company_name` 는 그 공고가 말한 계열사이고, 계열사를 말하지 않는
     사이트에서는 `null` 이다 — 그 자리를 모회사 이름으로 메우지 않는다
     (`migrations/0018_parent_company.sql`).
 
-    0025 가 `job_major`/`job_minor` 를 더했다 — `job_role` 과 달리 셀렉터가 뽑는 자유
-    텍스트가 아니라 분류가 `job_taxonomy`(운영자가 어드민에서 바꾸는 표)에서 골라 채우는
-    닫힌 값이다. 아직 분류를 돌리지 않았거나 본문으로 판단이 갈리지 않으면 `null` 이다
-    (`.claude/docs/api-contract.md`).
+    `job_field`(직군)/`job_role`(직무)은 분류가 `job_taxonomy`(운영자가 어드민에서 바꾸는 표)의
+    대분류·소분류에서 골라 채우는 닫힌 값이다. 아직 분류를 돌리지 않았거나 본문으로 판단이 갈리지
+    않으면 `null` 이다 (`.claude/docs/api-contract.md`).
 
     0028 이 오공고가 받는 다섯 칸을 더했다 — 회사·팀 소개, 급여·처우, 복지·혜택, 학력,
     모집인원. 모집인원은 적힌 그대로의 글자이고 숫자가 아니다
@@ -74,24 +71,23 @@ class JobOut(BaseModel):
     """
 
     id: int
-    parent_company: str | None
-    company: str | None
+    parent_company_name: str | None
+    company_name: str | None
     title: str | None
+    job_field: str | None
     job_role: str | None
-    job_major: str | None
-    job_minor: str | None
-    deadline: str | None
+    recruitment_end_at: str | None
     body: str | None
-    requirements: str | None
-    # 모집 시작일. `deadline`(모집 마감일)의 짝이고 그 필드를 대신하지 않는다
-    start_date: str | None
+    qualifications: str | None
+    # 모집 시작일. `recruitment_end_at`(모집 마감일)의 짝이고 그 필드를 대신하지 않는다
+    recruitment_start_at: str | None
     employment_type: str | None
-    career_level: str | None
-    work_location: str | None
-    duties: str | None
-    preferred: str | None
+    experience_type: str | None
+    region: str | None
+    responsibilities: str | None
+    preferred_qualifications: str | None
     hiring_process: str | None
-    etc_info: str | None
+    recruitment_notice: str | None
     company_and_team_introduction: str | None
     compensation: str | None
     benefits: str | None
@@ -183,23 +179,22 @@ def _iso(stored: str) -> str:
 def _out(row: sqlite3.Row) -> JobOut:
     return JobOut(
         id=int(row["id"]),
-        parent_company=row["parent_company"],
-        company=row["company"],
+        parent_company_name=row["parent_company_name"],
+        company_name=row["company_name"],
         title=row["title"],
+        job_field=row["job_field"],
         job_role=row["job_role"],
-        job_major=row["job_major"],
-        job_minor=row["job_minor"],
-        deadline=row["deadline"],
+        recruitment_end_at=row["recruitment_end_at"],
         body=row["body"],
-        requirements=row["requirements"],
-        start_date=row["start_date"],
+        qualifications=row["qualifications"],
+        recruitment_start_at=row["recruitment_start_at"],
         employment_type=row["employment_type"],
-        career_level=row["career_level"],
-        work_location=row["work_location"],
-        duties=row["duties"],
-        preferred=row["preferred"],
+        experience_type=row["experience_type"],
+        region=row["region"],
+        responsibilities=row["responsibilities"],
+        preferred_qualifications=row["preferred_qualifications"],
         hiring_process=row["hiring_process"],
-        etc_info=row["etc_info"],
+        recruitment_notice=row["recruitment_notice"],
         company_and_team_introduction=row["company_and_team_introduction"],
         compensation=row["compensation"],
         benefits=row["benefits"],

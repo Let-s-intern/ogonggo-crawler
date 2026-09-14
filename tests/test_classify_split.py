@@ -41,21 +41,21 @@ BODY = "\n".join(
 
 SPLIT = response(
     common=common_body(
-        requirements=pieces("해외여행에 결격사유가 없는 분", 2),
+        qualifications=pieces("해외여행에 결격사유가 없는 분", 2),
         benefits=pieces("사내 식당 운영", 4),
     ),
     postings=[
         posting_body(
-            job_role=pieces("로봇 SW 개발", 5),
-            duties=pieces("로봇 제어 소프트웨어를 개발합니다", 6),
-            requirements=pieces("C++ 경력 3년 이상", 7),
-            career_level="경력",
-            career_level_evidence="C++ 경력 3년 이상",
+            position_name=pieces("로봇 SW 개발", 5),
+            responsibilities=pieces("로봇 제어 소프트웨어를 개발합니다", 6),
+            qualifications=pieces("C++ 경력 3년 이상", 7),
+            experience_type="경력",
+            experience_type_evidence="C++ 경력 3년 이상",
         ),
         posting_body(
-            job_role=pieces("비전 AI 연구", 8),
-            duties=pieces("영상 인식 모델을 연구합니다", 9),
-            requirements=pieces("석사 이상 학위 보유", 10),
+            position_name=pieces("비전 AI 연구", 8),
+            responsibilities=pieces("영상 인식 모델을 연구합니다", 9),
+            qualifications=pieces("석사 이상 학위 보유", 10),
             education_level="석사",
             education_level_evidence="석사 이상 학위 보유",
         ),
@@ -77,8 +77,8 @@ async def test_공통_조각은_나눈_공고마다_그_공고의_조각_앞에_
     result = await classify(SPLIT)
 
     first, second = result.postings
-    assert first.fields["requirements"] == "해외여행에 결격사유가 없는 분\nC++ 경력 3년 이상"
-    assert second.fields["requirements"] == "해외여행에 결격사유가 없는 분\n석사 이상 학위 보유"
+    assert first.fields["qualifications"] == "해외여행에 결격사유가 없는 분\nC++ 경력 3년 이상"
+    assert second.fields["qualifications"] == "해외여행에 결격사유가 없는 분\n석사 이상 학위 보유"
     assert first.fields["benefits"] == second.fields["benefits"] == "사내 식당 운영"
 
 
@@ -87,20 +87,23 @@ async def test_직무_이름과_판정_칸은_공고마다_따로다() -> None:
 
     assert result.split
     first, second = result.postings
-    assert (first.fields["job_role"], second.fields["job_role"]) == ("로봇 SW 개발", "비전 AI 연구")
-    assert (first.fields["duties"], second.fields["duties"]) == (
+    assert (first.fields["position_name"], second.fields["position_name"]) == (
+        "로봇 SW 개발",
+        "비전 AI 연구",
+    )
+    assert (first.fields["responsibilities"], second.fields["responsibilities"]) == (
         "로봇 제어 소프트웨어를 개발합니다",
         "영상 인식 모델을 연구합니다",
     )
-    assert (first.fields["career_level"], second.fields["career_level"]) == ("경력", "")
+    assert (first.fields["experience_type"], second.fields["experience_type"]) == ("경력", "")
     assert (first.fields["education_level"], second.fields["education_level"]) == ("", "석사")
 
 
 async def test_직무가_하나인_공고는_나누지_않는다() -> None:
-    result = await classify(response(duties="로봇 제어 소프트웨어를 개발합니다"))
+    result = await classify(response(responsibilities="로봇 제어 소프트웨어를 개발합니다"))
 
     assert not result.split
-    assert [posting.fields["duties"] for posting in result.postings] == [
+    assert [posting.fields["responsibilities"] for posting in result.postings] == [
         "로봇 제어 소프트웨어를 개발합니다"
     ]
 
@@ -119,7 +122,7 @@ async def test_공고를_내지_않으면_공통_칸으로_공고_하나를_만�
     "payload",
     [
         # 직무 이름은 공고마다 다르다. 공통 묶음에 올 자리가 없다
-        {"common": {"job_role": []}, "postings": []},
+        {"common": {"position_name": []}, "postings": []},
         {"postings": [{"salary": "협의"}]},
     ],
 )
@@ -134,8 +137,8 @@ async def test_나눈_공고의_메모에는_몇_번_공고인지가_붙는다()
     """글자를 못 찾아 줄 전체를 남긴 칸이 어느 공고의 것인지 알아야 고친다."""
     text = response(
         postings=[
-            posting_body(duties=pieces("원문에 없는 업무", 6)),
-            posting_body(duties=pieces("영상 인식 모델을 연구합니다", 9)),
+            posting_body(responsibilities=pieces("원문에 없는 업무", 6)),
+            posting_body(responsibilities=pieces("영상 인식 모델을 연구합니다", 9)),
         ]
     )
 
@@ -158,10 +161,10 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         "source_url": "https://x/1",
         "title": TITLE,
         "body": BODY,
-        "requirements": "",
-        "deadline": "",
+        "qualifications": "",
+        "recruitment_end_at": "",
         "department": "",
-        "company": "테스트회사",
+        "company_name": "테스트회사",
     }
     connection.execute(
         "INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash)"
@@ -185,7 +188,7 @@ async def test_나눈_공고는_번호마다_저장되고_직무_이름이_남�
 
     assert progress.processed == 1
     rows = conn.execute(
-        "SELECT part, part_role, requirements FROM job_classifications ORDER BY part"
+        "SELECT part, part_role, qualifications FROM job_classifications ORDER BY part"
     ).fetchall()
     assert [tuple(row) for row in rows] == [
         (1, "로봇 SW 개발", "해외여행에 결격사유가 없는 분\nC++ 경력 3년 이상"),
@@ -196,7 +199,7 @@ async def test_나눈_공고는_번호마다_저장되고_직무_이름이_남�
 async def test_나누지_않은_공고는_1번_하나이고_직무_이름을_따로_남기지_않는다(
     conn: sqlite3.Connection,
 ) -> None:
-    await classify_stored(conn, response(duties="로봇 제어 소프트웨어를 개발합니다"))
+    await classify_stored(conn, response(responsibilities="로봇 제어 소프트웨어를 개발합니다"))
 
     rows = conn.execute("SELECT part, part_role FROM job_classifications").fetchall()
     assert [tuple(row) for row in rows] == [(1, None)]

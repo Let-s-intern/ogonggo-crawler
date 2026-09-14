@@ -16,7 +16,7 @@
     "method": "POST",
     "body": {"page": 1},
     "items_path": "data.jobList",
-    "fields": {"title": "jobName", "date": "endDate", "company": "companyName"},
+    "fields": {"title": "jobName", "date": "endDate", "company_name": "companyName"},
     "id_field": "jobId",
     "link_template": "https://example.test/jobs/{id}"
   },
@@ -86,7 +86,7 @@ from pydantic import BaseModel
 from app.selector.schema import DETAIL_FIELDS
 
 # 목록 응답에서 읽는 값. 상세 링크는 `link_template` 이 만들므로 여기 없다
-LIST_FIELDS: tuple[str, ...] = ("title", "date", "company")
+LIST_FIELDS: tuple[str, ...] = ("title", "date", "company_name")
 
 # 목록 `fields` 에 적을 수 있는 이름 전부. 위의 셋에 상세 칸 이름이 더해진다.
 #

@@ -75,7 +75,8 @@ def rows_by_workflow(conn: sqlite3.Connection, workflow_id: int) -> list[sqlite3
     return list(
         conn.execute(
             """
-            SELECT n.id AS id, n.company AS company, n.parent_company AS parent_company,
+            SELECT n.id AS id, n.company_name AS company_name, n.parent_company_name AS
+            parent_company_name,
                    n.delivered_at AS delivered_at
               FROM normalized_jobs n
               JOIN raw_jobs r ON r.id = n.raw_job_id
@@ -93,7 +94,7 @@ def set_default_company(conn: sqlite3.Connection, crawler_id: int, value: str) -
 
 async def test_the_parent_column_follows_the_new_value(conn: sqlite3.Connection) -> None:
     await collect(conn)
-    assert [row["parent_company"] for row in rows_by_workflow(conn, OPERATOR_WORKFLOW)] == [
+    assert [row["parent_company_name"] for row in rows_by_workflow(conn, OPERATOR_WORKFLOW)] == [
         "현대오토에버",
         "현대오토에버",
     ]
@@ -103,9 +104,9 @@ async def test_the_parent_column_follows_the_new_value(conn: sqlite3.Connection)
     renormalize(conn, BackfillProgress())
 
     after = rows_by_workflow(conn, OPERATOR_WORKFLOW)
-    assert [row["parent_company"] for row in after] == ["현대모비스", "현대모비스"]
+    assert [row["parent_company_name"] for row in after] == ["현대모비스", "현대모비스"]
     # 이 사이트는 회사명을 주지 않는다. 모회사를 고쳐도 자회사 칸은 빈 채로 있어야 한다
-    assert [row["company"] for row in after] == [None, None]
+    assert [row["company_name"] for row in after] == [None, None]
     # 새 행이 생기는 것이 아니라 있던 행이 갱신된다
     assert [row["id"] for row in after] == before
 
@@ -120,8 +121,8 @@ async def test_the_subsidiary_column_does_not_move_when_the_operator_value_chang
     renormalize(conn, BackfillProgress())
 
     after = rows_by_workflow(conn, PARSED_WORKFLOW)
-    assert [row["company"] for row in after] == ["삼성SDS", "삼성전기(주)"]
-    assert [row["parent_company"] for row in after] == ["엉뚱한 회사", "엉뚱한 회사"]
+    assert [row["company_name"] for row in after] == ["삼성SDS", "삼성전기(주)"]
+    assert [row["parent_company_name"] for row in after] == ["엉뚱한 회사", "엉뚱한 회사"]
 
 
 async def test_renormalizing_leaves_raw_jobs_byte_identical(conn: sqlite3.Connection) -> None:
@@ -162,5 +163,5 @@ async def test_clearing_the_operator_value_leaves_the_parent_empty(
     renormalize(conn, BackfillProgress())
 
     after = rows_by_workflow(conn, OPERATOR_WORKFLOW)
-    assert [row["parent_company"] for row in after] == [None, None]
-    assert [row["company"] for row in after] == [None, None]
+    assert [row["parent_company_name"] for row in after] == [None, None]
+    assert [row["company_name"] for row in after] == [None, None]

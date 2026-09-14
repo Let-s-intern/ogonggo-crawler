@@ -5,12 +5,12 @@
 
 ## 이름이 신원이다
 
-로고를 공고에 잇는 값은 `normalized_jobs.company` 와 이 표의 `name` 이다. 그래서 이름이
+로고를 공고에 잇는 값은 `normalized_jobs.company_name` 와 이 표의 `name` 이다. 그래서 이름이
 유일하고(`migrations/0020_companies.sql`), 함수도 전부 이름으로 한 건을 찾는다. id 로 찾는
 길을 따로 두면 같은 회사를 가리키는 방법이 둘이 되고, 화면과 정규화가 서로 다른 쪽을 쓴다.
 
 `삼성전기` 와 `삼성전기(주)` 는 DB 가 다른 이름으로 본다. 그 둘을 같은 이름으로 만드는 것은
-`company` 에 걸린 mapping 규칙의 일이고, 이 모듈은 정규화가 확정한 이름을 그대로 받는다.
+`company_name` 에 걸린 mapping 규칙의 일이고, 이 모듈은 정규화가 확정한 이름을 그대로 받는다.
 
 ## 행은 정규화가 만든다
 
@@ -79,14 +79,14 @@ def ensure(conn: sqlite3.Connection, name: str, parent_name: str | None = None) 
 
 
 def register(
-    conn: sqlite3.Connection, company: str | None, parent_company: str | None
+    conn: sqlite3.Connection, company_name: str | None, parent_company_name: str | None
 ) -> str | None:
     """정규화가 확정한 두 칸으로 회사 행을 보장한다. 공고가 이어질 이름을 돌려준다.
 
     **공고가 이어지는 이름은 자회사가 있으면 자회사, 없으면 모회사다.** 로고는 공고에 나오는
     회사에 붙어야 하고, 삼성 채용 사이트에서 삼성SDS 공고에 붙을 로고는 삼성SDS 의 것이다.
     자회사를 말하지 않는 사이트(토스·우아한형제들)는 모회사가 곧 그 회사라 그 이름으로
-    행이 생긴다. 돌려주는 값이 이것이다 — 정규화가 `normalized_jobs.company` 를 채울 이름은
+    행이 생긴다. 돌려주는 값이 이것이다 — 정규화가 `normalized_jobs.company_name` 를 채울 이름은
     이 값이 아니라 여전히 자회사 칸 그대로다(호출부를 본다).
 
     **모회사도 자회사와 별개로 자기 행을 갖는다.** 자회사가 있어도 모회사 이름의 행을 함께
@@ -98,8 +98,8 @@ def register(
     둘 다 비어 있으면 아무것도 만들지 않고 None 이다. 이름 없는 회사 행은 어느 공고와도
     이어지지 않는다.
     """
-    subsidiary = (company or "").strip()
-    parent = (parent_company or "").strip()
+    subsidiary = (company_name or "").strip()
+    parent = (parent_company_name or "").strip()
     name = subsidiary or parent
     if not name:
         return None

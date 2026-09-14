@@ -44,8 +44,8 @@ SELECTORS: dict[str, Any] = {
     "detail": {
         "title": "h1",
         "body": "div.cont",
-        "requirements": "",
-        "deadline": "",
+        "qualifications": "",
+        "recruitment_end_at": "",
         "department": "",
     },
 }
@@ -53,11 +53,11 @@ SELECTORS: dict[str, Any] = {
 # 모델이 "사이트에 없다" 고 답해 셀렉터가 비어 있는 필드. 매칭 0개지만 실패가 아니다
 ABSENT = frozenset(
     {
-        "list.company",
-        "detail.requirements",
-        "detail.deadline",
+        "list.company_name",
+        "detail.qualifications",
+        "detail.recruitment_end_at",
         "detail.department",
-        "detail.company",
+        "detail.company_name",
     }
 )
 
@@ -67,13 +67,13 @@ MATCHES = {
     "list.title": 12,
     "list.link": 12,
     "list.date": 12,
-    "list.company": 0,
+    "list.company_name": 0,
     "detail.title": 0,
     "detail.body": 0,
-    "detail.requirements": 0,
-    "detail.deadline": 0,
+    "detail.qualifications": 0,
+    "detail.recruitment_end_at": 0,
     "detail.department": 0,
-    "detail.company": 0,
+    "detail.company_name": 0,
 }
 
 
@@ -188,8 +188,10 @@ def test_상세_페이지를_못_찾으면_실패가_아니라_건너뜀이다(
     assert body["failed_fields"] == []
     assert "detail.title" in body["skipped_fields"]
     assert "detail.body" in body["skipped_fields"]
-    # 잡힌 목록 필드는 건너뜀이 아니다. 셀렉터가 비어 있는 `list.company` 만 그 자리다
-    assert [name for name in body["skipped_fields"] if name.startswith("list.")] == ["list.company"]
+    # 잡힌 목록 필드는 건너뜀이 아니다. 셀렉터가 비어 있는 `list.company_name` 만 그 자리다
+    assert [name for name in body["skipped_fields"] if name.startswith("list.")] == [
+        "list.company_name"
+    ]
     assert any("상세 URL 이 없어" in note for note in body["notes"])
 
 

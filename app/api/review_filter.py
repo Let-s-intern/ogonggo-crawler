@@ -52,17 +52,17 @@ SORTS: dict[str, tuple[str, ...]] = {
     "crawled_at": ("r.crawled_at", "n.id"),
     "normalized_at": ("n.normalized_at", "n.id"),
     # 모회사가 앞이다. 계열사 공고가 그 그룹 아래 모여야 표를 훑는 순서와 회사가 맞는다
-    "company": ("n.parent_company", "n.company", "n.id"),
+    "company_name": ("n.parent_company_name", "n.company_name", "n.id"),
     "title": ("n.title", "n.id"),
-    "deadline": ("n.deadline", "n.id"),
+    "recruitment_end_at": ("n.recruitment_end_at", "n.id"),
 }
 SORT_LABELS: dict[str, str] = {
     "review": "검수 순서 (미전달 먼저)",
     "crawled_at": "수집 시각",
     "normalized_at": "정규화 시각",
-    "company": "회사 (모회사 다음 자회사)",
+    "company_name": "회사 (모회사 다음 자회사)",
     "title": "제목",
-    "deadline": "마감",
+    "recruitment_end_at": "마감",
 }
 ORDERS: dict[str, str] = {"desc": "DESC", "asc": "ASC"}
 
@@ -95,25 +95,24 @@ HAS_SUGGESTION_STATES: dict[str, str] = {
 # 그쪽이 `job_field_overrides.field_name` 의 CHECK 와 이미 맞춰져 있다.
 # 지우기의 조건 설명도 이 이름을 쓰기 때문에 `app/api/review.py` 가 아니라 여기 둔다.
 #
-# `parent_company` 는 여기 없다. 규칙도 보정도 걸리지 않는 칸이라 표에서 읽기만 하고, 그
+# `parent_company_name` 는 여기 없다. 규칙도 보정도 걸리지 않는 칸이라 표에서 읽기만 하고, 그
 # 열은 `fragments/review_table.html` 이 따로 그린다 (`migrations/0018_parent_company.sql`)
 FIELD_LABELS: dict[str, str] = {
-    "company": "자회사",
+    "company_name": "자회사",
     "title": "제목",
-    "job_role": "직무",
-    "deadline": "마감",
+    "recruitment_end_at": "마감",
     "body": "본문",
-    "requirements": "자격요건",
-    "start_date": "모집 시작",
+    "qualifications": "자격요건",
+    "recruitment_start_at": "모집 시작",
     "employment_type": "고용형태",
-    "career_level": "경력 구분",
-    "work_location": "근무지",
-    "duties": "주요 업무",
-    "preferred": "우대 조건",
+    "experience_type": "경력 구분",
+    "region": "근무지",
+    "responsibilities": "주요 업무",
+    "preferred_qualifications": "우대 조건",
     "hiring_process": "전형 절차",
-    "etc_info": "기타",
-    "job_major": "직무 대분류",
-    "job_minor": "직무 소분류",
+    "recruitment_notice": "기타",
+    "job_field": "직무 대분류",
+    "job_role": "직무 소분류",
     "company_and_team_introduction": "회사·팀 소개",
     "compensation": "급여·처우",
     "benefits": "복지·혜택",
@@ -133,27 +132,32 @@ EMPTY_NOTES: dict[str, str] = {
     # 0018 이 회사명을 두 칸으로 가른 뒤로 자회사는 정상적으로 빈다. 계열사를 말하지 않는
     # 사이트에서는 전부 비고, 그 자리를 모회사 이름으로 메우지 않는 것이 그 마이그레이션의
     # 요지다 (`migrations/0018_parent_company.sql`)
-    "company": "계열사를 말하지 않는 사이트는 전부 빈다. 그때는 모회사 열만 값이 있는 것이 맞다",
-    "deadline": "상시채용이면 비어 있는 것이 맞다. 저장된 값만으로는 놓친 것과 구분되지 않는다",
-    "requirements": "본문에 자격요건이 섞여 있는 사이트면 늘 빈다. 그 사이트는 이것이 정상이다",
+    "company_name": (
+        "계열사를 말하지 않는 사이트는 전부 빈다. 그때는 모회사 열만 값이 있는 것이 맞다"
+    ),
+    "recruitment_end_at": (
+        "상시채용이면 비어 있는 것이 맞다. 저장된 값만으로는 놓친 것과 구분되지 않는다"
+    ),
+    "qualifications": "본문에 자격요건이 섞여 있는 사이트면 늘 빈다. 그 사이트는 이것이 정상이다",
     # 0011 이 더한 칸들. 사이트가 그 값을 나눠서 줄 때만 채워지고, 한 덩어리로 주는
     # 사이트에서는 전부 빈다 — 그때 빈 것은 놓친 것이 아니다
     # (`seeds/site-configs-20260826.json` 의 사이트별 note)
-    "start_date": "모집 시작일을 적지 않는 사이트가 있다. 그런 사이트는 전부 빈다",
+    "recruitment_start_at": "모집 시작일을 적지 않는 사이트가 있다. 그런 사이트는 전부 빈다",
     "employment_type": "정규직/인턴 구분을 따로 주는 사이트가 넷뿐이다. 나머지는 전부 빈다",
-    "career_level": "신입/경력 구분을 따로 주는 사이트가 다섯뿐이다. 나머지는 전부 빈다",
-    "work_location": "근무지를 따로 주지 않는 사이트면 늘 빈다",
-    "duties": "본문에 주요 업무가 섞여 있는 사이트면 늘 빈다. 그 사이트는 이것이 정상이다",
-    "preferred": "본문에 우대 조건이 섞여 있는 사이트면 늘 빈다. 그 사이트는 이것이 정상이다",
+    "experience_type": "신입/경력 구분을 따로 주는 사이트가 다섯뿐이다. 나머지는 전부 빈다",
+    "region": "근무지를 따로 주지 않는 사이트면 늘 빈다",
+    "responsibilities": (
+        "본문에 주요 업무가 섞여 있는 사이트면 늘 빈다. 그 사이트는 이것이 정상이다"
+    ),
+    "preferred_qualifications": (
+        "본문에 우대 조건이 섞여 있는 사이트면 늘 빈다. 그 사이트는 이것이 정상이다"
+    ),
     "hiring_process": "전형 절차를 따로 주지 않는 사이트면 늘 빈다",
-    "etc_info": "기타 안내가 없는 공고는 빈다",
-    # 0017 이 더한 칸. 제목에서 옮기는 값이라 제목이 직무를 말하지 않으면 빈다 —
-    # `전 직군 채용` 처럼 여러 직무를 묶은 공고가 그렇다 (`tests/test_job_role_source.py`)
-    "job_role": "제목이 직무를 말하지 않는 통합 공고는 빈다. 그때 빈 것은 놓친 것이 아니다",
+    "recruitment_notice": "기타 안내가 없는 공고는 빈다",
     # 0025 가 더한 직무 분류. 사이트 셀렉터가 아니라 분류가 채우는 칸이라, 아직 분류를
     # 돌리지 않았거나 본문으로 판단이 갈리지 않으면 빈다
-    "job_major": "아직 분류를 돌리지 않았거나 본문으로 판단할 근거가 없으면 빈다",
-    "job_minor": "대분류만 정해지고 소분류가 본문으로 갈리지 않는 공고는 이 칸만 빈다",
+    "job_field": "아직 분류를 돌리지 않았거나 본문으로 판단할 근거가 없으면 빈다",
+    "job_role": "대분류만 정해지고 소분류가 본문으로 갈리지 않는 공고는 이 칸만 빈다",
     # 0028 이 더한 칸. 분류가 채우고, 공고가 그 내용을 적지 않으면 빈다
     "company_and_team_introduction": "회사·팀 소개 구역이 따로 없는 공고는 빈다",
     "compensation": "급여를 적지 않는 공고는 빈다",
@@ -255,7 +259,7 @@ class JobFilter:
     """
 
     workflow_id: int | None = None
-    company: str = ""
+    company_name: str = ""
     query: str = ""
     status: str = ""
     delivered: str = ""
@@ -268,8 +272,8 @@ class JobFilter:
     has_suggestion: str = ""
     # 직무 대분류. 소분류는 대분류에 종속되므로 대분류 하나만 먼저 둔다(5.2, PRD 5절).
     # 목록에 없는 이름이 와도 그대로 받는다 — 꺼진 대분류로 이미 분류된 공고를 조회할
-    # 방법이 없어지면 안 된다(`company` 와 같은 이유)
-    job_major: str = ""
+    # 방법이 없어지면 안 된다(`company_name` 와 같은 이유)
+    job_field: str = ""
 
     def without_empty(self) -> JobFilter:
         """빈 값 조건만 뺀 같은 조건. 필드별 빈 건수를 세는 데 쓴다.
@@ -283,7 +287,7 @@ class JobFilter:
         """폼에 다시 실을 값. 지우기 요청이 표와 같은 조건을 들고 가게 한다."""
         return {
             "workflow_id": "" if self.workflow_id is None else str(self.workflow_id),
-            "company": self.company,
+            "company_name": self.company_name,
             "q": self.query,
             "status": self.status,
             "delivered": self.delivered,
@@ -294,13 +298,13 @@ class JobFilter:
             "normalized_to": self.normalized_to,
             "dup": self.dup,
             "has_suggestion": self.has_suggestion,
-            "job_major": self.job_major,
+            "job_field": self.job_field,
         }
 
 
 def read_filter(
     workflow_id: str = "",
-    company: str = "",
+    company_name: str = "",
     q: str = "",
     status: str = "",
     delivered: str = "",
@@ -311,7 +315,7 @@ def read_filter(
     normalized_to: str = "",
     dup: str = "",
     has_suggestion: str = "",
-    job_major: str = "",
+    job_field: str = "",
 ) -> JobFilter:
     """화면이 보낸 값을 조건 한 벌로. 표에 없는 값은 조건을 걸지 않은 것으로 본다.
 
@@ -320,7 +324,7 @@ def read_filter(
     """
     return JobFilter(
         workflow_id=int(workflow_id) if workflow_id.strip().isdigit() else None,
-        company=company.strip(),
+        company_name=company_name.strip(),
         query=q.strip(),
         status=status if status in DEADLINE_STATES else "",
         delivered=delivered if delivered in DELIVERY_STATES else "",
@@ -332,8 +336,8 @@ def read_filter(
         dup=dup if dup in DUP_CRITERIA else "",
         has_suggestion=has_suggestion if has_suggestion in HAS_SUGGESTION_STATES else "",
         # 켜진 대분류가 아니어도 그대로 받는다. 대분류를 끈 뒤에도 이미 그 값으로 분류된
-        # 공고를 조회할 수 있어야 한다(`company` 와 같은 이유로 표에 대지 않는다)
-        job_major=job_major.strip(),
+        # 공고를 조회할 수 있어야 한다(`company_name` 와 같은 이유로 표에 대지 않는다)
+        job_field=job_field.strip(),
     )
 
 
@@ -394,8 +398,8 @@ def _company_or_parent() -> str:
     빈 값끼리는 묶지 않기 때문이고(`_dup_key`), 그러면 토스·우아한형제들의 중복은 제목
     기준으로만 잡힌다 — 그 기준은 계열사가 나눠 올린 것까지 잡는 넓은 기준이다.
     """
-    shown = shown_value("company")
-    return f"COALESCE(NULLIF(TRIM({shown}, {_BLANK_CHARS}), ''), n.parent_company)"
+    shown = shown_value("company_name")
+    return f"COALESCE(NULLIF(TRIM({shown}, {_BLANK_CHARS}), ''), n.parent_company_name)"
 
 
 def _dup_key(kind: str) -> tuple[str, str]:
@@ -424,32 +428,32 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
     if picked.workflow_id is not None:
         clauses.append("r.workflow_id = ?")
         params.append(picked.workflow_id)
-    if picked.company:
+    if picked.company_name:
         # 두 칸 어느 쪽이든 그 이름이면 걸린다. `삼성` 을 고르면 계열사 공고까지, `삼성SDS` 를
         # 고르면 그것만 나온다. 자회사만 보면 회사명을 주지 않는 사이트가 회사로 걸리지 않고,
         # 모회사만 보면 계열사를 고를 방법이 없다
-        clauses.append("(n.parent_company = ? OR n.company = ?)")
-        params.extend([picked.company] * 2)
+        clauses.append("(n.parent_company_name = ? OR n.company_name = ?)")
+        params.extend([picked.company_name] * 2)
     if picked.query:
-        clauses.append("(n.title LIKE ? OR n.company LIKE ? OR n.parent_company LIKE ?)")
+        clauses.append("(n.title LIKE ? OR n.company_name LIKE ? OR n.parent_company_name LIKE ?)")
         params.extend([f"%{picked.query}%"] * 3)
-    if picked.job_major:
-        # 저장된 컬럼을 그대로 본다. `company` 필터와 같은 자리 — 보정을 얹은 값이 아니라
+    if picked.job_field:
+        # 저장된 컬럼을 그대로 본다. `company_name` 필터와 같은 자리 — 보정을 얹은 값이 아니라
         # 분류가 채운 값으로 좁힌다
-        clauses.append("n.job_major = ?")
-        params.append(picked.job_major)
+        clauses.append("n.job_field = ?")
+        params.append(picked.job_field)
 
     # 마감일은 날짜 문자열이다. `date()` 가 NULL 을 내는 값(빈 값, 날짜가 아닌 값)은 진행중도
     # 마감도 아니라 `마감일 없음` 쪽에 모은다 — 그렇지 않으면 어느 조건에도 걸리지 않는 행이
     # 조용히 생긴다
     if picked.status == "open":
-        clauses.append("date(n.deadline) >= ?")
+        clauses.append("date(n.recruitment_end_at) >= ?")
         params.append(_today())
     elif picked.status == "closed":
-        clauses.append("date(n.deadline) < ?")
+        clauses.append("date(n.recruitment_end_at) < ?")
         params.append(_today())
     elif picked.status == "none":
-        clauses.append("date(n.deadline) IS NULL")
+        clauses.append("date(n.recruitment_end_at) IS NULL")
 
     # 표에 없는 값은 조건에서 뺀다. 화면에서 온 문자열이 SQL 로 들어가는 유일한 자리다
     if picked.empty and picked.empty in EMPTY_CHOICES:
@@ -697,8 +701,8 @@ def _describe(conn: sqlite3.Connection, picked: JobFilter, scope: str) -> str:
     return " · ".join(
         (
             f"워크플로우 {workflow}",
-            f"회사(모회사 또는 자회사) {picked.company or '전체'}",
-            f"직무 대분류 {picked.job_major or '전체'}",
+            f"회사(모회사 또는 자회사) {picked.company_name or '전체'}",
+            f"직무 대분류 {picked.job_field or '전체'}",
             f"진행 여부 {DEADLINE_STATES.get(picked.status, '전체')}",
             f"전달 여부 {DELIVERY_STATES.get(picked.delivered, '전체')}",
             f"빈 값 {EMPTY_LABELS.get(picked.empty, '안 걸림')}",
@@ -816,7 +820,7 @@ async def _delete_request(request: Request) -> tuple[str, list[int], JobFilter]:
             name: str(form.get(name) or "")
             for name in (
                 "workflow_id",
-                "company",
+                "company_name",
                 "q",
                 "status",
                 "delivered",
@@ -827,7 +831,7 @@ async def _delete_request(request: Request) -> tuple[str, list[int], JobFilter]:
                 "normalized_to",
                 "dup",
                 "has_suggestion",
-                "job_major",
+                "job_field",
             )
         }
     )

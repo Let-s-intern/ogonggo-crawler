@@ -109,7 +109,7 @@ class VerificationReport:
 
         항목 개수로는 판정하지 않는다 — 공고가 진짜 1건인 목록 페이지가 있고, 그것은 정상이다.
         판정에 쓰는 것은 항목 안의 `title`·`link`·`date` 뿐이고, 셀렉터가 없어 건너뛴 것은
-        뺀다. `company` 는 넣지 않는다. 계열사 이름은 있어도 그만인 정보라 그것 하나가 잡혔다고
+        뺀다. `company_name` 는 넣지 않는다. 계열사 이름은 있어도 그만인 정보라 그것 하나가 잡혔다고
         쓸 수 있는 크롤러가 되지 않는다.
         """
         by_name = {field.name: field for field in self.fields}

@@ -34,16 +34,16 @@ DETAIL_HTML = (FIXTURES / "doosan-detail-1000361539-20260826.html").read_text(en
 LIST_URL = "https://career.doosan.com/dsp/sa/RecList.jsp"
 ROBOTS = "User-agent: *\nDisallow:\n"
 
-# 크롤러 31 에 저장된 셀렉터에 0011 의 새 칸을 더한 것이다. 두산이 주지 않는
-# `employment_type`, `career_level`, `preferred` 는 빈 문자열로 둔다 — 아무 요소나 억지로
-# 고르지 않는다
+# 크롤러 31 에 저장된 셀렉터에 0011 의 새 칸을 더한 것이다. 두산이 주지 않는 `employment_type`,
+# `experience_type`, `preferred_qualifications` 는 빈 문자열로 둔다 — 아무 요소나 억지로 고르지
+# 않는다
 SELECTORS: dict[str, Any] = {
     "list": {
         "item": "ul.list-cont > li",
         "title": "a.list-tit > strong",
         "link": "a.list-tit",
         "date": "div.deadline",
-        "company": "div.company",
+        "company_name": "div.company",
         "link_template": (
             "https://career.doosan.com/dsp/sa/RecList.jsp"
             "?REC_ID={onclick|arg1}&REC_TYPE_CD={onclick|arg3}&q_REC_TYPE="
@@ -54,35 +54,35 @@ SELECTORS: dict[str, Any] = {
     "detail": {
         "title": "h2.h2-title",
         "body": "div.view-list-wrap",
-        "requirements": 'th:-soup-contains("자격요건") + td',
-        "deadline": 'th:-soup-contains("진행상태") + td',
+        "qualifications": 'th:-soup-contains("자격요건") + td',
+        "recruitment_end_at": 'th:-soup-contains("진행상태") + td',
         "department": "",
-        "company": 'dt:-soup-contains("자회사/BG") + dd',
-        "start_date": 'th:-soup-contains("채용공고") + td',
+        "company_name": 'dt:-soup-contains("자회사/BG") + dd',
+        "recruitment_start_at": 'th:-soup-contains("채용공고") + td',
         "job_category": 'dt:-soup-contains("모집분야") + dd',
         "employment_type": "",
-        "career_level": "",
-        "work_location": 'dt:-soup-contains("지역") + dd',
+        "experience_type": "",
+        "region": 'dt:-soup-contains("지역") + dd',
         "headcount": 'dt:-soup-contains("인원") + dd',
-        "duties": 'dt:-soup-contains("수행업무") + dd',
-        "preferred": "",
+        "responsibilities": 'dt:-soup-contains("수행업무") + dd',
+        "preferred_qualifications": "",
         "hiring_process": 'th:-soup-contains("전형절차") + td',
-        "etc_info": 'th:-soup-contains("기타사항") + td',
+        "recruitment_notice": 'th:-soup-contains("기타사항") + td',
     },
 }
 
 # 두산이 그 값을 주는 칸과 이 공고에서 나와야 하는 값
 FILLED = {
-    "work_location": "서울",
+    "region": "서울",
 }
 
 # 두산이 주지 않는 칸. **빈 칸이어야 한다** — 다른 값으로 채우지 않는다
-EMPTY = ("department", "employment_type", "career_level", "preferred")
+EMPTY = ("department", "employment_type", "experience_type", "preferred_qualifications")
 
 # 그중 `normalized_jobs` 에 아직 남아 있는 칸. `department` 는 0016 이 지웠고, 수집은 여전히
 # 그 셀렉터를 들고 있다 — `raw_jobs` 는 건드리지 않는다
 # (`migrations/0016_drop_department_category_headcount.sql`)
-EMPTY_NORMALIZED = ("employment_type", "career_level", "preferred")
+EMPTY_NORMALIZED = ("employment_type", "experience_type", "preferred_qualifications")
 
 
 def stub_fetcher() -> Fetcher:
@@ -136,10 +136,10 @@ async def test_collection_carries_the_new_columns(conn: sqlite3.Connection) -> N
 
     for name, value in FILLED.items():
         assert record[name] == value, name
-    assert "■주요업무" in record["duties"]
-    assert record["start_date"].startswith("2026-07-15")
+    assert "■주요업무" in record["responsibilities"]
+    assert record["recruitment_start_at"].startswith("2026-07-15")
     assert "서류전형" in record["hiring_process"]
-    assert record["etc_info"]
+    assert record["recruitment_notice"]
 
 
 async def test_collection_leaves_a_column_the_site_does_not_give_empty(
@@ -151,7 +151,7 @@ async def test_collection_leaves_a_column_the_site_does_not_give_empty(
     assert [record[name] for name in EMPTY] == ["", "", "", ""]
     # 빈 칸을 본문으로 메우지 않았는지까지 본다. 본문 전체가 칸마다 반복되면 그것도 억지로
     # 채운 것이다
-    assert record["duties"] != record["body"]
+    assert record["responsibilities"] != record["body"]
 
 
 async def test_normalization_writes_the_new_columns(conn: sqlite3.Connection) -> None:
@@ -161,10 +161,10 @@ async def test_normalization_writes_the_new_columns(conn: sqlite3.Connection) ->
     row = conn.execute("SELECT * FROM normalized_jobs ORDER BY id LIMIT 1").fetchone()
     for name, value in FILLED.items():
         assert row[name] == value, name
-    assert row["duties"]
+    assert row["responsibilities"]
     assert row["hiring_process"]
-    assert row["etc_info"]
-    assert row["start_date"]
+    assert row["recruitment_notice"]
+    assert row["recruitment_start_at"]
 
 
 async def test_normalization_leaves_the_missing_ones_null(conn: sqlite3.Connection) -> None:
@@ -180,12 +180,12 @@ async def test_a_rule_can_run_on_a_new_column(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
         INSERT INTO normalization_rules (field_name, rule_type, rule_config_json)
-        VALUES ('work_location', 'regex', ?)
+        VALUES ('region', 'regex', ?)
         """,
         (json.dumps({"pattern": r"울$", "replacement": "울시"}),),
     )
 
     await run_once(conn)
 
-    row = conn.execute("SELECT work_location FROM normalized_jobs ORDER BY id LIMIT 1").fetchone()
-    assert row["work_location"] == "서울시"
+    row = conn.execute("SELECT region FROM normalized_jobs ORDER BY id LIMIT 1").fetchone()
+    assert row["region"] == "서울시"

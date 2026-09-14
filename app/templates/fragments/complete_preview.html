@@ -9,15 +9,15 @@
     <div class="flex items-start gap-3">
       <div class="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white">
         {% if job.logo_url %}
-        <img src="{{ job.logo_url }}" alt="{{ job.company or job.parent_company }} 로고"
+        <img src="{{ job.logo_url }}" alt="{{ job.company_name or job.parent_company_name }} 로고"
              class="h-full w-full object-contain p-0.5">
         {% endif %}
       </div>
       <div class="min-w-0">
         <p class="mb-0 truncate text-sm font-semibold text-slate-900">
-          {{ job.company or job.parent_company }}
-          {% if job.parent_company and job.company and job.company != job.parent_company %}
-          <span class="font-normal text-slate-500">· {{ job.parent_company }}</span>
+          {{ job.company_name or job.parent_company_name }}
+          {% if job.parent_company_name and job.company_name and job.company_name != job.parent_company_name %}
+          <span class="font-normal text-slate-500">· {{ job.parent_company_name }}</span>
           {% endif %}
         </p>
         <h3 id="app-modal-title" class="mb-0 mt-1 text-lg font-bold leading-snug text-slate-900">
@@ -32,15 +32,14 @@
       {% if d_day %}
       <span class="badge {% if d_day == '마감' %}badge-idle{% else %}badge-warn{% endif %}">{{ d_day }}</span>
       {% endif %}
-      {% if job.deadline %}<span class="badge badge-idle">마감 {{ job.deadline }}</span>{% endif %}
+      {% if job.recruitment_end_at %}<span class="badge badge-idle">마감 {{ job.recruitment_end_at }}</span>{% endif %}
       {% if job.employment_type %}<span class="badge badge-idle">{{ job.employment_type }}</span>{% endif %}
-      {% if job.career_level %}<span class="badge badge-idle">{{ job.career_level }}</span>{% endif %}
-      {% if job.work_location %}<span class="badge badge-idle">{{ job.work_location }}</span>{% endif %}
+      {% if job.experience_type %}<span class="badge badge-idle">{{ job.experience_type }}</span>{% endif %}
+      {% if job.region %}<span class="badge badge-idle">{{ job.region }}</span>{% endif %}
     </div>
     <p class="mt-2 text-sm text-slate-600">
-      {{ job.job_role }}
-      {% if job.job_major %} · {{ job.job_major }}{% endif %}
-      {% if job.job_minor %} · {{ job.job_minor }}{% endif %}
+      {% if job.job_field %}{{ job.job_field }}{% endif %}
+      {% if job.job_role %} · {{ job.job_role }}{% endif %}
     </p>
 
     {% macro section(title, text) %}
@@ -53,11 +52,11 @@
       {% endif %}
     {% endmacro %}
 
-    {{ section("주요 업무", job.duties) }}
-    {{ section("자격요건", job.requirements) }}
-    {{ section("우대 사항", job.preferred) }}
+    {{ section("주요 업무", job.responsibilities) }}
+    {{ section("자격요건", job.qualifications) }}
+    {{ section("우대 사항", job.preferred_qualifications) }}
     {{ section("전형 절차", job.hiring_process) }}
-    {{ section("기타", job.etc_info) }}
+    {{ section("기타", job.recruitment_notice) }}
 
     {% if job.body %}
     <details class="mt-4 border-t border-slate-200 pt-4">

@@ -48,10 +48,11 @@ HEAD_CELL = re.compile(r'<th scope="col"')
 # 이 Push 가 시작될 때의 열 수. 원문은 모달에만 붙고 표에는 붙지 않는다.
 # 열이 바뀌는 날 이 수를 함께 고친다 — 머리글과 `empty_row` 의 colspan 이 서로 맞는지는
 # `tests/test_ui_review_columns.py` 가 따로 본다
-# 0025 가 `job_major`/`job_minor` 를 `NORMALIZED_FIELDS`(=`OVERRIDABLE_FIELDS`)에 더해
+# 0025 가 `job_field`/`job_role` 를 `NORMALIZED_FIELDS`(=`OVERRIDABLE_FIELDS`)에 더해
 # 23 -> 25 다. 표의 필드 반복(`{% for field in fields %}`)이 그 목록을 그대로 따라간다.
-# 0028 이 오공고가 받는 다섯 칸을 더해 25 -> 30 이다
-TABLE_COLUMNS = 30
+# 0028 이 오공고가 받는 다섯 칸을 더해 25 -> 30 이다. 0031 이 제목에서 옮기던 자유 글자 직무를
+# 지워 29 다
+TABLE_COLUMNS = 29
 
 INPUT_TAG = re.compile(r"<(?:input|textarea)\b[^>]*>")
 TEXTAREA_BODY = re.compile(r"<textarea\b[^>]*>(.*?)</textarea>", re.DOTALL)
@@ -88,7 +89,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     for raw_id in (1, 2):
         connection.execute(
             """
-            INSERT INTO normalized_jobs (raw_job_id, company, title, body, source_url)
+            INSERT INTO normalized_jobs (raw_job_id, company_name, title, body, source_url)
             VALUES (?, '예시', ?, ?, ?)
             """,
             (raw_id, f"공고 {raw_id}", f"본문 {raw_id}", f"{LIST_URL}{raw_id}"),
@@ -111,7 +112,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     )
     connection.execute(
         """
-        INSERT INTO normalized_jobs (raw_job_id, company, title, body, source_url)
+        INSERT INTO normalized_jobs (raw_job_id, company_name, title, body, source_url)
         VALUES (3, '예시', '공고 3', '본문 3', ?)
         """,
         (f"{API_LIST_URL}3",),

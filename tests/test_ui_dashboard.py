@@ -67,12 +67,12 @@ def add_complete(
     """열여섯 칸을 전부 채운 완성 행. `classified_at` 을 주면 그 시각으로 분류 행도 만든다."""
     values = {name: f"값-{name}" for name in NORMALIZED_FIELDS}
     values["title"] = f"공고 {raw_job_id}"
-    values["company"] = "엘지전자"
+    values["company_name"] = "엘지전자"
     columns = list(NORMALIZED_FIELDS)
     conn.execute(
         f"""
         INSERT INTO normalized_jobs
-               (raw_job_id, source_url, parent_company, normalized_at, {", ".join(columns)})
+               (raw_job_id, source_url, parent_company_name, normalized_at, {", ".join(columns)})
         VALUES (?, ?, 'LG', ?, {", ".join("?" for _ in columns)})
         """,
         (

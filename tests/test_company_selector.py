@@ -1,9 +1,9 @@
-"""셀렉터의 선택 필드 `company` 테스트.
+"""셀렉터의 선택 필드 `company_name` 테스트.
 
 확인하는 것은 셋이다.
 
-- `company` 가 없는, 이 필드가 생기기 전의 셀렉터 JSON 이 그대로 통과한다
-- `company` 가 있는 셀렉터 JSON 도 통과한다
+- `company_name` 가 없는, 이 필드가 생기기 전의 셀렉터 JSON 이 그대로 통과한다
+- `company_name` 가 있는 셀렉터 JSON 도 통과한다
 - 그 셀렉터로 크롤링하면 뽑힌 회사명이 `raw_jobs.raw_data_json` 에 들어간다
 
 계열사가 섞인 목록 픽스처로 돈다. 실사이트에 나가지 않는다.
@@ -42,7 +42,7 @@ DETAIL_HTML = {
 LIST_URL = "https://group.example.test/recruit/"
 ROBOTS = "User-agent: *\nDisallow:\n"
 
-# 이 필드가 생기기 전에 저장된 모양. 목록·상세 어디에도 `company` 키가 없다
+# 이 필드가 생기기 전에 저장된 모양. 목록·상세 어디에도 `company_name` 키가 없다
 WITHOUT_COMPANY: dict[str, Any] = {
     "list": {
         "item": "ul.job-list > li.job-item",
@@ -53,15 +53,15 @@ WITHOUT_COMPANY: dict[str, Any] = {
     "detail": {
         "title": "h1.job-title",
         "body": "div.job-body",
-        "requirements": "div.job-requirements",
-        "deadline": "span.due",
+        "qualifications": "div.job-requirements",
+        "recruitment_end_at": "span.due",
         "department": "span.dept",
     },
 }
 
 WITH_COMPANY: dict[str, Any] = {
-    "list": {**WITHOUT_COMPANY["list"], "company": "span.affiliate"},
-    "detail": {**WITHOUT_COMPANY["detail"], "company": "span.company-name"},
+    "list": {**WITHOUT_COMPANY["list"], "company_name": "span.affiliate"},
+    "detail": {**WITHOUT_COMPANY["detail"], "company_name": "span.company-name"},
 }
 
 
@@ -118,19 +118,19 @@ def test_selectors_saved_before_company_existed_still_validate() -> None:
     """키가 아예 없어도 통과한다. 통과하지 않으면 저장된 셀렉터가 전부 깨진다."""
     selectors = validate_selectors(WITHOUT_COMPANY)
 
-    assert selectors.list.company == ""
-    assert selectors.detail.company == ""
+    assert selectors.list.company_name == ""
+    assert selectors.detail.company_name == ""
 
 
 def test_selectors_with_company_validate() -> None:
     selectors = validate_selectors(WITH_COMPANY)
 
-    assert selectors.list.company == "span.affiliate"
-    assert selectors.detail.company == "span.company-name"
+    assert selectors.list.company_name == "span.affiliate"
+    assert selectors.detail.company_name == "span.company-name"
 
 
 def test_the_other_fields_are_still_required() -> None:
-    """`company` 만 선택이다. 값이 비어도 되는 상세 필드조차 키는 있어야 한다."""
+    """`company_name` 만 선택이다. 값이 비어도 되는 상세 필드조차 키는 있어야 한다."""
     payload = json.loads(json.dumps(WITH_COMPANY))
     del payload["detail"]["department"]
 
@@ -147,8 +147,8 @@ def test_an_empty_company_selector_is_not_a_failed_field() -> None:
     )
 
     by_name = {field.name: field for field in report.fields}
-    assert by_name["list.company"].status == SKIPPED
-    assert by_name["detail.company"].status == SKIPPED
+    assert by_name["list.company_name"].status == SKIPPED
+    assert by_name["detail.company_name"].status == SKIPPED
     assert report.failed == []
 
 
@@ -157,7 +157,7 @@ def test_parser_reads_a_different_company_per_item() -> None:
 
     parsed = parse_list(LIST_HTML, selectors.list, LIST_URL)
 
-    assert [item.company for item in parsed.items] == ["삼성SDS", "삼성전기(주)"]
+    assert [item.company_name for item in parsed.items] == ["삼성SDS", "삼성전기(주)"]
 
 
 def test_parser_leaves_company_empty_without_a_selector() -> None:
@@ -166,15 +166,15 @@ def test_parser_leaves_company_empty_without_a_selector() -> None:
     parsed = parse_list(LIST_HTML, selectors.list, LIST_URL)
     detail = parse_detail(DETAIL_HTML["/recruit/1001"], selectors.detail)
 
-    assert [item.company for item in parsed.items] == ["", ""]
-    assert detail.fields["company"] == ""
+    assert [item.company_name for item in parsed.items] == ["", ""]
+    assert detail.fields["company_name"] == ""
 
 
 async def test_parsed_company_reaches_raw_data_json(conn: sqlite3.Connection) -> None:
     """파싱값은 다른 필드와 똑같은 추출 결과다. raw 에 그대로 들어간다."""
     await run_workflow(conn, 1, fetcher=stub_fetcher(), limit=2)
 
-    assert [row["company"] for row in raw_rows(conn)] == ["삼성SDS", "삼성전기(주)"]
+    assert [row["company_name"] for row in raw_rows(conn)] == ["삼성SDS", "삼성전기(주)"]
 
 
 async def test_raw_data_json_has_an_empty_company_without_a_selector(
@@ -185,6 +185,6 @@ async def test_raw_data_json_has_an_empty_company_without_a_selector(
     try:
         await run_workflow(connection, 1, fetcher=stub_fetcher(), limit=2)
 
-        assert [row["company"] for row in raw_rows(connection)] == ["", ""]
+        assert [row["company_name"] for row in raw_rows(connection)] == ["", ""]
     finally:
         connection.close()

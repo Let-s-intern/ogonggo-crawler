@@ -42,7 +42,7 @@ HANWHA = validate_api_config(
             "method": "POST",
             "body": {"langCd": "ko", "searchText": "", "rtNrcrtYn": "", "rtCarrYn": ""},
             "items_path": "data.list",
-            "fields": {"title": "rtNm", "date": "rtAcptEndDttm", "company": "sdNm"},
+            "fields": {"title": "rtNm", "date": "rtAcptEndDttm", "company_name": "sdNm"},
             "id_field": "rtSeq",
             "link_template": "https://www.hanwhain.com/web/recruit/notice/detail?rtSeq={id}",
             "pagination": {
@@ -64,7 +64,11 @@ SAMSUNG = validate_api_config(
             "body_format": "form",
             "response": "html",
             "items_path": "li",
-            "fields": {"title": "h3.title", "date": "span.period", "company": "p.company"},
+            "fields": {
+                "title": "h3.title",
+                "date": "span.period",
+                "company_name": "p.company",
+            },
             "id_field": "a[data-value]@data-value|digits",
             "link_template": "https://www.samsungcareers.com/recruit/detail.data?seqno={id}",
             "pagination": {

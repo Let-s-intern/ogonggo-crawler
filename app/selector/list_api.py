@@ -22,7 +22,7 @@
 |---|---|
 | `items_path` | 제목이 들어 있던 배열의 경로 |
 | `fields.title` | 제목이 들어 있던 키의 경로 |
-| `fields.date`·`fields.company` | 렌더된 항목의 날짜·회사명과 값이 같은 키 |
+| `fields.date`·`fields.company_name` | 렌더된 항목의 날짜·회사명과 값이 같은 키 |
 | `id_field` | 그 값이 렌더된 항목의 링크 안에 들어 있는 키 |
 | `link_template` | 그 링크에서 id 자리를 `{id}` 로 바꾼 것 |
 
@@ -211,7 +211,7 @@ def _build(
 
     fields: dict[str, Any] = {"title": title_path}
     missing: list[str] = []
-    for name in ("date", "company"):
+    for name in ("date", "company_name"):
         found = _value_path([(entry, getattr(item, name)) for entry, item in pairs])
         if found:
             fields[name] = found
@@ -241,7 +241,7 @@ def _build(
         f"title: {title_path}",
         f"id_field: {id_field}",
         f"link_template: {link_template}",
-        *(f"{name}: {fields[name]}" for name in ("date", "company") if name in fields),
+        *(f"{name}: {fields[name]}" for name in ("date", "company_name") if name in fields),
     ]
     logger.info("목록 API 후보 url=%s items_path=%s 항목=%d", request.url, items_path, len(entries))
     return ListPath(

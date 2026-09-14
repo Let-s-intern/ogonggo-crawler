@@ -31,7 +31,7 @@ from tests.test_selector_repair import DETAIL_HTML as REPAIR_DETAIL_HTML
 from tests.test_selector_repair import LIST_HTML as REPAIR_LIST_HTML
 from tests.test_selector_repair import response as repair_response
 
-CLASSIFICATION = response(work_location="판교")
+CLASSIFICATION = response(region="판교")
 
 # 기록기가 돌려줄 답. 세 기능이 기대하는 모양이 다 달라서 무엇으로 물었는지를 보고 고른다 —
 # 제공자마다 답을 하나로 고정하면 셀렉터 자리에 분류 응답이 돌아온다
@@ -225,4 +225,4 @@ async def test_fixing_selectors_calls_its_own_provider_not_the_generators(
 def test_the_recorded_answers_are_the_shapes_the_parsers_expect() -> None:
     """가짜 응답이 스키마를 벗어나면 위의 테스트가 엉뚱한 이유로 통과한다."""
     assert json.loads(VALID_RESPONSE)["list"]
-    assert json.loads(CLASSIFICATION)["postings"][0]["work_location"][0]["text"] == "판교"
+    assert json.loads(CLASSIFICATION)["postings"][0]["region"][0]["text"] == "판교"

@@ -56,7 +56,7 @@ def response_body(
 ) -> dict[str, Any]:
     """응답 객체. `postings` 를 주지 않으면 칸 이름으로 받은 값이 공고 하나가 된다.
 
-    제안 칸(`company_suggestion` 같은)은 공고가 아니라 응답 맨 위에 앉는다.
+    제안 칸(`company_name_suggestion` 같은)은 공고가 아니라 응답 맨 위에 앉는다.
     """
     body: dict[str, Any] = {
         name: fields.get(name, "") for name in RESPONSE_FIELDS if name not in (COMMON, POSTINGS)

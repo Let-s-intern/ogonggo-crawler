@@ -168,28 +168,30 @@ async def test_company_override_does_not_touch_the_parent_column(
     await collect(conn)
     before = normalized(conn, 1)
     # 이 사이트는 회사명을 주지 않는다. 자회사가 비고 모회사만 남는 것이 맞는 모양이다
-    assert (before["parent_company"], before["company"]) == (DEFAULT_COMPANY, None)
+    assert (before["parent_company_name"], before["company_name"]) == (DEFAULT_COMPANY, None)
 
-    set_override(conn, 1, "company", "사람이 정한 회사")
+    set_override(conn, 1, "company_name", "사람이 정한 회사")
     run_renormalize(conn)
 
     row = normalized(conn, 1)
-    assert row["company"] == "사람이 정한 회사"
-    assert row["parent_company"] == DEFAULT_COMPANY
+    assert row["company_name"] == "사람이 정한 회사"
+    assert row["parent_company_name"] == DEFAULT_COMPANY
 
 
 async def test_empty_override_clears_the_field(conn: sqlite3.Connection) -> None:
     """빈 문자열은 "비어 있는 것이 맞다" 는 판단이다. 값 없음은 NULL 하나로만 나타난다."""
     await collect(conn)
-    set_override(conn, 1, "company", "")
-    set_override(conn, 1, "work_location", "")
+    set_override(conn, 1, "company_name", "")
+    set_override(conn, 1, "region", "")
 
     run_renormalize(conn)
 
     row = normalized(conn, 1)
-    assert row["company"] is None
-    assert row["parent_company"] == DEFAULT_COMPANY, "자회사를 비운 것이 모회사를 지우지 않는다"
-    assert row["work_location"] is None
+    assert row["company_name"] is None
+    assert row["parent_company_name"] == DEFAULT_COMPANY, (
+        "자회사를 비운 것이 모회사를 지우지 않는다"
+    )
+    assert row["region"] is None
 
 
 async def test_overrides_leave_raw_and_delivery_untouched(conn: sqlite3.Connection) -> None:
@@ -228,11 +230,11 @@ async def test_a_correction_on_a_new_column_survives_renormalization(
     """
     await collect(conn)
 
-    set_override(conn, 1, "work_location", "사람이 정한 근무지")
+    set_override(conn, 1, "region", "사람이 정한 근무지")
     run_renormalize(conn)
     run_renormalize(conn)
 
-    assert normalized(conn, 1)["work_location"] == "사람이 정한 근무지"
+    assert normalized(conn, 1)["region"] == "사람이 정한 근무지"
 
 
 async def test_every_normalized_column_can_be_corrected(conn: sqlite3.Connection) -> None:

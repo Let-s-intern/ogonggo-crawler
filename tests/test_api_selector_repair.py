@@ -182,7 +182,7 @@ def test_repair_reports_what_it_fixed_and_what_it_did_not(
         "list.title",
         "list.link",
         "list.date",
-        "list.company",
+        "list.company_name",
     ]
     assert body["repaired"] == body["targets"]
     assert body["unresolved"] == []
@@ -210,7 +210,7 @@ def test_skipped_fields_are_not_reported_as_failures(
 
     body = client.post(f"/api/crawlers/{crawler_id}/repair").json()
 
-    assert "detail.requirements" in body["skipped_fields"]
+    assert "detail.qualifications" in body["skipped_fields"]
     assert "detail.department" in body["skipped_fields"]
     assert not set(body["targets"]) & set(body["skipped_fields"])
 

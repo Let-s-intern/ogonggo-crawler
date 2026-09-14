@@ -85,11 +85,11 @@ PAGE_WINDOW = 2
 LONG_FIELDS: frozenset[str] = frozenset(
     {
         "body",
-        "requirements",
-        "duties",
-        "preferred",
+        "qualifications",
+        "responsibilities",
+        "preferred_qualifications",
         "hiring_process",
-        "etc_info",
+        "recruitment_notice",
         "company_and_team_introduction",
         "compensation",
         "benefits",
@@ -103,23 +103,22 @@ _COLUMNS = """
     SELECT n.id            AS id,
            n.raw_job_id    AS raw_job_id,
            n.part          AS part,
-           n.parent_company AS parent_company,
-           n.company       AS company,
+           n.parent_company_name AS parent_company_name,
+           n.company_name       AS company_name,
            n.title         AS title,
-           n.job_role      AS job_role,
-           n.deadline      AS deadline,
+           n.recruitment_end_at      AS recruitment_end_at,
            n.body          AS body,
-           n.requirements  AS requirements,
-           n.start_date    AS start_date,
+           n.qualifications  AS qualifications,
+           n.recruitment_start_at    AS recruitment_start_at,
            n.employment_type AS employment_type,
-           n.career_level  AS career_level,
-           n.work_location AS work_location,
-           n.duties        AS duties,
-           n.preferred     AS preferred,
+           n.experience_type  AS experience_type,
+           n.region AS region,
+           n.responsibilities        AS responsibilities,
+           n.preferred_qualifications     AS preferred_qualifications,
            n.hiring_process AS hiring_process,
-           n.etc_info      AS etc_info,
-           n.job_major     AS job_major,
-           n.job_minor     AS job_minor,
+           n.recruitment_notice      AS recruitment_notice,
+           n.job_field     AS job_field,
+           n.job_role     AS job_role,
            n.company_and_team_introduction AS company_and_team_introduction,
            n.compensation AS compensation,
            n.benefits AS benefits,
@@ -484,9 +483,9 @@ def review_filters_fragment(
     companies = conn.execute(
         """
         SELECT DISTINCT name FROM (
-            SELECT parent_company AS name FROM normalized_jobs
+            SELECT parent_company_name AS name FROM normalized_jobs
              UNION
-            SELECT company AS name FROM normalized_jobs
+            SELECT company_name AS name FROM normalized_jobs
         )
          WHERE name IS NOT NULL AND TRIM(name) <> ''
          ORDER BY name

@@ -42,18 +42,19 @@ from app.normalize.rules import NORMALIZED_FIELDS
 LIST_URL = "https://www.python.org/jobs/"
 
 # 이 파일이 세는 여섯 칸 밖의 나머지. 세는 것이 아래 여섯이라 나머지는 값으로 채워 둔다.
-# `work_location` 이 여섯에 들어 있는 것은 0016 이 `department` 를 지웠기 때문이다 —
+# `region` 이 여섯에 들어 있는 것은 0016 이 `department` 를 지웠기 때문이다 —
 # 값이 있다가 없다가 하는 칸이 하나는 있어야 빈 값 세기를 볼 수 있다
 SPLIT_COLUMNS: tuple[str, ...] = tuple(
     name
     for name in NORMALIZED_FIELDS
-    if name not in ("company", "title", "work_location", "deadline", "body", "requirements")
+    if name
+    not in ("company_name", "title", "region", "recruitment_end_at", "body", "qualifications")
 )
 
 # 화면이 그 칸들을 부르는 이름. 건수 표에 한 줄씩 나온다
 SPLIT_LABELS: tuple[str, ...] = tuple(FIELD_LABELS[name] for name in SPLIT_COLUMNS)
 
-# (raw_job_id, workflow_id, company, title, work_location, deadline, body, requirements)
+# (raw_job_id, workflow_id, company_name, title, region, recruitment_end_at, body, qualifications)
 # 빈 값의 세 가지 모양을 섞는다. 화면에서는 셋이 구분되지 않는다
 ROWS = (
     (1, 1, "엘지전자", "백엔드 개발자", "플랫폼", "2099-12-31", "본문", "자격요건"),
@@ -89,12 +90,12 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     for (
         raw_job_id,
         workflow_id,
-        company,
+        company_name,
         title,
-        work_location,
-        deadline,
+        region,
+        recruitment_end_at,
         body,
-        requirements,
+        qualifications,
     ) in ROWS:
         connection.execute(
             """
@@ -107,19 +108,19 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         # 나머지까지 비워 두면 다섯 행 모두가 `아무 필드나` 에 걸려 그 셈이 뜻을 잃는다
         connection.execute(
             f"""
-            INSERT INTO normalized_jobs (raw_job_id, company, title, work_location, deadline,
-                                         body, requirements, source_url,
+            INSERT INTO normalized_jobs (raw_job_id, company_name, title, region,
+                                         recruitment_end_at, body, qualifications, source_url,
                                          {", ".join(SPLIT_COLUMNS)})
             VALUES (?, ?, ?, ?, ?, ?, ?, ?{", ?" * len(SPLIT_COLUMNS)})
             """,
             (
                 raw_job_id,
-                company,
+                company_name,
                 title,
-                work_location,
-                deadline,
+                region,
+                recruitment_end_at,
                 body,
-                requirements,
+                qualifications,
                 f"{LIST_URL}{raw_job_id}/",
                 *("있음" for _ in SPLIT_COLUMNS),
             ),
@@ -175,8 +176,8 @@ def test_필드별_빈_건수가_직접_센_수와_같다(client: TestClient) ->
 def test_NULL_과_빈_문자열과_공백뿐인_값이_모두_빈_값이다(client: TestClient) -> None:
     """셋 다 화면에서는 빈 칸이다. 하나라도 빠지면 빈 태그를 잡은 셀렉터가 정상으로 보인다."""
     # 기본 정렬은 미전달 우선에 최신 수집 순이라 나중 것이 앞에 온다
-    assert set(titles(client, empty="work_location")) == {"프론트 개발자", "안드로이드 개발자"}
-    assert titles(client, empty="deadline") == ["데이터 엔지니어"]
+    assert set(titles(client, empty="region")) == {"프론트 개발자", "안드로이드 개발자"}
+    assert titles(client, empty="recruitment_end_at") == ["데이터 엔지니어"]
     assert titles(client, empty="body") == ["iOS 개발자"]
 
 
@@ -190,13 +191,12 @@ def test_아무_필드나_는_하나라도_빈_것을_전부_잡는다(client: T
 def test_보정으로_채운_필드는_빈_것이_아니다(client: TestClient, conn: sqlite3.Connection) -> None:
     """화면에 보이는 값을 기준으로 판정한다. 검수한 건이 검수 대상에 계속 남으면 안 된다."""
     conn.execute(
-        "INSERT INTO job_field_overrides (raw_job_id, field_name, value)"
-        " VALUES (2, 'work_location', ?)",
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (2, 'region', ?)",
         ("플랫폼",),
     )
     conn.commit()
 
-    assert titles(client, empty="work_location") == ["안드로이드 개발자"]
+    assert titles(client, empty="region") == ["안드로이드 개발자"]
     assert counts(client)["근무지"] == 1
 
 
@@ -214,7 +214,7 @@ def test_보정으로_비운_필드는_빈_것이다(client: TestClient, conn: s
 
 def test_건수는_빈_값_조건을_빼고_센다(client: TestClient) -> None:
     """조건을 걸기 전에 어디가 문제인지 보여주는 숫자다. 걸린 뒤에도 그대로여야 한다."""
-    assert counts(client, empty="deadline") == counts(client)
+    assert counts(client, empty="recruitment_end_at") == counts(client)
 
 
 def test_나머지_조건은_건수에_걸린다(client: TestClient) -> None:
@@ -243,17 +243,15 @@ def test_빈_값이_정상일_수_있는_필드는_그렇다고_적는다(client
     assert "있을 수 있음" in html and "아니오" in html
 
 
-def test_새로_생긴_두_칸도_빈_것이_정상일_수_있다고_적는다(client: TestClient) -> None:
-    """0017 의 직무와 0018 의 자회사다.
+def test_자회사_칸도_빈_것이_정상일_수_있다고_적는다(client: TestClient) -> None:
+    """0018 의 자회사다.
 
-    둘 다 정상적으로 빈다. 직무는 `전 직군 채용` 처럼 제목이 직무를 말하지 않는 공고에서
-    비고, 자회사는 계열사를 말하지 않는 사이트에서 통째로 빈다. 메모가 없으면 그 건수가
-    전부 셀렉터가 놓친 것으로 읽히고, 멀쩡한 셀렉터를 고치러 간다.
+    계열사를 말하지 않는 사이트에서 통째로 빈다. 메모가 없으면 그 건수가 전부 셀렉터가 놓친
+    것으로 읽히고, 멀쩡한 셀렉터를 고치러 간다. 0017 의 자유 글자 직무는 0031 이 지웠다.
     """
     html = client.get("/ui/review").text
 
-    assert EMPTY_NOTES["job_role"] in html
-    assert EMPTY_NOTES["company"] in html
+    assert EMPTY_NOTES["company_name"] in html
 
 
 def test_아무_필드나_메모가_실제로_보는_칸_수를_적는다(client: TestClient) -> None:
@@ -276,7 +274,7 @@ def test_조회_조건에_빈_값_칸이_있다(client: TestClient) -> None:
 def test_지우기가_빈_값_조건을_그대로_들고_간다(client: TestClient) -> None:
     """조건에 걸린 전부를 지울 때 표가 센 것과 같은 행이어야 한다."""
     html = client.post(
-        "/ui/review/delete/confirm", data={"all_filtered": "1", "empty": "work_location"}
+        "/ui/review/delete/confirm", data={"all_filtered": "1", "empty": "region"}
     ).text
 
     assert "빈 값 근무지" in html

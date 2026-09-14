@@ -34,7 +34,7 @@ HANWHA_LIST = ListSelectors(
     title=".recruit-title",
     link=".recruit-title",
     date=".recruit-terms .terms",
-    company=".affiliate-name",
+    company_name=".affiliate-name",
 )
 
 HYUNDAI_LIST = ListSelectors(
@@ -54,8 +54,8 @@ PYTHONORG_LIST = ListSelectors(
 DETAIL = {
     "title": "h1",
     "body": "div",
-    "requirements": "",
-    "deadline": "",
+    "qualifications": "",
+    "recruitment_end_at": "",
     "department": "",
 }
 

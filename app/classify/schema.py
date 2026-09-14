@@ -15,7 +15,7 @@
 **뽑는 칸**은 원문에 있는 글자를 그대로 가져온다. 모델은 글자를 쓰지 않고 몇 번 줄의 어느
 부분인지를 조각으로 답하고, 저장하는 글자는 원문에서 잘라 온다 (`app/classify/pieces.py`).
 
-`job_role` 만 원문이 본문이 아니라 **제목**이다. 열한 사이트 픽스처에서 제목이 직무를 말하는
+`position_name` 만 원문이 본문이 아니라 **제목**이다. 열한 사이트 픽스처에서 제목이 직무를 말하는
 곳이 아홉이고 그중 본문이 같은 글자를 되풀이하는 곳은 셋뿐이었다
 (`tests/test_job_role_source.py`). 직무를 판정 칸으로 만들지 않는 것은 값이 자유 텍스트이기
 때문이다 — 닫힌 목록을 만들 수 있었으면 그것이 직군이고, 직군은 0016 이 지웠다.
@@ -36,7 +36,7 @@
 
 "본문만으로는 고를 수 없다" 를 답할 자리가 `판단불가` 다. 그 자리가 없으면 모델은 아무거나
 고른다. 빈 문자열을 쓰지 않는 것은 **Gemini 가 빈 문자열이 든 enum 을 400 으로 거절하기
-때문이다** (2026-08-26 확인: `response_schema.properties[career_level].enum[0]: cannot be
+때문이다** (2026-08-26 확인: `response_schema.properties[experience_type].enum[0]: cannot be
 empty`). `판단불가` 는 저장되지 않고 빈 칸이 된다.
 
 ## 공고가 여럿일 수 있다
@@ -106,8 +106,8 @@ class Posting(BaseModel):
     employment_type: Literal["판단불가", "정규직", "계약직", "인턴", "기타"] = UNDECIDED
     employment_type_evidence: str = ""
 
-    career_level: Literal["판단불가", "신입", "경력", "무관"] = UNDECIDED
-    career_level_evidence: str = ""
+    experience_type: Literal["판단불가", "신입", "경력", "무관"] = UNDECIDED
+    experience_type_evidence: str = ""
 
     # 0028. 지원 자격이 요구하는 최소 학력. 우대사항에만 있는 학력은 고르지 않고, 학력을
     # 말하지 않는 공고는 판단불가(빈 칸)다. 오공고로 보낼 때 그쪽 목록으로 옮긴다
@@ -117,14 +117,14 @@ class Posting(BaseModel):
     education_level_evidence: str = ""
 
     # 뽑는 칸. 모델은 글자를 쓰지 않고 몇 번 줄의 어느 부분인지를 조각으로 답한다. 저장은
-    # 원문에서 잘라 온 글자다 (`app/classify/pieces.py`). `job_role` 만 0 번 줄(제목)에서 온다
-    job_role: list[LinePiece] = Field(default_factory=list)
-    work_location: list[LinePiece] = Field(default_factory=list)
-    duties: list[LinePiece] = Field(default_factory=list)
-    preferred: list[LinePiece] = Field(default_factory=list)
+    # 원문에서 잘라 온 글자다 (`app/classify/pieces.py`). `position_name` 만 0 번 줄(제목)에서 온다
+    position_name: list[LinePiece] = Field(default_factory=list)
+    region: list[LinePiece] = Field(default_factory=list)
+    responsibilities: list[LinePiece] = Field(default_factory=list)
+    preferred_qualifications: list[LinePiece] = Field(default_factory=list)
     hiring_process: list[LinePiece] = Field(default_factory=list)
-    requirements: list[LinePiece] = Field(default_factory=list)
-    etc_info: list[LinePiece] = Field(default_factory=list)
+    qualifications: list[LinePiece] = Field(default_factory=list)
+    recruitment_notice: list[LinePiece] = Field(default_factory=list)
     # 0028. 회사·팀 소개는 공고에 그 소제목 구역이 있을 때만 채운다. 모집인원은 적힌 그대로다 —
     # 숫자로 바꾸는 것은 오공고로 보낼 때 한다
     company_and_team_introduction: list[LinePiece] = Field(default_factory=list)
@@ -136,16 +136,16 @@ class Posting(BaseModel):
 class CommonFields(BaseModel):
     """모든 직무에 똑같이 해당하는 뽑는 칸. 코드가 공고마다 그 공고의 조각 앞에 붙인다.
 
-    `job_role` 은 없다 — 직무 이름은 공고마다 다르다. 판정 칸도 없다. 신입·경력처럼 직무마다
+    `position_name` 은 없다 — 직무 이름은 공고마다 다르다. 판정 칸도 없다. 신입·경력처럼 직무마다
     갈릴 수 있고, 공고마다 되풀이해도 한 단어라 응답이 길어지지 않는다.
     """
 
-    work_location: list[LinePiece] = Field(default_factory=list)
-    duties: list[LinePiece] = Field(default_factory=list)
-    preferred: list[LinePiece] = Field(default_factory=list)
+    region: list[LinePiece] = Field(default_factory=list)
+    responsibilities: list[LinePiece] = Field(default_factory=list)
+    preferred_qualifications: list[LinePiece] = Field(default_factory=list)
     hiring_process: list[LinePiece] = Field(default_factory=list)
-    requirements: list[LinePiece] = Field(default_factory=list)
-    etc_info: list[LinePiece] = Field(default_factory=list)
+    qualifications: list[LinePiece] = Field(default_factory=list)
+    recruitment_notice: list[LinePiece] = Field(default_factory=list)
     company_and_team_introduction: list[LinePiece] = Field(default_factory=list)
     compensation: list[LinePiece] = Field(default_factory=list)
     benefits: list[LinePiece] = Field(default_factory=list)
@@ -159,12 +159,12 @@ class SuggestionFields(BaseModel):
     # 근거가 없으면 둘 다 빈 문자열이다 — 이 칸이 채워진다고 그 값이 그대로 저장되지 않는다.
     # 근거 검사(`app/classify/grounding.py`)를 통과한 것만 `job_field_suggestions` 로 가고,
     # 정규화의 어느 경로도 이 제안을 읽지 않는다(`app/normalize/engine.py` 는 그대로 둔다).
-    company_suggestion: str = ""
-    company_suggestion_reason: str = ""
-    deadline_suggestion: str = ""
-    deadline_suggestion_reason: str = ""
-    start_date_suggestion: str = ""
-    start_date_suggestion_reason: str = ""
+    company_name_suggestion: str = ""
+    company_name_suggestion_reason: str = ""
+    recruitment_end_at_suggestion: str = ""
+    recruitment_end_at_suggestion_reason: str = ""
+    recruitment_start_at_suggestion: str = ""
+    recruitment_start_at_suggestion_reason: str = ""
 
 
 class Classification(SuggestionFields):
@@ -204,22 +204,26 @@ class Outline(SuggestionFields):
 
 
 # 본문을 읽고 정해진 값 중에서 고르는 칸
-JUDGE_FIELDS: tuple[str, ...] = ("employment_type", "career_level", "education_level")
+JUDGE_FIELDS: tuple[str, ...] = ("employment_type", "experience_type", "education_level")
 
-# 수집이 채우는 여섯 칸 중, 원문을 읽어 다른 값을 낼 수 있는 셋. `title` 은 이미 `job_role` 의
+# 수집이 채우는 여섯 칸 중, 원문을 읽어 다른 값을 낼 수 있는 셋. `title` 은 이미 `position_name` 의
 # 출처로 프롬프트에 그대로 들어가 있어 다시 비교할 이유가 없고, `body` 는 모델에게 보내는
 # 원문 그 자체라 비교할 대상이 없다. `source_url` 은 공고의 신원이라 애초에 후보가 아니다.
 #
-# `deadline` 은 마감 지난 공고를 거르는 데 쓰이고 `company` 는 계열사를 가르는 값이라, 이
-# 셋은 값이 있으면 아무리 근거가 있어도 자동으로 덮지 않고 제안으로만 낸다
+# `recruitment_end_at` 은 마감 지난 공고를 거르는 데 쓰이고 `company_name` 는 계열사를 가르는
+# 값이라, 이 셋은 값이 있으면 아무리 근거가 있어도 자동으로 덮지 않고 제안으로만 낸다
 # (`.claude/tasks/todo/prd-side-workflows.md` 6절).
-COLLECTED_REVIEW_FIELDS: tuple[str, ...] = ("company", "deadline", "start_date")
+COLLECTED_REVIEW_FIELDS: tuple[str, ...] = (
+    "company_name",
+    "recruitment_end_at",
+    "recruitment_start_at",
+)
 
 # 화면에 보일 이름. 프롬프트에 값을 적을 때도 같은 이름을 쓴다
 COLLECTED_REVIEW_LABELS: dict[str, str] = {
-    "company": "회사명",
-    "deadline": "마감일",
-    "start_date": "모집 시작일",
+    "company_name": "회사명",
+    "recruitment_end_at": "마감일",
+    "recruitment_start_at": "모집 시작일",
 }
 
 
@@ -236,15 +240,15 @@ def suggestion_reason_field(name: str) -> str:
 # 판정 칸마다 따라오는 근거 문장. 컬럼이 아니라 검증과 보고를 위한 값이다
 EVIDENCE_FIELDS: tuple[str, ...] = tuple(f"{name}_evidence" for name in JUDGE_FIELDS)
 
-# 원문에 있는 글자를 그대로 가져오는 칸. `job_role` 은 제목에서, 나머지는 본문에서 온다
+# 원문에 있는 글자를 그대로 가져오는 칸. `position_name` 은 제목에서, 나머지는 본문에서 온다
 EXTRACT_FIELDS: tuple[str, ...] = (
-    "job_role",
-    "work_location",
-    "duties",
-    "preferred",
+    "position_name",
+    "region",
+    "responsibilities",
+    "preferred_qualifications",
     "hiring_process",
-    "requirements",
-    "etc_info",
+    "qualifications",
+    "recruitment_notice",
     "company_and_team_introduction",
     "compensation",
     "benefits",
@@ -265,7 +269,7 @@ OUTLINE_FIELDS: tuple[str, ...] = tuple(Outline.model_fields)
 # 응답 맨 위의 두 묶음. 나머지 맨 위 칸은 제안이다
 COMMON: Final = "common"
 POSTINGS: Final = "postings"
-assert set(COMMON_FIELDS) == set(EXTRACT_FIELDS) - {"job_role"}
+assert set(COMMON_FIELDS) == set(EXTRACT_FIELDS) - {"position_name"}
 
 # 직무 분류. `job_taxonomy`(운영 DB 표)에서 고르는 판정 칸 둘이라 `Classification`(정적
 # pydantic 모델)에도, 위 `CLASSIFY_FIELDS`/`RESPONSE_FIELDS`(둘 다 그 정적 모델에서 뽑는다)
@@ -275,9 +279,9 @@ assert set(COMMON_FIELDS) == set(EXTRACT_FIELDS) - {"job_role"}
 # "이 아홉 칸은 전부 정적 모델의 필드다" 를 지키는 불변식이기 때문이다. 근거 검사
 # (`app/classify/grounding.py`)에 이 둘을 엮는 것은 Push 3 이 한다 — 지금은 저장 경로
 # (`app/classify/store.py`, `app/normalize/engine.py`)만 이 두 칸을 안다
-JOB_MAJOR: Final = "job_major"
-JOB_MINOR: Final = "job_minor"
-TAXONOMY_FIELDS: tuple[str, ...] = (JOB_MAJOR, JOB_MINOR)
+JOB_FIELD: Final = "job_field"
+JOB_ROLE: Final = "job_role"
+TAXONOMY_FIELDS: tuple[str, ...] = (JOB_FIELD, JOB_ROLE)
 
 # 저장 경로(분류 결과 표, 정규화)가 옮기는 칸 전부. `CLASSIFY_FIELDS` 에 직무 분류 둘을 더한
 # 것이다 — `job_classifications`/`normalized_jobs` 양쪽 다 이 두 칸의 컬럼을 갖는다
@@ -302,7 +306,7 @@ for _name in JUDGE_FIELDS:
 
 
 def build_classification_model(conn: sqlite3.Connection) -> type[Classification]:
-    """`job_taxonomy` 의 켜진 값으로 `job_major`/`job_minor` 를 더한 모델을 만든다.
+    """`job_taxonomy` 의 켜진 값으로 `job_field`/`job_role` 를 더한 모델을 만든다.
 
     두 칸은 공고마다 고르는 칸이라 공고 모델(`Posting`)에 더하고, 그 공고 모델을 담는 응답
     모델을 돌려준다.
@@ -313,7 +317,7 @@ def build_classification_model(conn: sqlite3.Connection) -> type[Classification]
 
     **켜진 대분류가 하나도 없으면(표가 비었거나 전부 껐으면) `Classification` 을 그대로
     돌려준다.** 고를 것이 없는 판정 칸을 모델에 보내면 그 자리를 채우라고 강요하는 것과
-    같다. 대분류는 있는데 켜진 소분류가 하나도 없으면 `job_minor` 없이 `job_major` 만 더한다.
+    같다. 대분류는 있는데 켜진 소분류가 하나도 없으면 `job_role` 없이 `job_field` 만 더한다.
     """
     majors = taxonomy.list_majors(conn, enabled_only=True)
     if not majors:
@@ -327,12 +331,12 @@ def build_classification_model(conn: sqlite3.Connection) -> type[Classification]
     )
 
     fields: dict[str, Any] = {
-        JOB_MAJOR: (Literal[(*major_names, UNDECIDED)], UNDECIDED),
-        f"{JOB_MAJOR}_evidence": (str, ""),
+        JOB_FIELD: (Literal[(*major_names, UNDECIDED)], UNDECIDED),
+        f"{JOB_FIELD}_evidence": (str, ""),
     }
     if minor_names:
-        fields[JOB_MINOR] = (Literal[(*minor_names, UNDECIDED)], UNDECIDED)
-        fields[f"{JOB_MINOR}_evidence"] = (str, "")
+        fields[JOB_ROLE] = (Literal[(*minor_names, UNDECIDED)], UNDECIDED)
+        fields[f"{JOB_ROLE}_evidence"] = (str, "")
 
     posting: Any = create_model("PostingWithTaxonomy", __base__=Posting, **fields)
     return create_model(

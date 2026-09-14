@@ -18,18 +18,21 @@ from app.selector.schema import (
 
 FULL = """
 {"list": {"item": "li.job", "title": "h4", "link": "a", "date": "time"},
- "detail": {"title": "h1", "body": ".body", "requirements": "", "deadline": "", "department": ""}}
+ "detail": {"title": "h1", "body": ".body", "qualifications": "", "recruitment_end_at": "",
+ "department": ""}}
 """
 
 MISSING_TITLE = """
 {"list": {"item": "li.job", "title": "", "link": "a", "date": "time"},
- "detail": {"title": "h1", "body": ".body", "requirements": "", "deadline": "", "department": ""}}
+ "detail": {"title": "h1", "body": ".body", "qualifications": "", "recruitment_end_at": "",
+ "department": ""}}
 """
 
 # 목록에 날짜를 안 적는 사이트가 있다. 빈 값이 거절 사유가 아니다 (`app/selector/schema.py`)
 MISSING_DATE = """
 {"list": {"item": "li.job", "title": "h4", "link": "a", "date": ""},
- "detail": {"title": "h1", "body": ".body", "requirements": "", "deadline": "", "department": ""}}
+ "detail": {"title": "h1", "body": ".body", "qualifications": "", "recruitment_end_at": "",
+ "department": ""}}
 """
 
 
@@ -73,8 +76,8 @@ def test_lenient_parse_still_rejects_an_unknown_field() -> None:
     with pytest.raises(SelectorSchemaError) as caught:
         parse_selectors_allowing_empty(
             '{"list": {"item": "li", "title": "h4", "link": "a", "date": "t", "links": "x"},'
-            ' "detail": {"title": "h1", "body": "b", "requirements": "",'
-            ' "deadline": "", "department": ""}}'
+            ' "detail": {"title": "h1", "body": "b", "qualifications": "",'
+            ' "recruitment_end_at": "", "department": ""}}'
         )
 
     assert caught.value.reason == "unknown_field"

@@ -35,7 +35,7 @@ from app.api.ui import display_zone
 from app.normalize.engine import NormalizeError, normalize_fields
 from app.normalize.rules import Rule
 
-DEADLINE = "deadline"
+DEADLINE = "recruitment_end_at"
 
 
 def today() -> date:

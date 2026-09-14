@@ -93,7 +93,7 @@ def test_every_rule_type_has_a_config() -> None:
 
 def test_config_json_round_trips() -> None:
     """저장한 문자열을 다시 읽어도 같은 설정이어야 한다."""
-    rule = build_rule("work_location", "mapping", {"map": {"판교사옥": "판교"}, "default": "기타"})
+    rule = build_rule("region", "mapping", {"map": {"판교사옥": "판교"}, "default": "기타"})
     assert parse_config("mapping", rule.config_json()) == rule.config
 
 

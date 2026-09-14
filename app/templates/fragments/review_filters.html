@@ -30,7 +30,7 @@
 
       {# 한 사이트에 계열사가 여럿이라 워크플로우와 따로 걸린다 #}
       <label for="review-company">회사</label>
-      <select id="review-company" name="company">
+      <select id="review-company" name="company_name">
         <option value="">전체</option>
         {% for name in companies %}
         <option value="{{ name }}">{{ name }}</option>
@@ -38,9 +38,9 @@
       </select>
 
       {# 대분류만 먼저 둔다. 소분류는 대분류에 종속되므로 대분류를 고르지 않고는 좁힐 수
-         없다(5.2, PRD 5절). `job_role`(자유 텍스트) 과는 다른, 닫힌 목록에서 고르는 값이다 #}
+         없다(5.2, PRD 5절). 둘 다 닫힌 목록에서 고르는 값이다 #}
       <label for="review-job-major">직무 대분류</label>
-      <select id="review-job-major" name="job_major">
+      <select id="review-job-major" name="job_field">
         <option value="">전체</option>
         {% for name in job_majors %}
         <option value="{{ name }}">{{ name }}</option>

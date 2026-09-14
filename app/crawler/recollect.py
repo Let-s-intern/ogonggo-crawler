@@ -78,7 +78,13 @@ CLASSIFY_NOTE = "다시 분류"
 
 # 상세가 비운 칸을 채울 때 지금 저장된 값을 쓰는 칸. 목록 응답이 상세 칸의 값을 들고 오는 사이트가
 # 있어서(`runner._record`), 목록이 더는 그 값을 주지 않는다고 다시 수집이 비워 버리면 안 된다
-_CARRIED: tuple[str, ...] = ("body", "requirements", "deadline", "department", *SPLIT_DETAIL_FIELDS)
+_CARRIED: tuple[str, ...] = (
+    "body",
+    "qualifications",
+    "recruitment_end_at",
+    "department",
+    *SPLIT_DETAIL_FIELDS,
+)
 
 Reclassify = Callable[[sqlite3.Connection, list[int], ClassifyProgress], Awaitable[Any]]
 Slot = Callable[[], AbstractAsyncContextManager[Any]]
@@ -323,7 +329,7 @@ def _item(row: _Stored, listed: ListItem | None) -> ListItem:
         title=str(row.record.get("list_title") or row.record.get("title") or ""),
         link=row.source_url,
         date=str(row.record.get("list_date") or ""),
-        company=str(row.record.get("company") or ""),
+        company_name=str(row.record.get("company_name") or ""),
         extra=kept,
     )
 
@@ -472,4 +478,4 @@ def _latest(conn: sqlite3.Connection, workflow_id: int) -> list[_Stored]:
 
 
 def _closed(row: _Stored, rules: list[Rule]) -> bool:
-    return is_closed(str(row.record.get("deadline") or ""), rules)
+    return is_closed(str(row.record.get("recruitment_end_at") or ""), rules)

@@ -44,8 +44,8 @@ GENERATED: dict[str, Any] = {
     "detail": {
         "title": "h1.listing-company span.company-name",
         "body": "div.job-description",
-        "requirements": "",
-        "deadline": "",
+        "qualifications": "",
+        "recruitment_end_at": "",
         "department": "span.listing-company-category a",
     },
 }
@@ -63,9 +63,9 @@ USAGE = Usage(
 def stored(payload: dict[str, Any]) -> dict[str, Any]:
     """저장되는 모양. 선택 필드는 안 적어도 빈 문자열로 채워져 저장된다."""
     filled = json.loads(json.dumps(payload))
-    filled["list"].setdefault("company", "")
+    filled["list"].setdefault("company_name", "")
     filled["list"].setdefault("link_template", "")
-    filled["detail"].setdefault("company", "")
+    filled["detail"].setdefault("company_name", "")
     for name in SPLIT_DETAIL_FIELDS:
         filled["detail"].setdefault(name, "")
     return filled
@@ -481,8 +481,8 @@ SHELL_GENERATED: dict[str, Any] = {
     "detail": {
         "title": "h1.tit",
         "body": "#container",
-        "requirements": "",
-        "deadline": "",
+        "qualifications": "",
+        "recruitment_end_at": "",
         "department": "",
     },
 }

@@ -42,7 +42,9 @@ TODAY = date(2026, 8, 25)
 # 넘기는 것과 같은 빈 셀렉터다 (`app/crawler/runner.py`)
 EMPTY_SELECTORS = SelectorSet(
     list=ListSelectors(item="", title="", link="", date=""),
-    detail=DetailSelectors(title="", body="", requirements="", deadline="", department=""),
+    detail=DetailSelectors(
+        title="", body="", qualifications="", recruitment_end_at="", department=""
+    ),
 )
 
 
@@ -61,9 +63,15 @@ def api_config(*, date_is_deadline: bool) -> ApiConfig:
 
 def rules() -> list[Rule]:
     return [
-        build_rule("deadline", "mapping", {"map": {"상시채용": ""}}, priority=0, rule_id=1),
         build_rule(
-            "deadline", "date_parse", {"formats": ["%Y-%m-%d", "%Y.%m.%d"]}, priority=1, rule_id=2
+            "recruitment_end_at", "mapping", {"map": {"상시채용": ""}}, priority=0, rule_id=1
+        ),
+        build_rule(
+            "recruitment_end_at",
+            "date_parse",
+            {"formats": ["%Y-%m-%d", "%Y.%m.%d"]},
+            priority=1,
+            rule_id=2,
         ),
     ]
 

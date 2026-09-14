@@ -91,10 +91,19 @@ _FIELD_HINTS: dict[str, tuple[str, ...]] = {
         "duty",
         "body",
     ),
-    "requirements": ("qlfct", "qualif", "requireditem", "require", "favor", "prefer", "exmqlf"),
-    "deadline": ("enddate", "enddttm", "endd", "closedate", "deadline", "acptend", "endt"),
+    "qualifications": ("qlfct", "qualif", "requireditem", "require", "favor", "prefer", "exmqlf"),
+    # 값은 사이트 API 의 키에 들어 있을 법한 글자다. 우리 칸 이름이 아니다
+    "recruitment_end_at": (
+        "enddate",
+        "enddttm",
+        "endd",
+        "closedate",
+        "deadline",
+        "acptend",
+        "endt",
+    ),
     "department": ("department", "dept", "organiz", "orgn", "team", "part"),
-    "company": ("cmpname", "companyname", "company", "cmpnm", "corpnm", "affiliate"),
+    "company_name": ("cmpname", "companyname", "company", "cmpnm", "corpnm", "affiliate"),
 }
 
 # 링크에서 번호를 읽을 때 쓰는 표시. `IdSource.kind` 값이다

@@ -108,6 +108,9 @@ def test_다른_시간대를_설정하면_그대로_따른다(monkeypatch: pytes
 TEMPLATES = pathlib.Path(__file__).parent.parent / "app" / "templates"
 EXPRESSION = re.compile(r"\{\{(.+?)\}\}", re.DOTALL)
 TIME_NAME = re.compile(r"\b\w+_at\b")
+# 이름만 `_at` 으로 끝나는 모집 일시다. 사이트가 적은 날짜 글자라 UTC 시각이 아니고 필터를 거치면
+# 오히려 틀린다 (`migrations/0031_spring_field_names.sql` 이 오공고 이름에 맞추며 붙은 꼬리다)
+POSTING_DATES = ("recruitment_start_at", "recruitment_end_at")
 # 매크로에 값을 넘기기만 하는 자리다. 그리는 것은 매크로 안이고 거기서 필터를 거친다
 MACRO_CALLS = ("review_delivery(",)
 
@@ -118,7 +121,9 @@ def test_시각을_그리는_모든_자리가_필터를_거친다() -> None:
     for path in sorted(TEMPLATES.rglob("*.html")):
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             for expression in EXPRESSION.findall(line):
-                if not TIME_NAME.search(expression):
+                if not [
+                    name for name in TIME_NAME.findall(expression) if name not in POSTING_DATES
+                ]:
                     continue
                 if "as_time" in expression:
                     continue

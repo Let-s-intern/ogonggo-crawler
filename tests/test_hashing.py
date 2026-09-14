@@ -19,7 +19,7 @@ def sample() -> dict[str, Any]:
 
 def test_hash_fields_match_the_data_model() -> None:
     """`.claude/docs/data-model.md` 가 정한 네 필드다. 늘리거나 줄이면 여기서 걸린다."""
-    assert HASH_FIELDS == ("source_url", "title", "deadline", "body")
+    assert HASH_FIELDS == ("source_url", "title", "recruitment_end_at", "body")
 
 
 def test_same_posting_hashes_the_same() -> None:
@@ -34,7 +34,7 @@ def test_same_posting_hashes_the_same() -> None:
         ("ad_text", "마감 임박"),
         ("list_index", 7),
         ("crawled_at", "2026-08-22T18:30:00+09:00"),
-        ("company", "다른회사"),
+        ("company_name", "다른회사"),
     ],
 )
 def test_noisy_fields_do_not_change_the_hash(field: str, changed: Any) -> None:
@@ -70,7 +70,7 @@ def test_unknown_field_does_not_change_the_hash() -> None:
     ("field", "changed"),
     [
         ("title", "백엔드 개발자 (Go)"),
-        ("deadline", "2026-10-31"),
+        ("recruitment_end_at", "2026-10-31"),
         ("source_url", "https://example.test/recruit/1043"),
         ("body", "모집 분야: 서버 개발\n자격 요건: Python 5년 이상\n근무지: 서울 강남구"),
     ],
@@ -85,9 +85,9 @@ def test_content_change_changes_the_hash(field: str, changed: str) -> None:
 def test_missing_field_is_the_same_as_empty() -> None:
     """마감일이 없는 공고를 두 번 크롤해도 신규가 되지 않는다."""
     absent = sample()
-    del absent["deadline"]
+    del absent["recruitment_end_at"]
     empty = sample()
-    empty["deadline"] = None
+    empty["recruitment_end_at"] = None
 
     assert content_hash(absent) == content_hash(empty)
 
@@ -102,8 +102,8 @@ def test_whitespace_difference_does_not_change_the_hash() -> None:
 
 def test_field_boundary_is_not_forgeable() -> None:
     """값을 이어붙인 것과 필드가 나뉜 것이 같은 해시가 되지 않는다."""
-    split = {"source_url": "", "title": "백엔드", "deadline": "개발자", "body": ""}
-    merged = {"source_url": "", "title": "백엔드개발자", "deadline": "", "body": ""}
+    split = {"source_url": "", "title": "백엔드", "recruitment_end_at": "개발자", "body": ""}
+    merged = {"source_url": "", "title": "백엔드개발자", "recruitment_end_at": "", "body": ""}
 
     assert content_hash(split) != content_hash(merged)
 

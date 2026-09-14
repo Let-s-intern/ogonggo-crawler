@@ -36,7 +36,12 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         " VALUES (1, '테스트', 'https://x', 'promoted')"
     )
     connection.execute("INSERT INTO workflows (id, crawler_id, name) VALUES (1, 1, '테스트')")
-    raw = {"source_url": URL, "title": TITLE, "body": split_posting.BODY, "company": "테스트회사"}
+    raw = {
+        "source_url": URL,
+        "title": TITLE,
+        "body": split_posting.BODY,
+        "company_name": "테스트회사",
+    }
     connection.execute(
         "INSERT INTO raw_jobs (id, workflow_id, source_url, raw_data_json, content_hash)"
         " VALUES (1, 1, ?, ?, 'hash1')",
@@ -51,7 +56,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
 def classify_as(conn: sqlite3.Connection, parts: list[tuple[int, str | None, str]]) -> None:
     """분류가 끝난 상태. (번호, 직무 이름, 주요 업무)."""
     conn.executemany(
-        "INSERT INTO job_classifications (raw_job_id, part, part_role, model, duties)"
+        "INSERT INTO job_classifications (raw_job_id, part, part_role, model, responsibilities)"
         " VALUES (1, ?, ?, 'model', ?)",
         parts,
     )
@@ -67,7 +72,7 @@ def test_나눈_공고는_제목에_직무_이름이_주소에_번호가_붙는�
 
     rewrite_one(conn, 1, load_rules(conn))
 
-    assert normalized(conn, "part, title, source_url, duties") == [
+    assert normalized(conn, "part, title, source_url, responsibilities") == [
         (1, f"{TITLE} - 로봇 SW 개발", f"{URL}#1", "로봇 제어"),
         (2, f"{TITLE} - 비전 AI 연구", f"{URL}#2", "영상 인식"),
     ]
@@ -78,7 +83,9 @@ def test_나누지_않은_공고는_제목과_주소가_그대로다(conn: sqlit
 
     rewrite_one(conn, 1, load_rules(conn))
 
-    assert normalized(conn, "part, title, source_url, duties") == [(1, TITLE, URL, "로봇 제어")]
+    assert normalized(conn, "part, title, source_url, responsibilities") == [
+        (1, TITLE, URL, "로봇 제어")
+    ]
 
 
 def test_나누기_전에_정규화된_행은_1번_공고가_되고_전달_표시가_남는다(
@@ -139,19 +146,24 @@ async def test_분류가_나누면_정규화_표에도_나뉘어_들어간다(co
     ]
 
 
-def test_조직_이름이_붙은_직무는_제목과_직무_칸에서_한_줄로_이어진다(
+def test_조직_이름이_붙은_직무는_제목에서_한_줄로_이어진다(
     conn: sqlite3.Connection,
 ) -> None:
-    """LG 처럼 다른 사업부에 같은 직무가 있으면 조직 이름이 함께 와야 제목이 겹치지 않는다."""
+    """LG 처럼 다른 사업부에 같은 직무가 있으면 조직 이름이 함께 와야 제목이 겹치지 않는다.
+
+    직무 이름(`position_name`)은 오공고에 받을 칸이 없어 제목에만 쓴다 (2026-09-14 결정).
+    """
     conn.executemany(
-        "INSERT INTO job_classifications (raw_job_id, part, part_role, job_role, model)"
+        "INSERT INTO job_classifications (raw_job_id, part, part_role, position_name, model)"
         " VALUES (1, ?, ?, ?, 'model')",
         [(1, "HS사업본부\n기계", "HS사업본부\n기계"), (2, "MS사업본부\n기계", "MS사업본부\n기계")],
     )
 
     rewrite_one(conn, 1, load_rules(conn))
 
-    assert normalized(conn, "part, title, job_role") == [
-        (1, f"{TITLE} - HS사업본부 기계", "HS사업본부 기계"),
-        (2, f"{TITLE} - MS사업본부 기계", "MS사업본부 기계"),
+    assert normalized(conn, "part, title") == [
+        (1, f"{TITLE} - HS사업본부 기계"),
+        (2, f"{TITLE} - MS사업본부 기계"),
     ]
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(normalized_jobs)")}
+    assert "position_name" not in columns

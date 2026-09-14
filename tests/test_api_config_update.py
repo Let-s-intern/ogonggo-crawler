@@ -42,7 +42,7 @@ CONFIG: dict[str, Any] = {
         "fields": {
             "title": "data.jobNoticesDetail.jobNoticesDetail.jobNoticeName",
             "body": "data.jobNoticesDetail.recList.*.detailContext",
-            "work_location": "data.jobNoticesDetail.recList.*.locationName",
+            "region": "data.jobNoticesDetail.recList.*.locationName",
         },
     },
 }
@@ -97,9 +97,7 @@ def test_a_new_mapping_is_stored(client: TestClient, conn: sqlite3.Connection) -
 
     assert response.status_code == 200
     saved = stored(conn, crawler_id)
-    assert saved["detail"]["fields"]["work_location"] == (
-        "data.jobNoticesDetail.recList.*.locationName"
-    )
+    assert saved["detail"]["fields"]["region"] == ("data.jobNoticesDetail.recList.*.locationName")
 
 
 def test_the_status_is_not_touched_by_a_mapping_fix(

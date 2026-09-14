@@ -33,10 +33,10 @@ def response(**fields: str) -> str:
     # 직무 분류는 공고마다 고르는 칸이라 공고 안에 앉는다
     base["postings"][0].update(
         {
-            "job_major": fields.get("job_major", ""),
-            "job_major_evidence": fields.get("job_major_evidence", ""),
-            "job_minor": fields.get("job_minor", ""),
-            "job_minor_evidence": fields.get("job_minor_evidence", ""),
+            "job_field": fields.get("job_field", ""),
+            "job_field_evidence": fields.get("job_field_evidence", ""),
+            "job_role": fields.get("job_role", ""),
+            "job_role_evidence": fields.get("job_role_evidence", ""),
         }
     )
     return json.dumps(base, ensure_ascii=False)
@@ -60,10 +60,10 @@ async def test_대분류_소분류를_고르면_결과에_채워진다(conn: sql
     tree = taxonomy.enabled_tree(conn)
     model = build_classification_model(conn)
     text = response(
-        job_major="IT·개발",
-        job_major_evidence="서버 개발자를 찾습니다",
-        job_minor="서버·백엔드",
-        job_minor_evidence="백엔드 API 를 설계하고 운영합니다",
+        job_field="IT·개발",
+        job_field_evidence="서버 개발자를 찾습니다",
+        job_role="서버·백엔드",
+        job_role_evidence="백엔드 API 를 설계하고 운영합니다",
     )
 
     result = await classify_body(
@@ -75,8 +75,8 @@ async def test_대분류_소분류를_고르면_결과에_채워진다(conn: sql
         client=FakeClient(text),
     )
 
-    assert result.postings[0].fields["job_major"] == "IT·개발"
-    assert result.postings[0].fields["job_minor"] == "서버·백엔드"
+    assert result.postings[0].fields["job_field"] == "IT·개발"
+    assert result.postings[0].fields["job_role"] == "서버·백엔드"
     assert result.postings[0].dropped == []
 
 
@@ -84,7 +84,7 @@ async def test_프롬프트에_트리가_한번에_들어간다(conn: sqlite3.Co
     """두 단계로 나눠 묻지 않는다 — 대분류·소분류가 같은 호출 프롬프트에 함께 있다."""
     tree = taxonomy.enabled_tree(conn)
     model = build_classification_model(conn)
-    client = FakeClient(response(job_major="IT·개발", job_minor="서버·백엔드"))
+    client = FakeClient(response(job_field="IT·개발", job_role="서버·백엔드"))
 
     await classify_body(
         BODY,
@@ -104,10 +104,10 @@ async def test_근거가_원문에_없으면_버려진다(conn: sqlite3.Connecti
     tree = taxonomy.enabled_tree(conn)
     model = build_classification_model(conn)
     text = response(
-        job_major="IT·개발",
-        job_major_evidence="본문에 없는 문장입니다",
-        job_minor="서버·백엔드",
-        job_minor_evidence="이것도 본문에 없다",
+        job_field="IT·개발",
+        job_field_evidence="본문에 없는 문장입니다",
+        job_role="서버·백엔드",
+        job_role_evidence="이것도 본문에 없다",
     )
 
     result = await classify_body(
@@ -119,9 +119,9 @@ async def test_근거가_원문에_없으면_버려진다(conn: sqlite3.Connecti
         client=FakeClient(text),
     )
 
-    assert result.postings[0].fields.get("job_major", "") == ""
-    assert result.postings[0].fields.get("job_minor", "") == ""
-    assert set(result.postings[0].dropped) == {"job_major", "job_minor"}
+    assert result.postings[0].fields.get("job_field", "") == ""
+    assert result.postings[0].fields.get("job_role", "") == ""
+    assert set(result.postings[0].dropped) == {"job_field", "job_role"}
 
 
 async def test_대분류만_정해지고_소분류는_판단불가면_대분류만_남는다(
@@ -130,9 +130,9 @@ async def test_대분류만_정해지고_소분류는_판단불가면_대분류�
     tree = taxonomy.enabled_tree(conn)
     model = build_classification_model(conn)
     text = response(
-        job_major="IT·개발",
-        job_major_evidence="서버 개발자를 찾습니다",
-        job_minor="판단불가",
+        job_field="IT·개발",
+        job_field_evidence="서버 개발자를 찾습니다",
+        job_role="판단불가",
     )
 
     result = await classify_body(
@@ -144,8 +144,8 @@ async def test_대분류만_정해지고_소분류는_판단불가면_대분류�
         client=FakeClient(text),
     )
 
-    assert result.postings[0].fields["job_major"] == "IT·개발"
-    assert result.postings[0].fields.get("job_minor", "") == ""
+    assert result.postings[0].fields["job_field"] == "IT·개발"
+    assert result.postings[0].fields.get("job_role", "") == ""
     assert result.postings[0].dropped == []
 
 
@@ -154,10 +154,10 @@ async def test_소분류_근거만_없으면_대분류는_그대로_남는다(co
     tree = taxonomy.enabled_tree(conn)
     model = build_classification_model(conn)
     text = response(
-        job_major="IT·개발",
-        job_major_evidence="서버 개발자를 찾습니다",
-        job_minor="서버·백엔드",
-        job_minor_evidence="본문에 없는 근거",
+        job_field="IT·개발",
+        job_field_evidence="서버 개발자를 찾습니다",
+        job_role="서버·백엔드",
+        job_role_evidence="본문에 없는 근거",
     )
 
     result = await classify_body(
@@ -169,9 +169,9 @@ async def test_소분류_근거만_없으면_대분류는_그대로_남는다(co
         client=FakeClient(text),
     )
 
-    assert result.postings[0].fields["job_major"] == "IT·개발"
-    assert result.postings[0].fields.get("job_minor", "") == ""
-    assert result.postings[0].dropped == ["job_minor"]
+    assert result.postings[0].fields["job_field"] == "IT·개발"
+    assert result.postings[0].fields.get("job_role", "") == ""
+    assert result.postings[0].dropped == ["job_role"]
 
 
 async def test_대분류가_판단불가면_소분류도_비운다(conn: sqlite3.Connection) -> None:
@@ -179,9 +179,9 @@ async def test_대분류가_판단불가면_소분류도_비운다(conn: sqlite3
     tree = taxonomy.enabled_tree(conn)
     model = build_classification_model(conn)
     text = response(
-        job_major="판단불가",
-        job_minor="서버·백엔드",
-        job_minor_evidence="백엔드 API 를 설계하고 운영합니다",
+        job_field="판단불가",
+        job_role="서버·백엔드",
+        job_role_evidence="백엔드 API 를 설계하고 운영합니다",
     )
 
     result = await classify_body(
@@ -193,8 +193,8 @@ async def test_대분류가_판단불가면_소분류도_비운다(conn: sqlite3
         client=FakeClient(text),
     )
 
-    assert result.postings[0].fields.get("job_major", "") == ""
-    assert result.postings[0].fields.get("job_minor", "") == ""
+    assert result.postings[0].fields.get("job_field", "") == ""
+    assert result.postings[0].fields.get("job_role", "") == ""
 
 
 async def test_표가_비어있으면_직무_분류를_묻지_않는다() -> None:
@@ -208,5 +208,5 @@ async def test_표가_비어있으면_직무_분류를_묻지_않는다() -> Non
         client=FakeClient(text),
     )
 
-    assert "job_major" not in result.postings[0].fields
-    assert "job_minor" not in result.postings[0].fields
+    assert "job_field" not in result.postings[0].fields
+    assert "job_role" not in result.postings[0].fields

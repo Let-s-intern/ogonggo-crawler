@@ -41,8 +41,8 @@ WORKING: dict[str, Any] = {
     "detail": {
         "title": "h1.listing-company span.company-name",
         "body": "div.job-description",
-        "requirements": "",
-        "deadline": "",
+        "qualifications": "",
+        "recruitment_end_at": "",
         "department": "span.listing-company-category a",
     },
 }

@@ -122,9 +122,9 @@ def test_앞뒤_문장부호를_원문대로_살린다(line: str, text: str, exp
 async def test_분류가_조각을_원문_글자로_저장한다() -> None:
     client = FakeClient(
         response(
-            duties=[{"line": 1, "text": "결제 서버 개발"}],
-            requirements=[{"line": 3, "text": "- Java 3년 이상 경험"}],
-            work_location=[{"line": 4, "text": "성남"}],
+            responsibilities=[{"line": 1, "text": "결제 서버 개발"}],
+            qualifications=[{"line": 3, "text": "- Java 3년 이상 경험"}],
+            region=[{"line": 4, "text": "성남"}],
         )
     )
 
@@ -135,9 +135,9 @@ async def test_분류가_조각을_원문_글자로_저장한다() -> None:
         client=client,
     )
 
-    assert result.postings[0].fields["duties"] == "주요업무 : 결재 서버 개발"
-    assert result.postings[0].fields["requirements"] == "Java 3년 이상 경험"
-    assert result.postings[0].fields["work_location"] == "성남"
+    assert result.postings[0].fields["responsibilities"] == "주요업무 : 결재 서버 개발"
+    assert result.postings[0].fields["qualifications"] == "Java 3년 이상 경험"
+    assert result.postings[0].fields["region"] == "성남"
     assert result.postings[0].dropped == []
     assert any("짚은 줄 전체" in note for note in result.notes)
 

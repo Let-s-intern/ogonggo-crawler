@@ -48,7 +48,11 @@ LIST_CONFIG = validate_api_config(
             "response": "html",
             "headers": {"referer": "https://www.samsungcareers.com/hr/"},
             "items_path": "li",
-            "fields": {"title": "h3.title", "date": "span.period", "company": "p.company"},
+            "fields": {
+                "title": "h3.title",
+                "date": "span.period",
+                "company_name": "p.company",
+            },
             "id_field": "a[data-value]@data-value|digits",
             "link_template": "https://www.samsungcareers.com/recruit/detail.data?seqno={id}",
         }

@@ -49,7 +49,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     )
     connection.execute("INSERT INTO workflows (crawler_id, name) VALUES (1, 'LG')")
     connection.execute("INSERT INTO workflows (crawler_id, name) VALUES (2, 'example')")
-    for raw_job_id, workflow_id, company, title in (
+    for raw_job_id, workflow_id, company_name, title in (
         (1, 1, "엘지전자", "백엔드 개발자"),
         (2, 1, "엘지화학", "프론트 개발자"),
         (3, 1, "엘지전자", "데이터 엔지니어"),
@@ -65,17 +65,17 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         )
         connection.execute(
             """
-            INSERT INTO normalized_jobs (raw_job_id, company, title, source_url)
+            INSERT INTO normalized_jobs (raw_job_id, company_name, title, source_url)
             VALUES (?, ?, ?, ?)
             """,
-            (raw_job_id, company, title, f"{LIST_URL}{raw_job_id}/"),
+            (raw_job_id, company_name, title, f"{LIST_URL}{raw_job_id}/"),
         )
     connection.execute(
         "UPDATE normalized_jobs SET delivered_at = datetime('now') WHERE raw_job_id = 2"
     )
     connection.execute(
         "INSERT INTO job_field_overrides (raw_job_id, field_name, value)"
-        " VALUES (1, 'company', 'LG 전자'), (1, 'title', '서버 개발자')"
+        " VALUES (1, 'company_name', 'LG 전자'), (1, 'title', '서버 개발자')"
     )
     try:
         yield connection
@@ -245,7 +245,7 @@ def test_제안이_붙은_건도_외래키_없이_지워진다(
     """
     conn.execute(
         "INSERT INTO job_field_suggestions (raw_job_id, field_name, value)"
-        " VALUES (1, 'company', '엘지전자(주)')"
+        " VALUES (1, 'company_name', '엘지전자(주)')"
     )
 
     response = client.post("/ui/review/delete", data={"raw_job_id": ["1"]})
@@ -323,7 +323,7 @@ def test_워크플로우_범위는_나머지_조건을_보지_않는다(client: 
     """회사를 좁혀 놨어도 그 워크플로우가 모은 전부가 대상이다. 그 사실을 확인 창이 적는다."""
     html = client.post(
         "/ui/review/delete/confirm",
-        data={"scope": "workflow", "workflow_id": "1", "company": "엘지화학"},
+        data={"scope": "workflow", "workflow_id": "1", "company_name": "엘지화학"},
     ).text
 
     assert "워크플로우 1 - LG 가 모은 공고 전부" in html
@@ -385,7 +385,7 @@ def test_워크플로우_범위는_걸리지_않는_조건을_적지_않는다(c
     """걸리지도 않는 회사 이름이 건수 옆에 있으면 그 회사 것만 지워지는 줄로 읽힌다."""
     html = client.post(
         "/ui/review/delete/confirm",
-        data={"scope": "workflow", "workflow_id": "1", "company": "엘지화학"},
+        data={"scope": "workflow", "workflow_id": "1", "company_name": "엘지화학"},
     ).text
 
     assert "워크플로우 1 - LG · 나머지 조건은 걸리지 않는다" in html

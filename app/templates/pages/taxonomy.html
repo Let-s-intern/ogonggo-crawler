@@ -1,7 +1,6 @@
 {# 직무 분류 체계 화면. 모델이 공고를 나눌 때 고르는 목록이 코드가 아니라 이 표에 있다
-   (`.claude/tasks/todo/prd-job-taxonomy.md`). `job_role`(제목에서 뽑는 자유 텍스트)과는
-   다른 값이고, 지우지 않고 끈다 — 지우면 그 이름으로 이미 분류된 공고가 목록 밖의 값을
-   갖게 된다. #}
+   (`.claude/tasks/todo/prd-job-taxonomy.md`). 대분류가 `job_field`(직군), 소분류가 `job_role`(직무)로
+   간다. 지우지 않고 끈다 — 지우면 그 이름으로 이미 분류된 공고가 목록 밖의 값을 갖게 된다. #}
 {% extends "base.html" %}
 {% from "macros.html" import empty %}
 {% block title %}직무 분류{% endblock %}

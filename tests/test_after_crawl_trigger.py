@@ -62,8 +62,8 @@ def same_db_for_background_thread(
 def wait_until_closed(
     conn: sqlite3.Connection, side_workflow_id: int, *, timeout: float = 10
 ) -> None:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
+    recruitment_end_at = time.monotonic() + timeout
+    while time.monotonic() < recruitment_end_at:
         if runs.open_run(conn, side_workflow_id) is None:
             return
         time.sleep(0.02)

@@ -89,7 +89,7 @@ _PROMPT = """{intro}
 - list.item 은 공고 하나에 해당하는 반복 요소다. 목록 전체를 감싸는 컨테이너가 아니고,
   계열사 링크 목록이나 배너처럼 공고가 아닌 반복 요소도 아니다. 그 안에 공고 제목이 있는
   반복 요소를 고른다.
-- list.title, list.link, list.date, list.company 는 list.item 안에서 찾을 수 있는
+- list.title, list.link, list.date, list.company_name 는 list.item 안에서 찾을 수 있는
   셀렉터로 쓴다.
 - list.link 는 상세 페이지로 가는 a 태그를 가리켜야 한다. 그 a 의 href 가 실제 주소여야 한다.
   항목 안에 그런 a 가 없거나 href 가 javascript: 나 # 뿐이면 빈 문자열로 둔다.

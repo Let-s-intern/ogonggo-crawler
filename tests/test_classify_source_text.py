@@ -55,7 +55,7 @@ def settings_with_key() -> Settings:
     return Settings(gemini_api_key="테스트키", gemini_model="gemini-3.5-flash")
 
 
-ANSWER = response(duties="제휴사 데이터 연동 구조 기획")
+ANSWER = response(responsibilities="제휴사 데이터 연동 구조 기획")
 
 
 def insert(conn: sqlite3.Connection, raw_job_id: int, **raw: str) -> None:
@@ -125,18 +125,18 @@ async def test_실행이_보내는_값도_원문과_본문으로_갈린다(conn:
 
 def test_본문_밖에만_있는_값은_원문에_돌려_보면_산다() -> None:
     """9.2 의 요점이다. 원문으로 물어 놓고 본문에 돌려 보면 이 칸이 버려진다."""
-    kept = ground({"work_location": ONLY_IN_SOURCE}, SOURCE, "공고 1")
+    kept = ground({"region": ONLY_IN_SOURCE}, SOURCE, "공고 1")
 
-    assert kept.fields["work_location"] == ONLY_IN_SOURCE
+    assert kept.fields["region"] == ONLY_IN_SOURCE
     assert kept.dropped == []
 
 
 def test_같은_값을_본문에_돌려_보면_버려진다() -> None:
     """두 값이 어긋났을 때 무엇을 잃는지 고정한다."""
-    dropped = ground({"work_location": ONLY_IN_SOURCE}, BODY, "공고 1")
+    dropped = ground({"region": ONLY_IN_SOURCE}, BODY, "공고 1")
 
-    assert dropped.fields["work_location"] == ""
-    assert dropped.reasons["work_location"] == NOT_IN_SOURCE
+    assert dropped.fields["region"] == ""
+    assert dropped.reasons["region"] == NOT_IN_SOURCE
 
 
 def test_판정_칸의_근거_문장도_원문에서_찾는다() -> None:
@@ -161,7 +161,7 @@ def test_판정_칸의_근거_문장도_원문에서_찾는다() -> None:
 async def test_실행이_원문에서_뽑은_칸을_버리지_않는다(conn: sqlite3.Connection) -> None:
     """읽는 값과 돌려 보는 값이 갈리면 여기서 잡힌다. 같은 응답을 두 건에 준다."""
     답 = response(
-        work_location=ONLY_IN_SOURCE,
+        region=ONLY_IN_SOURCE,
         employment_type="정규직",
         employment_type_evidence=EVIDENCE_IN_SOURCE,
     )
@@ -171,12 +171,12 @@ async def test_실행이_원문에서_뽑은_칸을_버리지_않는다(conn: sq
     )
 
     원문_있는_건 = read_classification(conn, 1)
-    assert 원문_있는_건["work_location"] == ONLY_IN_SOURCE
+    assert 원문_있는_건["region"] == ONLY_IN_SOURCE
     assert 원문_있는_건["employment_type"] == "정규직"
 
     # 원문이 없는 건은 지금까지와 같다. 본문에 없는 값은 여전히 버려진다
     본문뿐인_건 = read_classification(conn, 2)
-    assert 본문뿐인_건["work_location"] == ""
+    assert 본문뿐인_건["region"] == ""
     assert 본문뿐인_건["employment_type"] == ""
 
 

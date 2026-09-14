@@ -55,13 +55,13 @@ OUTLINE = json.dumps(
     }
 )
 MECHANICAL = response(
-    job_role=pieces("기계", 3),
-    duties=pieces("설비 설계 업무를 합니다", 4),
+    position_name=pieces("기계", 3),
+    responsibilities=pieces("설비 설계 업무를 합니다", 4),
     hiring_process=pieces("서류전형 → 면접 → 입사", 2),
 )
 HR = response(
-    job_role=pieces("HR", 5),
-    duties=pieces("인사 제도를 운영합니다", 6),
+    position_name=pieces("HR", 5),
+    responsibilities=pieces("인사 제도를 운영합니다", 6),
     hiring_process=pieces("서류전형 → 면접 → 입사", 2),
 )
 
@@ -82,8 +82,8 @@ async def test_긴_공고는_짜임을_묻고_직무마다_부른다() -> None:
     assert len(client.calls) == 3
     assert client.calls[0]["config"]["response_schema"] is Outline
     assert result.split
-    assert [posting.fields["job_role"] for posting in result.postings] == ["기계", "HR"]
-    assert [posting.fields["duties"] for posting in result.postings] == [
+    assert [posting.fields["position_name"] for posting in result.postings] == ["기계", "HR"]
+    assert [posting.fields["responsibilities"] for posting in result.postings] == [
         "설비 설계 업무를 합니다",
         "인사 제도를 운영합니다",
     ]
@@ -126,13 +126,15 @@ async def test_비용과_물은_횟수는_모든_호출을_더한다() -> None:
 async def test_짜임에서_직무를_못_읽으면_잘라서_한_번에_나눈다() -> None:
     client = FakeClient(
         json.dumps({"roles": [], "common_lines": []}),
-        response(duties="설비 설계 업무를 합니다"),
+        response(responsibilities="설비 설계 업무를 합니다"),
     )
 
     result = await classify_body(BODY, title=TITLE, settings=settings_with_key(), client=client)
 
     assert len(client.calls) == 2
-    assert [posting.fields["duties"] for posting in result.postings] == ["설비 설계 업무를 합니다"]
+    assert [posting.fields["responsibilities"] for posting in result.postings] == [
+        "설비 설계 업무를 합니다"
+    ]
     assert result.postings[0].sent_lines == ()
     assert any(str(MAX_BODY_CHARS) in note for note in result.notes), result.notes
 
@@ -194,7 +196,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         " VALUES (1, '테스트', 'https://x', 'promoted')"
     )
     connection.execute("INSERT INTO workflows (id, crawler_id, name) VALUES (1, 1, '테스트')")
-    raw = {"source_url": "https://x/1", "title": TITLE, "body": BODY, "company": "테스트회사"}
+    raw = {"source_url": "https://x/1", "title": TITLE, "body": BODY, "company_name": "테스트회사"}
     connection.execute(
         "INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash)"
         " VALUES (1, ?, ?, 'hash1')",

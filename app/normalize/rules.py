@@ -56,29 +56,30 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 # (`migrations/0011_split_body_columns.sql`, `tests/test_split_body_columns.py`).
 #
 # 0016 이 `department`·`job_category`·`headcount` 를 뺐다. 값이 자리에 맞게 들어오지 않는
-# 칸이었다 (`migrations/0016_drop_department_category_headcount.sql`). 0017 이 `job_role` 을
-# 더했다 — 지운 직군과 달리 닫힌 목록이 아니라 제목에서 옮기는 자유 텍스트다
-# (`migrations/0017_job_role.sql`). 0025 가 `job_major`·`job_minor` 를 더했다 — `career_level`
-# 처럼 셀렉터가 채우는 칸이 아니라 분류가 `job_taxonomy` 표에서 골라 덮는 칸이다
-# (`migrations/0025_job_major_minor.sql`). 0028 이 오공고가 받는 다섯 칸을 더했다
+# 칸이었다 (`migrations/0016_drop_department_category_headcount.sql`). 0025 가 직무 분류 둘을
+# 더했다 — `experience_type` 처럼 셀렉터가 채우는 칸이 아니라 분류가 `job_taxonomy` 표에서 골라
+# 덮는 칸이다 (`migrations/0025_job_major_minor.sql`). 0028 이 오공고가 받는 다섯 칸을 더했다
 # (`migrations/0028_add_posting_detail_fields.sql`).
+#
+# 0031 이 이름을 오공고(Spring) `Job` 엔티티의 칼럼 이름에 맞췄다. 제목에서 옮기던 자유 텍스트
+# 직무는 받을 칸이 없어 뺐고, 직무 분류 둘이 `job_field`(직군)·`job_role`(직무)이 됐다
+# (`migrations/0031_spring_field_names.sql`).
 NORMALIZED_FIELDS: tuple[str, ...] = (
-    "company",
+    "company_name",
     "title",
-    "job_role",
-    "deadline",
+    "recruitment_end_at",
     "body",
-    "requirements",
-    "start_date",
+    "qualifications",
+    "recruitment_start_at",
     "employment_type",
-    "career_level",
-    "work_location",
-    "duties",
-    "preferred",
+    "experience_type",
+    "region",
+    "responsibilities",
+    "preferred_qualifications",
     "hiring_process",
-    "etc_info",
-    "job_major",
-    "job_minor",
+    "recruitment_notice",
+    "job_field",
+    "job_role",
     "company_and_team_introduction",
     "compensation",
     "benefits",

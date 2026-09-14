@@ -49,6 +49,14 @@ SSH 와 `docker cp` 로 파일을 밀어 넣게 되고, 그것은 이 서비스�
 실제로 도는가" 라는 질문에 답할 수 없게 된다. 같은 이유로 `workflows` 의 누적 카운트와 마지막
 실행 시각도 가져오지 않는다.
 
+## 0031 전에 내보낸 파일은 칸 이름을 옮긴다
+
+0031 이 칸 이름을 오공고(Spring) 이름으로 바꿨다 (`migrations/0031_spring_field_names.sql`). 그 전에
+내보낸 파일의 셀렉터·수집 원본·규칙·보정은 옛 이름을 쓴다. 그대로 들이면 이 서버가 모르는 이름이라
+값이 조용히 빈다. 그래서 마이그레이션과 같은 표(`app/field_names.py`)로 이름만 옮겨 들인다. 값은 한
+글자도 바꾸지 않으므로 중복 판정 해시도 그대로다. 받을 칸이 없는 옛 자유 글자 직무의 규칙·보정은
+들이지 않는다.
+
 ## 올라온 파일은 신뢰하지 않는다
 
 임의의 파일이 들어온다. 손대기 전에 SQLite 인지, 우리가 읽을 테이블과 컬럼이 있는지,
@@ -67,7 +75,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-from app import db
+from app import db, field_names
 from app.crawler.hashing import content_hash
 from app.llm import settings as llm_settings
 from app.normalize.engine import (
@@ -291,11 +299,15 @@ def _merge(conn: sqlite3.Connection, source: sqlite3.Connection, version: str) -
     순서가 정해져 있다. 크롤러가 있어야 워크플로우가 매달리고, 워크플로우가 있어야 공고가
     매달린다. 규칙과 보정은 정규화보다 앞에 와야 방금 들여온 공고에 적용된다.
     """
-    crawler_ids, crawlers_added, crawlers_skipped = _merge_crawlers(conn, source)
+    # 0031 전에 내보낸 파일은 칸 이름이 옛 이름이다. 들여오면서 이 서버의 이름으로 옮긴다
+    renamed = field_names.renamed_before(version)
+    crawler_ids, crawlers_added, crawlers_skipped = _merge_crawlers(conn, source, renamed=renamed)
     workflow_ids, workflows_added, workflows_skipped = _merge_workflows(conn, source, crawler_ids)
-    rules_added, rules_skipped = _merge_rules(conn, source)
-    raw_ids, new_raw_ids, raw_duplicate = _merge_raw_jobs(conn, source, workflow_ids)
-    overrides_added, overrides_skipped = _merge_overrides(conn, source, raw_ids)
+    rules_added, rules_skipped = _merge_rules(conn, source, renamed=renamed)
+    raw_ids, new_raw_ids, raw_duplicate = _merge_raw_jobs(
+        conn, source, workflow_ids, renamed=renamed
+    )
+    overrides_added, overrides_skipped = _merge_overrides(conn, source, raw_ids, renamed=renamed)
     llm_added, llm_skipped = _merge_llm_settings(conn, source)
     normalized_added, normalize_failed, errors = _normalize(conn, new_raw_ids)
     return ImportResult(
@@ -319,7 +331,7 @@ def _merge(conn: sqlite3.Connection, source: sqlite3.Connection, version: str) -
 
 
 def _merge_crawlers(
-    conn: sqlite3.Connection, source: sqlite3.Connection
+    conn: sqlite3.Connection, source: sqlite3.Connection, *, renamed: bool = False
 ) -> tuple[dict[int, int], int, int]:
     """크롤러를 더한다. 이름과 리스트 URL 이 같으면 같은 크롤러로 본다.
 
@@ -356,6 +368,11 @@ def _merge_crawlers(
             mapping[int(row["id"])] = existing
             skipped += 1
             continue
+        selectors = row["selectors_json"]
+        api_config = row["api_config_json"]
+        if renamed:
+            selectors = field_names.selectors_json(selectors)
+            api_config = field_names.api_config_json(api_config)
         cursor = conn.execute(
             """
             INSERT INTO crawlers (name, list_url, detail_url, selectors_json, list_mode,
@@ -366,10 +383,10 @@ def _merge_crawlers(
                 row["name"],
                 row["list_url"],
                 row["detail_url"],
-                row["selectors_json"],
+                selectors,
                 row["list_mode"],
                 row["detail_mode"],
-                row["api_config_json"],
+                api_config,
                 row["status"],
                 row["default_company"],
             ),
@@ -435,7 +452,9 @@ def _merge_workflows(
     return mapping, added, skipped
 
 
-def _merge_rules(conn: sqlite3.Connection, source: sqlite3.Connection) -> tuple[int, int]:
+def _merge_rules(
+    conn: sqlite3.Connection, source: sqlite3.Connection, *, renamed: bool = False
+) -> tuple[int, int]:
     """정규화 규칙을 더한다. 이미 있는 규칙은 건드리지 않는다.
 
     같은 규칙인지는 `field_name`, `rule_type`, `rule_config_json`, `priority` 넷으로 가른다.
@@ -460,8 +479,16 @@ def _merge_rules(conn: sqlite3.Connection, source: sqlite3.Connection) -> tuple[
         f"SELECT {columns}, enabled, note FROM normalization_rules ORDER BY id"
     ):
         rule_type = str(row["rule_type"])
+        name = str(row["field_name"])
+        if renamed:
+            translated = field_names.field_name(name)
+            if translated is None:
+                # 옛 자유 글자 직무에 걸린 규칙이다. 받을 칸이 없다
+                skipped += 1
+                continue
+            name = translated
         key = (
-            str(row["field_name"]),
+            name,
             rule_type,
             without_yearless_formats(rule_type, str(row["rule_config_json"])),
             int(row["priority"]),
@@ -532,7 +559,11 @@ def _merge_llm_settings(conn: sqlite3.Connection, source: sqlite3.Connection) ->
 
 
 def _merge_raw_jobs(
-    conn: sqlite3.Connection, source: sqlite3.Connection, workflow_ids: dict[int, int]
+    conn: sqlite3.Connection,
+    source: sqlite3.Connection,
+    workflow_ids: dict[int, int],
+    *,
+    renamed: bool = False,
 ) -> tuple[dict[int, int], list[int], int]:
     """공고를 더한다. 없는 것만 넣고 기존 행은 한 글자도 고치지 않는다.
 
@@ -566,7 +597,12 @@ def _merge_raw_jobs(
                 "broken_reference",
                 f"공고 {row['id']} 가 없는 워크플로우 {row['workflow_id']} 를 가리킨다",
             )
-        digest = content_hash(_raw_fields(row))
+        fields = _raw_fields(row)
+        raw_data_json = str(row["raw_data_json"])
+        if renamed:
+            fields = field_names.record(fields)
+            raw_data_json = json.dumps(fields, ensure_ascii=False)
+        digest = content_hash(fields)
         key = (workflow_id, digest)
         existing = known.get(key)
         if existing is not None:
@@ -579,7 +615,7 @@ def _merge_raw_jobs(
                                   crawled_at)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (workflow_id, row["source_url"], row["raw_data_json"], digest, row["crawled_at"]),
+            (workflow_id, row["source_url"], raw_data_json, digest, row["crawled_at"]),
         )
         new_id = int(cursor.lastrowid or 0)
         known[key] = new_id
@@ -591,8 +627,8 @@ def _merge_raw_jobs(
 def _raw_fields(row: sqlite3.Row) -> dict[str, object]:
     """`raw_data_json` 을 필드 묶음으로 읽는다. 읽히지 않으면 거절한다.
 
-    저장은 원문 그대로 하고 읽기만 한다. 여기서 고쳐 넣으면 append-only 로 쌓인 값이 옮기는
-    도중에 바뀐다.
+    값은 고치지 않는다. 0031 전에 내보낸 파일이면 키 이름만 이 서버의 이름으로 옮기는데, 그것은
+    이 함수가 아니라 `_merge_raw_jobs` 가 한다.
     """
     try:
         data = json.loads(str(row["raw_data_json"]))
@@ -609,7 +645,11 @@ def _raw_fields(row: sqlite3.Row) -> dict[str, object]:
 
 
 def _merge_overrides(
-    conn: sqlite3.Connection, source: sqlite3.Connection, raw_ids: dict[int, int]
+    conn: sqlite3.Connection,
+    source: sqlite3.Connection,
+    raw_ids: dict[int, int],
+    *,
+    renamed: bool = False,
 ) -> tuple[int, int]:
     """사람이 검수한 값을 가져온다. 다시 만들 수 없는 값이라 빠뜨리지 않는다.
 
@@ -642,7 +682,15 @@ def _merge_overrides(
                 "broken_reference",
                 f"보정이 없는 공고 {row['raw_job_id']} 를 가리킨다",
             )
-        key = (raw_job_id, int(row["part"]), str(row["field_name"]))
+        name = str(row["field_name"])
+        if renamed:
+            translated = field_names.field_name(name)
+            if translated is None:
+                # 옛 자유 글자 직무를 고친 값이다. 받을 칸이 없다
+                skipped += 1
+                continue
+            name = translated
+        key = (raw_job_id, int(row["part"]), name)
         if key in known:
             skipped += 1
             continue
@@ -655,7 +703,7 @@ def _merge_overrides(
             (
                 raw_job_id,
                 row["part"],
-                row["field_name"],
+                name,
                 row["value"],
                 row["created_at"],
                 row["updated_at"],

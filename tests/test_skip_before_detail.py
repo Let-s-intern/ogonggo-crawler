@@ -39,8 +39,8 @@ SELECTORS = validate_selectors(
         "detail": {
             "title": "p.title",
             "body": "div.body",
-            "requirements": "",
-            "deadline": "",
+            "qualifications": "",
+            "recruitment_end_at": "",
             "department": "",
         },
     }
@@ -53,8 +53,8 @@ WITH_DETAIL_DEADLINE = validate_selectors(
         "detail": {
             "title": "p.title",
             "body": "div.body",
-            "requirements": "",
-            "deadline": "span.due",
+            "qualifications": "",
+            "recruitment_end_at": "span.due",
             "department": "",
         },
     }
@@ -64,9 +64,11 @@ WITH_DETAIL_DEADLINE = validate_selectors(
 def rules() -> list[Rule]:
     """운영 DB 에 있는 것과 같은 모양의 마감일 규칙. 표기를 먼저 걸러내고 날짜로 읽는다."""
     return [
-        build_rule("deadline", "mapping", {"map": {"상시채용": ""}}, priority=0, rule_id=1),
         build_rule(
-            "deadline",
+            "recruitment_end_at", "mapping", {"map": {"상시채용": ""}}, priority=0, rule_id=1
+        ),
+        build_rule(
+            "recruitment_end_at",
             "date_parse",
             {"formats": ["%Y-%m-%d", "%Y.%m.%d"]},
             priority=1,

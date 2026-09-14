@@ -11,11 +11,11 @@
 
 ## 채우기와 제안이 가는 곳이 다르다
 
-한 번의 호출 응답이 두 갈래로 나간다 (`.claude/tasks/todo/prd-side-workflows.md` 6절).
-비어 있던 칸을 채운 아홉 칸은 지금까지처럼 `save_classification` 이 `job_classifications` 에
-쓰고, 값이 있는 칸(`company`·`deadline`·`start_date`)에 원문이 다른 값을 낸 것은
-`save_suggestions` 가 `job_field_suggestions` 에 쓴다. 이 표는 `app/normalize/engine.py` 의
-어느 경로도 읽지 않는다 — 사람이 검수 화면에서 수락해야 `job_field_overrides` 로 옮겨 간다.
+한 번의 호출 응답이 두 갈래로 나간다 (`.claude/tasks/todo/prd-side-workflows.md` 6절). 비어 있던
+칸을 채운 아홉 칸은 지금까지처럼 `save_classification` 이 `job_classifications` 에 쓰고, 값이 있는
+칸(`company_name`·`recruitment_end_at`·`recruitment_start_at`)에 원문이 다른 값을 낸 것은
+`save_suggestions` 가 `job_field_suggestions` 에 쓴다. 이 표는 `app/normalize/engine.py` 의 어느
+경로도 읽지 않는다 — 사람이 검수 화면에서 수락해야 `job_field_overrides` 로 옮겨 간다.
 """
 
 from __future__ import annotations
@@ -234,7 +234,7 @@ def read_source(conn: sqlite3.Connection, raw_job_id: int) -> str:
 def read_title(conn: sqlite3.Connection, raw_job_id: int) -> str:
     """그 공고의 제목. 없으면 빈 문자열이다. 읽기 전용이다.
 
-    `job_role` 이 여기서 온다. 본문에 없고 제목에만 있는 값이라 본문만 보내면 그 칸은 영원히
+    `position_name` 이 여기서 온다. 본문에 없고 제목에만 있는 값이라 본문만 보내면 그 칸은 영원히
     빈다 (`tests/test_job_role_source.py`).
     """
     row = conn.execute(
@@ -251,7 +251,9 @@ _REVIEW_EXTRACTORS = {
 
 
 def read_current_values(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, str]:
-    """`company`·`deadline`·`start_date` 중 수집이 이미 채운 값. 읽기 전용이다.
+    """`company_name`·`recruitment_end_at`·`recruitment_start_at` 중 수집이 이미 채운 값.
+
+    읽기 전용이다.
 
     무엇이 이미 채워져 있는지 모르면 분류가 "원문과 다르다" 를 말할 수 없다 — 프롬프트에
     이 값을 실어 보내는 것이 `app/classify/classifier.py` 의 `build_prompt` 다.

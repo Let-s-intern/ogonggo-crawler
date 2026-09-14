@@ -67,7 +67,7 @@ def turn_on(conn: sqlite3.Connection, *, min_new_count: int = 1) -> None:
 
 
 def jobs(count: int) -> list[NewJob]:
-    return [NewJob(company="SK", title=f"공고 {index}") for index in range(count)]
+    return [NewJob(company_name="SK", title=f"공고 {index}") for index in range(count)]
 
 
 async def test_신규_0건이면_보내지_않는다(

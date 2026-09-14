@@ -91,8 +91,8 @@ def client(path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestClient]
 
 def wait_until_done(client: TestClient, workflow_id: int) -> dict[str, Any]:
     """끝날 때까지 폴링한다. 화면이 하는 것과 같은 일이다."""
-    deadline = time.monotonic() + 15
-    while time.monotonic() < deadline:
+    recruitment_end_at = time.monotonic() + 15
+    while time.monotonic() < recruitment_end_at:
         body: dict[str, Any] = client.get(f"/api/side/{workflow_id}").json()
         if not body["running"]:
             return body

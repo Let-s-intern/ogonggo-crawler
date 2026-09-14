@@ -13,7 +13,7 @@
 본문 밖의 이름표 값에서 옳게 뽑은 칸이 통째로 버려진다. 근무지와 고용형태가 그 자리다
 (`.claude/site-recipes/source-text-container.md`).
 
-제목은 별도로 더한다. 본문만이었다가 직무가 들어오면서 더해졌다 — `job_role` 은 제목에서
+제목은 별도로 더한다. 본문만이었다가 직무가 들어오면서 더해졌다 — `position_name` 은 제목에서
 옮기는 값이라 본문에만 돌려 보면 **맞게 뽑은 값이 통째로 버려진다.** 2026-08-28 에 열한
 사이트 픽스처로 쟀더니 제목이 직무를 말하는 곳 아홉 중 본문이 같은 글자를 되풀이하는 곳은
 셋뿐이었고, 나머지 여섯이 전부 버려졌다 (`tests/test_job_role_source.py`).
@@ -21,7 +21,7 @@
 칸마다 볼 곳을 가르지 않고 **한 덩어리로 본다.** 가르면 칸이 늘 때마다 어느 칸을 어디에 돌려
 보는지가 늘고, 그 표가 프롬프트의 칸 설명과 갈린다. 대신 제목 한 줄이 넓어진 만큼 느슨해진다
 — 제목을 그대로 옮겨 적은 한 줄짜리 값이 다른 칸에서도 살아남는다. 프롬프트가 제목을
-`job_role` 말고 어느 칸에도 넣지 말라고 적는 자리가 거기다 (`app/classify/classifier.py`).
+`position_name` 말고 어느 칸에도 넣지 말라고 적는 자리가 거기다 (`app/classify/classifier.py`).
 
 ## 칸에 따라 근거가 다르다
 
@@ -55,8 +55,8 @@ from dataclasses import dataclass, field
 
 from app.classify.schema import (
     EXTRACT_FIELDS,
-    JOB_MAJOR,
-    JOB_MINOR,
+    JOB_FIELD,
+    JOB_ROLE,
     JUDGE_CHOICES,
     JUDGE_FIELDS,
     UNDECIDED,
@@ -124,10 +124,10 @@ def drop_exact_repeat(value: str) -> str:
     """모델이 옮긴 문단 전체를 한 칸 안에서 통째로 두 번 반복해 낸 것을 한 번으로 접는다.
 
     관찰된 실패 패턴이다(2026-08-29, 토스뱅크 공고): 원문에는 한 번만 있는 문단이
-    `duties`·`etc_info` 같은 칸에서 줄 단위로 완전히 똑같은 절반 두 개로 나온다 — 입력이
-    두 번 들어간 것이 아니라 응답 자체가 반복된 것이다(작고 빠른 모델에서 흔한 디코딩
-    반복). 줄 목록을 정확히 반으로 나눴을 때 앞뒤가 완전히 같을 때만 뒤를 버린다 — 요약도
-    재작성도 아니고, 정확히 같은 반복만 걷어낸다. 어긋나면 손대지 않는다.
+    `responsibilities`·`recruitment_notice` 같은 칸에서 줄 단위로 완전히 똑같은 절반 두 개로 나온다
+    — 입력이 두 번 들어간 것이 아니라 응답 자체가 반복된 것이다(작고 빠른 모델에서 흔한 디코딩
+    반복). 줄 목록을 정확히 반으로 나눴을 때 앞뒤가 완전히 같을 때만 뒤를 버린다 — 요약도 재작성도
+    아니고, 정확히 같은 반복만 걷어낸다. 어긋나면 손대지 않는다.
     """
     lines = value.split("\n")
     if len(lines) < 2 or len(lines) % 2 != 0:
@@ -169,7 +169,7 @@ def _ground_judged_field(
 ) -> None:
     """판정 칸 하나. 목록 안인지와 근거 문장이 원문에 있는지를 본다.
 
-    직무 분류(`job_major`/`job_minor`)도 이 경로를 탄다 — 다른 점은 `choices` 가
+    직무 분류(`job_field`/`job_role`)도 이 경로를 탄다 — 다른 점은 `choices` 가
     `JUDGE_CHOICES` 처럼 고정 상수가 아니라 호출 시점의 `job_taxonomy` 표에서 온다는
     것뿐이다.
     """
@@ -212,10 +212,10 @@ def ground(
     `body` 는 **모델에게 보낸 그 글이다.** 원문이거나, 원문이 없는 건에서 본문이다. 부르는
     쪽이 보낸 것과 다른 값을 여기 넘기면 멀쩡한 칸이 버려진다 (`app/classify/classifier.py`).
 
-    `title` 을 주지 않으면 보낸 글만 본다. 그것이 옛 동작이고, `job_role` 만 그 상태에서
+    `title` 을 주지 않으면 보낸 글만 본다. 그것이 옛 동작이고, `position_name` 만 그 상태에서
     거의 전부 버려진다 — 부르는 쪽은 제목을 같이 넘긴다.
 
-    `taxonomy_choices` 는 `{"job_major": (...), "job_minor": (...)}` 모양이다. 그 호출이
+    `taxonomy_choices` 는 `{"job_field": (...), "job_role": (...)}` 모양이다. 그 호출이
     직무 분류를 물었을 때만 준다 — 주지 않으면 이 둘은 아예 보지 않는다(호출이 그 두 필드를
     묻지 않았으면 응답에도 없다). **대분류가 버려지면 소분류도 함께 비운다** — 대분류 없이
     소분류만 있는 상태는 만들지 않는다(PRD `job-taxonomy` 2절).
@@ -252,7 +252,7 @@ def ground(
         )
 
     if taxonomy_choices:
-        for name in (JOB_MAJOR, JOB_MINOR):
+        for name in (JOB_FIELD, JOB_ROLE):
             if name not in taxonomy_choices:
                 kept[name] = ""
                 continue
@@ -266,7 +266,7 @@ def ground(
                 reasons=reasons,
                 evidence=evidence,
             )
-        if not kept.get(JOB_MAJOR) and kept.get(JOB_MINOR):
-            kept[JOB_MINOR] = ""
+        if not kept.get(JOB_FIELD) and kept.get(JOB_ROLE):
+            kept[JOB_ROLE] = ""
 
     return Grounded(fields=kept, evidence=evidence, dropped=dropped, reasons=reasons)

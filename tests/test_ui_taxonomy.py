@@ -1,7 +1,7 @@
 """직무 분류 어드민 화면 (4.1.V ~ 4.5.V).
 
 `app/api/ui_companies.py` 와 같은 자리다 — 목록·더하기·고치기·켜기끄기가 한 화면에 있는
-CRUD 조각 라우트. 공고 수는 `normalized_jobs.job_major`/`job_minor` 를 세어 얹는다.
+CRUD 조각 라우트. 공고 수는 `normalized_jobs.job_field`/`job_role` 를 세어 얹는다.
 """
 
 from __future__ import annotations
@@ -25,14 +25,14 @@ SEED = pathlib.Path(__file__).parent.parent / "seeds" / "job-taxonomy-zighang-20
 
 
 def add_classified_job(
-    conn: sqlite3.Connection, seq: int, *, job_major: str | None, job_minor: str | None
+    conn: sqlite3.Connection, seq: int, *, job_field: str | None, job_role: str | None
 ) -> None:
     """공고 한 건을 정규화까지 넣고 분류 결과를 얹는다.
 
     분류 호출을 실제로 돌리지 않는다 — 이 화면이 보는 것은 `normalized_jobs` 에 이미 앉은
     값이지, 그 값을 만드는 과정이 아니다.
     """
-    record = {"title": f"공고 {seq}", "body": "본문", "company": "테스트회사"}
+    record = {"title": f"공고 {seq}", "body": "본문", "company_name": "테스트회사"}
     cursor = conn.execute(
         """
         INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash)
@@ -43,8 +43,8 @@ def add_classified_job(
     raw_id = int(cursor.lastrowid or 0)
     normalized_id = insert_normalized(conn, raw_id, [])
     conn.execute(
-        "UPDATE normalized_jobs SET job_major = ?, job_minor = ? WHERE id = ?",
-        (job_major, job_minor, normalized_id),
+        "UPDATE normalized_jobs SET job_field = ?, job_role = ? WHERE id = ?",
+        (job_field, job_role, normalized_id),
     )
 
 
@@ -116,9 +116,9 @@ def test_공고_수가_그_이름으로_분류된_건수와_같다(
 ) -> None:
     major = taxonomy.create(conn, parent_id=None, name="IT·개발")
     taxonomy.create(conn, parent_id=major.id, name="서버·백엔드")
-    add_classified_job(conn, 1, job_major="IT·개발", job_minor="서버·백엔드")
-    add_classified_job(conn, 2, job_major="IT·개발", job_minor="서버·백엔드")
-    add_classified_job(conn, 3, job_major="IT·개발", job_minor=None)
+    add_classified_job(conn, 1, job_field="IT·개발", job_role="서버·백엔드")
+    add_classified_job(conn, 2, job_field="IT·개발", job_role="서버·백엔드")
+    add_classified_job(conn, 3, job_field="IT·개발", job_role=None)
     conn.commit()
 
     body = client.get("/ui/taxonomy").text
@@ -192,8 +192,8 @@ def test_이름을_고치면_저장_전에_공고_수가_보인다(
 ) -> None:
     """`row.job_count` 가 이름 입력 칸 옆에 늘 붙어 있다 — 고치기 전에 보인다."""
     taxonomy.create(conn, parent_id=None, name="IT·개발")
-    add_classified_job(conn, 1, job_major="IT·개발", job_minor=None)
-    add_classified_job(conn, 2, job_major="IT·개발", job_minor=None)
+    add_classified_job(conn, 1, job_field="IT·개발", job_role=None)
+    add_classified_job(conn, 2, job_field="IT·개발", job_role=None)
     conn.commit()
 
     body = client.get("/ui/taxonomy").text
@@ -205,8 +205,8 @@ def test_이름을_고치면_그_건수만큼_어긋난다는_경고가_뜬다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
     major = taxonomy.create(conn, parent_id=None, name="IT 개발")
-    add_classified_job(conn, 1, job_major="IT 개발", job_minor=None)
-    add_classified_job(conn, 2, job_major="IT 개발", job_minor=None)
+    add_classified_job(conn, 1, job_field="IT 개발", job_role=None)
+    add_classified_job(conn, 2, job_field="IT 개발", job_role=None)
     conn.commit()
 
     response = client.put(
@@ -220,7 +220,7 @@ def test_이름을_고치면_그_건수만큼_어긋난다는_경고가_뜬다(
 
 def test_이름을_안_바꾸면_건수_경고가_없다(client: TestClient, conn: sqlite3.Connection) -> None:
     major = taxonomy.create(conn, parent_id=None, name="IT·개발")
-    add_classified_job(conn, 1, job_major="IT·개발", job_minor=None)
+    add_classified_job(conn, 1, job_field="IT·개발", job_role=None)
     conn.commit()
 
     response = client.put(
@@ -272,8 +272,8 @@ def test_꺼도_이미_분류된_공고_수는_그대로_보인다(
 ) -> None:
     """지운 것이 아니므로 건수가 사라지면 안 된다."""
     major = taxonomy.create(conn, parent_id=None, name="IT·개발")
-    add_classified_job(conn, 1, job_major="IT·개발", job_minor=None)
-    add_classified_job(conn, 2, job_major="IT·개발", job_minor=None)
+    add_classified_job(conn, 1, job_field="IT·개발", job_role=None)
+    add_classified_job(conn, 2, job_field="IT·개발", job_role=None)
     conn.commit()
 
     response = client.post(f"/ui/taxonomy/{major.id}/toggle")

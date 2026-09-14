@@ -92,8 +92,8 @@ def test_lg_reads_eighty_eight_postings_and_a_body_per_sector() -> None:
     assert len({item.link for item in listing.items}) == 88
     assert listing.items[0].date == "2026.09.13 23:00"
     assert detail.fields["body"].strip()
-    assert detail.fields["requirements"] == ""
-    assert detail.fields["deadline"] == "2026.09.13 23:00"
+    assert detail.fields["qualifications"] == ""
+    assert detail.fields["recruitment_end_at"] == "2026.09.13 23:00"
 
 
 def test_hanwha_reads_a_page_of_twenty_and_a_job_body() -> None:
@@ -103,11 +103,11 @@ def test_hanwha_reads_a_page_of_twenty_and_a_job_body() -> None:
     detail = build_detail(payload("hanwha-detail-20260825.json"), config.detail_config())
 
     assert len(listing.items) == 20
-    assert listing.items[0].company == "한화생명"
+    assert listing.items[0].company_name == "한화생명"
     assert listing.items[0].link.endswith("detail?rtSeq=19463")
     assert "LIFEPLUS TV" in detail.fields["body"]
-    assert detail.fields["requirements"] == ""
-    assert detail.fields["deadline"] == "2026.08.25 15:00"
+    assert detail.fields["qualifications"] == ""
+    assert detail.fields["recruitment_end_at"] == "2026.08.25 15:00"
 
 
 def test_samsung_reads_nine_on_the_first_page_and_a_body_per_role() -> None:
@@ -121,9 +121,9 @@ def test_samsung_reads_nine_on_the_first_page_and_a_body_per_role() -> None:
     assert "seqno=22878" in listing.items[0].link
     assert "~" in listing.items[0].date
     assert detail.fields["body"].strip()
-    assert detail.fields["requirements"] == ""
+    assert detail.fields["qualifications"] == ""
     # 마감일은 목록의 기간에서 온다. 상세에는 적지 않았다
-    assert not detail.fields["deadline"]
+    assert not detail.fields["recruitment_end_at"]
 
 
 def test_sk_reads_a_hundred_and_four_and_a_server_rendered_detail() -> None:
@@ -138,8 +138,8 @@ def test_sk_reads_a_hundred_and_four_and_a_server_rendered_detail() -> None:
     assert len({item.link for item in listing.items}) == 104
     assert listing.items[0].link == "https://www.skcareers.com/Recruit/Detail/R261752"
     assert detail.fields["body"].strip()
-    assert detail.fields["requirements"] == ""
-    assert "August 25, 2026" in detail.fields["deadline"]
+    assert detail.fields["qualifications"] == ""
+    assert "August 25, 2026" in detail.fields["recruitment_end_at"]
 
 
 def test_hyundai_reads_twenty_and_a_plain_text_body() -> None:
@@ -152,7 +152,7 @@ def test_hyundai_reads_twenty_and_a_plain_text_body() -> None:
     assert len({item.link for item in listing.items}) == 20
     assert listing.items[0].link.endswith("recuYy=2026&recuType=N2&recuCls=295")
     assert detail.fields["body"].strip()
-    assert detail.fields["requirements"] == ""
+    assert detail.fields["qualifications"] == ""
     # 조직·부서도 이제 수집하지 않는다. 본문을 나누는 쪽이 채운다 (1.2)
     assert detail.fields["department"] == ""
 
@@ -185,4 +185,4 @@ def test_the_sites_whose_list_date_is_a_deadline_say_so(name: str) -> None:
 def test_lotte_leaves_the_judgement_to_its_detail_selector() -> None:
     """롯데는 목록이 정적 HTML 이라 API 설정 자체가 없다. 상세가 마감일을 준다."""
     assert "api_config" not in CONFIGS["롯데그룹"]
-    assert selectors("롯데그룹").detail.deadline
+    assert selectors("롯데그룹").detail.recruitment_end_at

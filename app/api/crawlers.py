@@ -29,7 +29,7 @@
 `default_company` 는 **모회사 이름이다** (2026-08-29 결정 전에는 "회사명이 페이지에 없는
 사이트를 위한 선택 입력"이었다). 운영자가 타이핑한 값이라 추출 결과가 아니고, 그래서
 `crawlers` 에만 있고 `raw_jobs` 에는 가지 않는다 (`.claude/rules/data-safety.md`). 정규화의
-`parent_company` 가 이 값을 그대로 옮긴다(`app/normalize/engine.py` 의 `read_parent_company`) —
+`parent_company_name` 가 이 값을 그대로 옮긴다(`app/normalize/engine.py` 의 `read_parent_company`) —
 비어 있으면 크롤러 이름을 대신 쓰던 옛 동작은 더 이상 없다.
 
 **등록 화면은 이 칸을 필수로 받는다.** `app/api/ui_crawlers.py` 의 `create_crawler_fragment`

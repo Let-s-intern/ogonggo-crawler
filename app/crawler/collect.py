@@ -248,7 +248,7 @@ def list_date_is_deadline(list_mode: str, config: ApiConfig, selectors: Selector
     """
     if list_mode == API:
         return config.list is not None and config.list.date_is_deadline
-    return not selectors.detail.deadline.strip()
+    return not selectors.detail.recruitment_end_at.strip()
 
 
 def html_collectors(

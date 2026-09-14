@@ -1,6 +1,6 @@
 """직무가 제목에 있는지 본문에 있는지 열한 사이트 픽스처로 잰다 (2.1.V).
 
-`job_role` 은 제목에서 뽑는 자유 텍스트다 (`.claude/tasks/todo/prd-fields-and-logo.md`).
+`position_name` 은 제목에서 뽑는 자유 텍스트다 (`.claude/tasks/todo/prd-fields-and-logo.md`).
 뽑는 칸이라 근거 검사를 지나야 하는데, 그 검사가 지금은 본문에만 값을 돌려 본다
 (`app/classify/grounding.py`). **제목에서 뽑은 값을 본문에만 돌려 보면 맞게 뽑은 값이 통째로
 버려진다.** 얼마나 버려지는지가 근거 검사에 제목을 더할지를 정하므로 그것을 여기서 잰다.
@@ -23,7 +23,7 @@
 
 제목이 직무를 말하는 곳이 아홉, 그중 본문에서도 같은 글자를 찾는 곳이 셋, **제목에만 있는
 곳이 여섯**이다. 나머지 둘(LG·토스)은 여러 직무를 한 공고에 묶은 통합 공고라 제목이 직무를
-말하지 않는다 — 그런 공고의 `job_role` 은 빈 칸이 맞다.
+말하지 않는다 — 그런 공고의 `position_name` 은 빈 칸이 맞다.
 
 ## 이 숫자가 정한 것
 
@@ -51,7 +51,7 @@ from app.classify.grounding import in_body
 from tests.test_split_body_mapping import SITES, collected
 
 # 제목이 말하는 직무. 제목에 적힌 글자를 그대로 옮겼고, 제목이 직무를 말하지 않는 곳은 빈
-# 문자열이다 — 통합 공고의 `job_role` 은 빈 칸이 맞다
+# 문자열이다 — 통합 공고의 `position_name` 은 빈 칸이 맞다
 TITLE_ROLE: dict[str, str] = {
     "LG": "",
     "한화": "LIFEPLUS TV 마케팅 기획 및 운영",

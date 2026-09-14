@@ -372,9 +372,9 @@ def test_지금_실행하면_카드가_돌아오고_대상이_없으면_바로_�
         assert response.status_code == 200
         assert f'id="side-row-{workflow.id}"' in response.text
 
-        deadline = time.monotonic() + 10
+        recruitment_end_at = time.monotonic() + 10
         card = client.get(f"/ui/side/{workflow.id}/card")
-        while "실행 중" in card.text and time.monotonic() < deadline:
+        while "실행 중" in card.text and time.monotonic() < recruitment_end_at:
             time.sleep(0.05)
             card = client.get(f"/ui/side/{workflow.id}/card")
         assert "성공" in card.text or "기록 없음" in card.text
@@ -410,9 +410,9 @@ def test_지금_실행하면_끝까지_성공으로_닫힌다(path: pathlib.Path
     for client in _client_with_fake_provider(path, (GOOD, GOOD, GOOD)):
         client.post(f"/ui/side/{workflow.id}/run")
 
-        deadline = time.monotonic() + 10
+        recruitment_end_at = time.monotonic() + 10
         card = client.get(f"/ui/side/{workflow.id}/card")
-        while "실행 중" in card.text and time.monotonic() < deadline:
+        while "실행 중" in card.text and time.monotonic() < recruitment_end_at:
             time.sleep(0.05)
             card = client.get(f"/ui/side/{workflow.id}/card")
         assert "성공" in card.text, card.text

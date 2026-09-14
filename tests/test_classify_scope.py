@@ -147,7 +147,7 @@ def test_칸이_전부_빈_분류만_고른다(conn: sqlite3.Connection) -> None
     add_job(conn, 2)
     add_job(conn, 3)
     classify(conn, 1)
-    classify(conn, 2, duties="제휴사 데이터 연동 구조 기획")
+    classify(conn, 2, responsibilities="제휴사 데이터 연동 구조 기획")
 
     assert scope_ids(conn, EMPTY_FIELDS) == [1]
 
@@ -193,7 +193,7 @@ def test_이미_분류된_건도_들어간다(conn: sqlite3.Connection) -> None:
     """다시 분류하는 범위다. 분류 여부를 보지 않는다."""
     add_job(conn, 1)
     add_job(conn, 2)
-    classify(conn, 1, duties="업무")
+    classify(conn, 1, responsibilities="업무")
 
     assert scope_ids(conn, RECENT, days=1) == [2, 1]
 
@@ -209,7 +209,7 @@ def test_전부는_이미_분류된_것도_포함한다(conn: sqlite3.Connection
     add_job(conn, 1)
     add_job(conn, 2, body="", source_text="원문만 있는 건")
     add_job(conn, 3, crawled_at=at(conn, "-400 days"))
-    classify(conn, 1, duties="업무")
+    classify(conn, 1, responsibilities="업무")
 
     assert scope_ids(conn, ALL) == [3, 2, 1]
 
@@ -237,7 +237,7 @@ def populate(conn: sqlite3.Connection) -> None:
     add_job(conn, 5, body=None)
     add_job(conn, 6, crawled_at=at(conn, "-400 days"))
     classify(conn, 2)
-    classify(conn, 3, duties="업무")
+    classify(conn, 3, responsibilities="업무")
 
 
 @pytest.mark.parametrize("scope", CLASSIFY_SCOPES)

@@ -1,6 +1,6 @@
 """롯데 셀렉터를 2026-08-25 픽스처에 돌려 본다. 실사이트에 나가지 않는다.
 
-`detail.requirements` 가 비어 있어 8건 전부 자격요건이 빈 값으로 들어왔다
+`detail.qualifications` 가 비어 있어 8건 전부 자격요건이 빈 값으로 들어왔다
 (`.claude/tasks/done/fill-body/tasks-fill-body-push4.md` 4.5). 자격요건은 본문 안
 `응시자격` 제목 다음 목록에 있다.
 
@@ -30,16 +30,16 @@ SELECTORS = validate_selectors(
             "title": ".card-tit a",
             "link": ".card-tit a",
             "date": ".card-foot .date",
-            "company": ".cmp-name",
+            "company_name": ".cmp-name",
             "link_template": "",
         },
         "detail": {
             "title": "h4.title",
             "body": ".board-content",
-            "requirements": REQUIREMENTS,
-            "deadline": ".date-detail",
+            "qualifications": REQUIREMENTS,
+            "recruitment_end_at": ".date-detail",
             "department": "",
-            "company": ".board-type",
+            "company_name": ".board-type",
         },
     }
 )
@@ -51,10 +51,10 @@ def test_the_qualifications_come_out_of_the_detail_page() -> None:
 
     result = parse_detail(html, SELECTORS.detail)
 
-    requirements = result.fields["requirements"]
-    assert requirements.strip()
-    assert "4년제 학사" in requirements
-    assert "국가보훈대상자" in requirements
+    qualifications = result.fields["qualifications"]
+    assert qualifications.strip()
+    assert "4년제 학사" in qualifications
+    assert "국가보훈대상자" in qualifications
 
 
 def test_the_qualifications_are_not_the_whole_body() -> None:
@@ -63,8 +63,8 @@ def test_the_qualifications_are_not_the_whole_body() -> None:
 
     result = parse_detail(html, SELECTORS.detail)
 
-    assert "전형절차" not in result.fields["requirements"]
-    assert len(result.fields["requirements"]) < len(result.fields["body"])
+    assert "전형절차" not in result.fields["qualifications"]
+    assert len(result.fields["qualifications"]) < len(result.fields["body"])
 
 
 def test_the_html_in_the_body_is_left_for_normalization() -> None:
@@ -74,7 +74,7 @@ def test_the_html_in_the_body_is_left_for_normalization() -> None:
     result = parse_detail(html, SELECTORS.detail)
 
     assert "\n" in result.fields["body"]
-    assert result.fields["deadline"] == "2026.08.20 ~ 2026.08.31"
+    assert result.fields["recruitment_end_at"] == "2026.08.20 ~ 2026.08.31"
 
 
 def test_the_list_still_yields_eight_postings() -> None:

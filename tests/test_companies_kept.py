@@ -26,8 +26,8 @@ from app.main import app
 from app.normalize.engine import insert_normalized
 
 
-def add_job(conn: sqlite3.Connection, company: str, seq: int) -> int:
-    record = {"title": f"공고 {seq}", "body": "본문", "company": company}
+def add_job(conn: sqlite3.Connection, company_name: str, seq: int) -> int:
+    record = {"title": f"공고 {seq}", "body": "본문", "company_name": company_name}
     cursor = conn.execute(
         """
         INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash)

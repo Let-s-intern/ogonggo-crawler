@@ -39,13 +39,13 @@ def settings_with_key() -> Settings:
 
 
 GOOD = response(
-    duties="제휴사 데이터 연동 구조 기획",
-    requirements="관련 경험 5년 이상이신 분",
+    responsibilities="제휴사 데이터 연동 구조 기획",
+    qualifications="관련 경험 5년 이상이신 분",
     # 판정 칸은 목록에서 고르고 근거 문장이 본문에 있어야 산다
     employment_type="정규직",
     employment_type_evidence="◆ 직원 유형",
-    career_level="경력",
-    career_level_evidence="관련 경험 5년 이상이신 분",
+    experience_type="경력",
+    experience_type_evidence="관련 경험 5년 이상이신 분",
 )
 
 
@@ -74,10 +74,10 @@ def _seed(conn: sqlite3.Connection, count: int = 3) -> None:
             "source_url": f"https://x/{index}",
             "title": f"공고 {index}",
             "body": BODY,
-            "requirements": "",
-            "deadline": "",
+            "qualifications": "",
+            "recruitment_end_at": "",
             "department": "",
-            "company": "테스트회사",
+            "company_name": "테스트회사",
         }
         conn.execute(
             """
@@ -108,10 +108,10 @@ async def test_it_classifies_the_postings_that_have_a_body(conn: sqlite3.Connect
     assert progress.failed == 0
     stored = read_classification(conn, 1)
     assert stored["employment_type"] == "정규직"
-    assert stored["career_level"] == "경력"
-    assert stored["duties"] == "제휴사 데이터 연동 구조 기획"
+    assert stored["experience_type"] == "경력"
+    assert stored["responsibilities"] == "제휴사 데이터 연동 구조 기획"
     # 판정 칸을 그렇게 고른 근거가 남아 있어야 나중에 왜 그랬는지 답할 수 있다
-    assert read_evidence(conn, 1)["career_level"] == "관련 경험 5년 이상이신 분"
+    assert read_evidence(conn, 1)["experience_type"] == "관련 경험 5년 이상이신 분"
 
 
 async def test_an_already_classified_posting_is_not_run_again(conn: sqlite3.Connection) -> None:
@@ -172,12 +172,12 @@ async def test_the_classified_columns_reach_normalized_jobs(conn: sqlite3.Connec
 
     row = conn.execute(
         """
-        SELECT employment_type, duties, requirements, body
+        SELECT employment_type, responsibilities, qualifications, body
           FROM normalized_jobs WHERE raw_job_id = 1
         """
     ).fetchone()
     assert row["employment_type"] == "정규직"
-    assert row["requirements"] == "관련 경험 5년 이상이신 분"
+    assert row["qualifications"] == "관련 경험 5년 이상이신 분"
     # 수집이 준 본문은 그대로다
     assert row["body"] == BODY
 
@@ -223,18 +223,18 @@ async def test_a_blank_classification_clears_the_old_collected_value(
                     "source_url": "https://x/1",
                     "title": "공고 1",
                     "body": BODY,
-                    "work_location": "본사 (서울)",
+                    "region": "본사 (서울)",
                 },
                 ensure_ascii=False,
             ),
         ),
     )
 
-    # GOOD 응답은 work_location 을 비워 둔다
+    # GOOD 응답은 region 을 비워 둔다
     await run(conn, GOOD)
 
-    row = conn.execute("SELECT work_location FROM normalized_jobs WHERE raw_job_id = 1").fetchone()
-    assert row["work_location"] is None
+    row = conn.execute("SELECT region FROM normalized_jobs WHERE raw_job_id = 1").fetchone()
+    assert row["region"] is None
 
 
 async def test_the_six_collected_columns_are_untouched_by_the_classification(
@@ -249,9 +249,9 @@ async def test_the_six_collected_columns_are_untouched_by_the_classification(
                     "source_url": "https://x/1",
                     "title": "공고 1",
                     "body": BODY,
-                    "company": "한화솔루션",
-                    "deadline": "2026-09-30",
-                    "start_date": "2026-09-01",
+                    "company_name": "한화솔루션",
+                    "recruitment_end_at": "2026-09-30",
+                    "recruitment_start_at": "2026-09-01",
                 },
                 ensure_ascii=False,
             ),
@@ -262,15 +262,15 @@ async def test_the_six_collected_columns_are_untouched_by_the_classification(
 
     row = conn.execute(
         """
-        SELECT title, body, company, deadline, start_date, source_url
+        SELECT title, body, company_name, recruitment_end_at, recruitment_start_at, source_url
           FROM normalized_jobs WHERE raw_job_id = 1
         """
     ).fetchone()
     assert row["title"] == "공고 1"
     assert row["body"] == BODY
-    assert row["company"] == "한화솔루션"
-    assert row["deadline"] == "2026-09-30"
-    assert row["start_date"] == "2026-09-01"
+    assert row["company_name"] == "한화솔루션"
+    assert row["recruitment_end_at"] == "2026-09-30"
+    assert row["recruitment_start_at"] == "2026-09-01"
     assert row["source_url"] == "https://x/1"
 
 
@@ -298,10 +298,10 @@ async def test_a_call_that_never_answered_is_recorded_as_failed(
 
 
 async def test_an_invented_value_is_counted_and_left_out(conn: sqlite3.Connection) -> None:
-    progress = await run(conn, response(work_location="서울 강남구 테헤란로 123"))
+    progress = await run(conn, response(region="서울 강남구 테헤란로 123"))
 
     assert progress.dropped == 3
-    assert read_classification(conn, 1)["work_location"] == ""
+    assert read_classification(conn, 1)["region"] == ""
 
 
 async def test_the_batch_size_is_capped(conn: sqlite3.Connection) -> None:
@@ -339,7 +339,7 @@ async def test_only_the_ids_it_was_given_are_classified(conn: sqlite3.Connection
 
     assert progress.processed == 1
     assert read_classification(conn, 1) == {}
-    assert read_classification(conn, 2)["duties"] == "제휴사 데이터 연동 구조 기획"
+    assert read_classification(conn, 2)["responsibilities"] == "제휴사 데이터 연동 구조 기획"
 
 
 def test_the_classification_survives_a_renormalization(conn: sqlite3.Connection) -> None:
@@ -364,20 +364,20 @@ def test_a_human_correction_still_wins_over_the_classification(
     from app.classify.store import save_classification
     from app.normalize.backfill import BackfillProgress, renormalize
 
-    save_classification(conn, 1, {"work_location": "판교"}, model="gemini-3.5-flash")
+    save_classification(conn, 1, {"region": "판교"}, model="gemini-3.5-flash")
     conn.execute(
         "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
-        ("work_location", "사람이 고친 근무지"),
+        ("region", "사람이 고친 근무지"),
     )
 
     renormalize(conn, BackfillProgress())
 
-    row = conn.execute("SELECT work_location FROM normalized_jobs WHERE raw_job_id = 1").fetchone()
-    assert row["work_location"] == "사람이 고친 근무지"
+    row = conn.execute("SELECT region FROM normalized_jobs WHERE raw_job_id = 1").fetchone()
+    assert row["region"] == "사람이 고친 근무지"
 
 
 async def test_the_run_sends_the_stored_title(conn: sqlite3.Connection) -> None:
-    """제목이 `job_role` 의 출처다. 실행이 본문만 보내면 그 칸은 영원히 빈다 (2.3.V)."""
+    """제목이 `position_name` 의 출처다. 실행이 본문만 보내면 그 칸은 영원히 빈다 (2.3.V)."""
     client = FakeClient(GOOD, GOOD, GOOD)
 
     await classify_pending(
@@ -410,8 +410,8 @@ async def test_a_role_from_the_title_alone_is_stored(conn: sqlite3.Connection) -
         conn,
         [4],
         ClassifyProgress(),
-        client=FakeClient(response(job_role="카카오비즈니스 파트너 플랫폼 PM")),
+        client=FakeClient(response(position_name="카카오비즈니스 파트너 플랫폼 PM")),
         settings=settings_with_key(),
     )
 
-    assert read_classification(conn, 4)["job_role"] == "카카오비즈니스 파트너 플랫폼 PM"
+    assert read_classification(conn, 4)["position_name"] == "카카오비즈니스 파트너 플랫폼 PM"

@@ -65,36 +65,36 @@ LIST_SOURCE: dict[str, str] = {
 # 여기 없는 칸은 비어야 한다. 사이트가 그 값을 별도 필드로 주더라도 수집하지 않는다 —
 # 176번의 매핑 판단을 없애는 것이 이 변경이고, 한 사이트만 예외를 두면 그 판단이 돌아온다.
 FILLED: dict[str, frozenset[str]] = {
-    "LG": frozenset({"deadline", "company", "start_date"}),
-    "한화": frozenset({"deadline", "company", "start_date"}),
+    "LG": frozenset({"recruitment_end_at", "company_name", "recruitment_start_at"}),
+    "한화": frozenset({"recruitment_end_at", "company_name", "recruitment_start_at"}),
     # 삼성 상세 응답에는 마감일 자리가 없다. 목록의 날짜가 마감일로 들어온다
-    "삼성": frozenset({"company", "start_date"}),
+    "삼성": frozenset({"company_name", "recruitment_start_at"}),
     # 현대는 목록에도 상세에도 회사명이 없다. 크롤러 이름이 정규화에서 채운다 (1.3)
-    "현대자동차": frozenset({"deadline", "start_date"}),
-    "SK": frozenset({"deadline", "company", "start_date"}),
-    "롯데그룹": frozenset({"deadline", "company", "start_date"}),
-    "두산": frozenset({"deadline", "company", "start_date"}),
-    "네이버": frozenset({"deadline", "company", "start_date"}),
+    "현대자동차": frozenset({"recruitment_end_at", "recruitment_start_at"}),
+    "SK": frozenset({"recruitment_end_at", "company_name", "recruitment_start_at"}),
+    "롯데그룹": frozenset({"recruitment_end_at", "company_name", "recruitment_start_at"}),
+    "두산": frozenset({"recruitment_end_at", "company_name", "recruitment_start_at"}),
+    "네이버": frozenset({"recruitment_end_at", "company_name", "recruitment_start_at"}),
     # 토스는 목록이 회사명을 주지 않고 대부분의 공고에 모집 기간도 적지 않는다
-    "토스": frozenset({"deadline"}),
-    "카카오": frozenset({"deadline", "company", "start_date"}),
+    "토스": frozenset({"recruitment_end_at"}),
+    "카카오": frozenset({"recruitment_end_at", "company_name", "recruitment_start_at"}),
     # 우아한형제들도 목록이 회사명을 주지 않는다
-    "우아한형제들": frozenset({"deadline", "start_date"}),
+    "우아한형제들": frozenset({"recruitment_end_at", "recruitment_start_at"}),
 }
 
 # 수집이 더 이상 채우지 않는 칸. 본문을 읽어 나눈 결과가 채운다
 CLASSIFIED: tuple[str, ...] = (
     "job_category",
     "employment_type",
-    "career_level",
-    "work_location",
+    "experience_type",
+    "region",
     "headcount",
-    "duties",
-    "preferred",
+    "responsibilities",
+    "preferred_qualifications",
     "hiring_process",
-    "requirements",
+    "qualifications",
     "department",
-    "etc_info",
+    "recruitment_notice",
 )
 
 SITES = tuple(DETAIL_SOURCE)
@@ -191,12 +191,12 @@ def test_doosan_reads_its_deadline_from_the_label_not_the_row_number() -> None:
     """자리로 잡고 있어서 '지원자 개별일정' 이 마감일로 들어오고 있었다. 마감일은 남는 칸이다."""
     values = collected("두산")
 
-    assert values["deadline"].strip() == "2026-07-15 ~ 2026-08-31"
-    assert values["company"].strip() == "매거진"
+    assert values["recruitment_end_at"].strip() == "2026-07-15 ~ 2026-08-31"
+    assert values["company_name"].strip() == "매거진"
 
 
 def test_naver_keeps_the_affiliate_in_the_company_column() -> None:
     """모집 부서가 'NAVER' 즉 계열사다. 회사명은 본문에서 못 뽑아 수집으로 남긴 칸이다."""
     values = collected("네이버")
 
-    assert values["company"].strip() == "NAVER"
+    assert values["company_name"].strip() == "NAVER"

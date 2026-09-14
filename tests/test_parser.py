@@ -34,8 +34,8 @@ LIST_SELECTORS = ListSelectors(
 DETAIL_SELECTORS = DetailSelectors(
     title="h1.listing-company span.company-name",
     body="div.job-description",
-    requirements="",
-    deadline="",
+    qualifications="",
+    recruitment_end_at="",
     department="span.listing-company-category a",
 )
 
@@ -85,8 +85,8 @@ def test_상세에서_필드_값이_기대값과_같다() -> None:
     assert "Join Softech Associate" in result.fields["body"]
     assert result.fields["department"] == "Developer / Engineer"
     # 셀렉터가 빈 값인 항목은 사이트에 없다는 응답이다. 실패가 아니다.
-    assert result.fields["requirements"] == ""
-    assert result.fields["deadline"] == ""
+    assert result.fields["qualifications"] == ""
+    assert result.fields["recruitment_end_at"] == ""
     assert result.missing == []
 
 
@@ -162,8 +162,8 @@ def test_상세_필수_필드를_못_읽으면_parse_다() -> None:
     selectors = DetailSelectors(
         title=DETAIL_SELECTORS.title,
         body="div.no-such-description",
-        requirements="",
-        deadline="",
+        qualifications="",
+        recruitment_end_at="",
         department=DETAIL_SELECTORS.department,
     )
 
@@ -178,14 +178,14 @@ def test_선택_필드가_0개_매칭이면_실패가_아니라_missing_이다()
     selectors = DetailSelectors(
         title=DETAIL_SELECTORS.title,
         body=DETAIL_SELECTORS.body,
-        requirements="",
-        deadline="span.no-such-deadline",
+        qualifications="",
+        recruitment_end_at="span.no-such-deadline",
         department=DETAIL_SELECTORS.department,
     )
     result = parse_detail(DETAIL_HTML, selectors)
 
-    assert result.missing == ["deadline"]
-    assert result.fields["deadline"] == ""
+    assert result.missing == ["recruitment_end_at"]
+    assert result.fields["recruitment_end_at"] == ""
 
 
 def test_셀렉터_문법_오류는_parse_다() -> None:

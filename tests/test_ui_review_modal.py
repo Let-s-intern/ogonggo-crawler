@@ -40,13 +40,13 @@ LONG_BODY = "본문 첫 줄\n" + ("이 자리는 표 칸 폭에 들어가지 않
 
 # 모달이 돌려보내는 여섯 칸 전부. 브라우저는 손대지 않은 칸도 같이 보낸다
 FULL_FORM = {
-    "company": "파이썬재단",
+    "company_name": "파이썬재단",
     "title": "백엔드 개발자",
-    "job_role": "",
-    "work_location": "",
-    "deadline": "",
+    "position_name": "",
+    "region": "",
+    "recruitment_end_at": "",
     "body": LONG_BODY,
-    "requirements": "",
+    "qualifications": "",
 }
 
 
@@ -68,7 +68,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     )
     connection.execute(
         """
-        INSERT INTO normalized_jobs (id, raw_job_id, company, title, body, source_url)
+        INSERT INTO normalized_jobs (id, raw_job_id, company_name, title, body, source_url)
         VALUES (3, 7, '파이썬재단', '백엔드 개발자', ?, ?)
         """,
         (LONG_BODY, LIST_URL),
@@ -136,7 +136,7 @@ def test_표는_읽기만_하고_행의_수정_버튼이_모달을_연다(client
 def test_모달에_여섯_필드가_다_들어오고_규칙값을_함께_보여준다(client: TestClient) -> None:
     html = client.get("/ui/review/modal/3").text
 
-    for name in ("company", "title", "work_location", "deadline", "body", "requirements"):
+    for name in ("company_name", "title", "region", "recruitment_end_at", "body", "qualifications"):
         assert f'name="{name}"' in html, name
     assert "규칙이 만든 값" in html
     assert "본문 첫 줄" in html
@@ -148,18 +148,21 @@ def test_모달에_여섯_필드가_다_들어오고_규칙값을_함께_보여�
 
 
 def test_검수_표와_모달에_직무_열이_나온다(client: TestClient) -> None:
-    """0017 이 더한 칸이다. 화면에 없으면 잘못 뽑힌 직무를 아무도 보지 못한다 (2.5.V)."""
+    """직무 분류 소분류다. 화면에 없으면 잘못 고른 직무를 아무도 보지 못한다 (2.5.V).
+
+    0031 전에는 제목에서 옮긴 자유 글자 직무가 이 이름이었다. 오공고에 받을 칸이 없어 지웠다.
+    """
     table = client.get("/ui/review").text
     modal = client.get("/ui/review/modal/3").text
 
-    assert "직무" in table
     assert 'id="review-cell-3-job_role"' in table
     assert 'name="job_role"' in modal
+    assert 'name="position_name"' not in modal
 
 
 def test_보정된_필드는_규칙이_만든_값을_함께_보여준다(client: TestClient) -> None:
     """무엇에서 고친 것인지 모르면 그 보정이 맞는지 판정할 수 없다."""
-    client.put("/ui/review/jobs/3", data={**FULL_FORM, "company": "파이썬 소프트웨어 재단"})
+    client.put("/ui/review/jobs/3", data={**FULL_FORM, "company_name": "파이썬 소프트웨어 재단"})
 
     html = client.get("/ui/review/modal/3").text
 
@@ -175,13 +178,13 @@ def test_두_필드를_한_번에_저장하면_보정이_둘_쌓인다(
 
     response = client.put(
         "/ui/review/jobs/3",
-        data={**FULL_FORM, "company": "파이썬 소프트웨어 재단", "work_location": "판교"},
+        data={**FULL_FORM, "company_name": "파이썬 소프트웨어 재단", "region": "판교"},
     )
 
     assert response.status_code == 200
-    assert override_fields(conn) == ["company", "work_location"]
-    assert override_of(conn, "company") == "파이썬 소프트웨어 재단"
-    assert override_of(conn, "work_location") == "판교"
+    assert override_fields(conn) == ["company_name", "region"]
+    assert override_of(conn, "company_name") == "파이썬 소프트웨어 재단"
+    assert override_of(conn, "region") == "판교"
     # 손대지 않은 칸에는 보정이 생기지 않는다
     assert override_of(conn, "title") is None
     assert override_of(conn, "body") is None
@@ -236,16 +239,16 @@ def test_모달_안에서_필드마다_보정을_지우고_모달은_열려_있�
 ) -> None:
     client.put(
         "/ui/review/jobs/3",
-        data={**FULL_FORM, "title": "사람이 고친 제목", "work_location": "판교"},
+        data={**FULL_FORM, "title": "사람이 고친 제목", "region": "판교"},
     )
-    assert override_fields(conn) == ["title", "work_location"]
+    assert override_fields(conn) == ["region", "title"]
 
     response = client.put(
         "/ui/review/jobs/3",
-        data={**FULL_FORM, "title": "사람이 고친 제목", "work_location": "판교", "drop": "title"},
+        data={**FULL_FORM, "title": "사람이 고친 제목", "region": "판교", "drop": "title"},
     )
 
-    assert override_fields(conn) == ["work_location"]
+    assert override_fields(conn) == ["region"]
     assert "제목 보정을 지웠다" in response.text
     # 되돌리고 나머지를 계속 본다. 닫지 않는다
     assert "HX-Trigger-After-Settle" not in response.headers

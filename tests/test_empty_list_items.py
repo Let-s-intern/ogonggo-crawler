@@ -50,8 +50,8 @@ SINGLE_GENERATED: dict[str, Any] = {
     "detail": {
         "title": "h1.tit",
         "body": "#container",
-        "requirements": "",
-        "deadline": "",
+        "qualifications": "",
+        "recruitment_end_at": "",
         "department": "",
     },
 }
@@ -68,8 +68,8 @@ CONTAINER_AS_ITEM: dict[str, Any] = {
     "detail": {
         "title": "h1.tit",
         "body": "#container",
-        "requirements": "",
-        "deadline": "",
+        "qualifications": "",
+        "recruitment_end_at": "",
         "department": "",
     },
 }
@@ -194,7 +194,7 @@ def test_a_matching_company_does_not_rescue_an_empty_item(
 ) -> None:
     """계열사 이름 하나가 잡혀도 제목도 링크도 날짜도 없으면 쓸 수 없다."""
     payload = json.loads(json.dumps(SINGLE_GENERATED))
-    payload["list"]["company"] = "h1.tit"
+    payload["list"]["company_name"] = "h1.tit"
     payload["list"]["title"] = "h4.no-such-title"
     payload["list"]["link"] = "a.no-such-link"
     payload["list"]["date"] = "span.no-such-date"

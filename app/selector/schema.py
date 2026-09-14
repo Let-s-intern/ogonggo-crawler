@@ -14,7 +14,7 @@ DB 에 넣어도 되는 모양인지 판정한다.
 | `unknown_field` | 스키마에 없는 필드명이 왔다 |
 | `missing_field` | 필수 필드가 없거나 값이 비어 있다 |
 
-`company`, `list.link_template`, 그리고 `SPLIT_DETAIL_FIELDS` 의 열 개는 키가 없어도, 빈
+`company_name`, `list.link_template`, 그리고 `SPLIT_DETAIL_FIELDS` 의 열 개는 키가 없어도, 빈
 문자열이어도 통과한다 — 그래서 이 필드들이 생기기 전에 저장된 셀렉터 JSON 이 그대로 통과한다.
 나머지 필드는 그대로 필수라, 값이 비어도 되는 상세 필드조차 키는 있어야 한다.
 
@@ -39,25 +39,25 @@ from pydantic import BaseModel
 # 다섯 개 중 하나로만 있어 모델이 두 번 다 비워 냈고, 그 빈 값 하나 때문에 테스트 실행이
 # `invalid_selectors` 로 거절돼 크롤러를 아예 돌릴 수 없었다. 없는 것을 지어내는 것보다
 # 비워 두는 편이 낫고, 마감일은 상세에서 온다
-OPTIONAL_LIST_FIELDS: frozenset[str] = frozenset({"company", "link", "link_template", "date"})
+OPTIONAL_LIST_FIELDS: frozenset[str] = frozenset({"company_name", "link", "link_template", "date"})
 # 0011 이 `normalized_jobs` 에 더한 열 칸을 상세에서 읽는 자리. 사이트가 그 값을 나눠서 줄
 # 때만 채우고, 없으면 빈 문자열이다 — 없는 값을 다른 요소로 채우지 않는다
 # (`migrations/0011_split_body_columns.sql`).
 SPLIT_DETAIL_FIELDS: tuple[str, ...] = (
-    "start_date",
+    "recruitment_start_at",
     "job_category",
     "employment_type",
-    "career_level",
-    "work_location",
+    "experience_type",
+    "region",
     "headcount",
-    "duties",
-    "preferred",
+    "responsibilities",
+    "preferred_qualifications",
     "hiring_process",
-    "etc_info",
+    "recruitment_notice",
 )
 
 OPTIONAL_DETAIL_FIELDS: frozenset[str] = frozenset(
-    {"requirements", "deadline", "department", "company", *SPLIT_DETAIL_FIELDS}
+    {"qualifications", "recruitment_end_at", "department", "company_name", *SPLIT_DETAIL_FIELDS}
 )
 OPTIONAL_FIELDS: dict[str, frozenset[str]] = {
     "list": OPTIONAL_LIST_FIELDS,
@@ -66,7 +66,9 @@ OPTIONAL_FIELDS: dict[str, frozenset[str]] = {
 
 # 키가 아예 없어도 되는 필드. 스키마에 나중에 더해진 것이라 그 전에 저장된 셀렉터 JSON 에는
 # 키 자체가 없다. 나머지 필드는 값이 비어도 키는 있어야 한다.
-OMITTABLE_FIELDS: frozenset[str] = frozenset({"company", "link_template", *SPLIT_DETAIL_FIELDS})
+OMITTABLE_FIELDS: frozenset[str] = frozenset(
+    {"company_name", "link_template", *SPLIT_DETAIL_FIELDS}
+)
 
 # 아래 모델은 Gemini 의 response_schema 로 그대로 나간다. `extra="forbid"` 를 걸면
 # `additionalProperties: false` 로 변환되는데 Gemini 가 그 필드를 모르고 400 을 낸다.
@@ -81,7 +83,7 @@ class ListSelectors(BaseModel):
     link: str
     date: str
     # 계열사 공고가 섞인 사이트에서 공고마다 다른 회사명을 잡는다. 없으면 빈 문자열이다
-    company: str = ""
+    company_name: str = ""
     # 상세 URL 을 속성값으로 만드는 사이트를 위한 것이다. 비어 있으면 지금까지처럼 `link` 가
     # 잡은 노드의 href 를 읽는다 — 방식을 적지 않은 기존 셀렉터가 그대로 동작한다.
     # 값이 있으면 `{속성이름}` 자리에 노드의 그 속성값을 끼워 URL 을 만든다. 자세한 것은
@@ -92,27 +94,27 @@ class ListSelectors(BaseModel):
 class DetailSelectors(BaseModel):
     """상세 페이지. 사이트에 없는 항목은 빈 문자열로 온다.
 
-    `start_date` 아래 열 개는 0011 이 `normalized_jobs` 에 더한 칸을 읽는 자리다. 전부
+    `recruitment_start_at` 아래 열 개는 0011 이 `normalized_jobs` 에 더한 칸을 읽는 자리다. 전부
     기본값이 있어서, 이 필드들이 생기기 전에 저장된 셀렉터 JSON 이 키 없이도 그대로 통과한다.
     """
 
     title: str
     body: str
-    requirements: str
-    deadline: str
+    qualifications: str
+    recruitment_end_at: str
     department: str
-    company: str = ""
-    # 모집 마감일(`deadline`)의 짝이다. 그 칸을 대신하지 않는다
-    start_date: str = ""
+    company_name: str = ""
+    # 모집 마감일(`recruitment_end_at`)의 짝이다. 그 칸을 대신하지 않는다
+    recruitment_start_at: str = ""
     job_category: str = ""
     employment_type: str = ""
-    career_level: str = ""
-    work_location: str = ""
+    experience_type: str = ""
+    region: str = ""
     headcount: str = ""
-    duties: str = ""
-    preferred: str = ""
+    responsibilities: str = ""
+    preferred_qualifications: str = ""
     hiring_process: str = ""
-    etc_info: str = ""
+    recruitment_notice: str = ""
 
 
 class SelectorSet(BaseModel):

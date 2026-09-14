@@ -28,10 +28,10 @@ WITH_LINK_HTML = """
 """
 
 NO_LINK = ListSelectors(
-    item="ul.jobs li", title="h3", link="", date=".d", company="", link_template=""
+    item="ul.jobs li", title="h3", link="", date=".d", company_name="", link_template=""
 )
 BROKEN_LINK = ListSelectors(
-    item="ul.jobs li", title="h3", link="a.detail", date=".d", company="", link_template=""
+    item="ul.jobs li", title="h3", link="a.detail", date=".d", company_name="", link_template=""
 )
 
 
@@ -60,7 +60,7 @@ def test_a_selector_that_matches_nothing_is_still_a_failure() -> None:
 
 def test_a_normal_site_is_unaffected() -> None:
     selectors = ListSelectors(
-        item="ul.jobs li", title="h3", link="a", date=".d", company="", link_template=""
+        item="ul.jobs li", title="h3", link="a", date=".d", company_name="", link_template=""
     )
 
     result = parse_list(WITH_LINK_HTML, selectors, "https://example.test/jobs")
@@ -80,15 +80,15 @@ def test_a_list_only_record_takes_title_and_deadline_from_the_list() -> None:
         title="백엔드 개발자",
         link="https://example.test/jobs",
         date="2026-09-30",
-        company="삼성",
+        company_name="삼성",
         detail_absent=True,
     )
 
     record = _record(item, dict.fromkeys(DETAIL_FIELDS, ""))
 
     assert record["title"] == "백엔드 개발자"
-    assert record["deadline"] == "2026-09-30"
-    assert record["company"] == "삼성"
+    assert record["recruitment_end_at"] == "2026-09-30"
+    assert record["company_name"] == "삼성"
     # 상세에서 오는 값은 비어 있는 것이 맞다. 없는 페이지를 지어내지 않는다
     assert record["body"] == ""
 
@@ -101,16 +101,16 @@ def test_a_normal_record_still_prefers_the_detail_page() -> None:
     detail = {
         "title": "상세 제목",
         "body": "본문",
-        "requirements": "",
-        "deadline": "2026-12-31",
+        "qualifications": "",
+        "recruitment_end_at": "2026-12-31",
         "department": "",
-        "company": "",
+        "company_name": "",
     }
 
     record = _record(item, detail)
 
     assert record["title"] == "상세 제목"
-    assert record["deadline"] == "2026-12-31"
+    assert record["recruitment_end_at"] == "2026-12-31"
 
 
 # 목록 전용 크롤러의 상세 필드는 실패가 아니다 (20.2 보정) --------------------
@@ -120,7 +120,7 @@ def test_the_test_screen_does_not_call_a_list_only_detail_field_a_failure() -> N
     """LG 실행에서 `detail.body` 가 `실패` 로 떴다. 고칠 수 없는 것을 고치라는 표시다.
 
     상세로 갈 길이 없으면 상세 페이지를 아예 열지 않는다. `detail.title` 과
-    `detail.deadline` 에 값이 있는 것은 실행이 목록에서 읽은 값을 그 자리에 넣기 때문이고
+    `detail.recruitment_end_at` 에 값이 있는 것은 실행이 목록에서 읽은 값을 그 자리에 넣기 때문이고
     (`app/crawler/runner.py` 의 `_record`), `body` 는 목록에 없어서 빌 뿐이다.
     """
     from app.api.ui_tests import _field_report
@@ -138,8 +138,8 @@ def test_the_test_screen_does_not_call_a_list_only_detail_field_a_failure() -> N
             "detail": {
                 "title": "p.title",
                 "body": "div.body",
-                "requirements": "",
-                "deadline": "div.deadline",
+                "qualifications": "",
+                "recruitment_end_at": "div.deadline",
                 "department": "",
             },
         }
@@ -150,7 +150,7 @@ def test_the_test_screen_does_not_call_a_list_only_detail_field_a_failure() -> N
                 "list_title": "백엔드 개발자",
                 "list_date": "2026-09-30",
                 "title": "백엔드 개발자",
-                "deadline": "2026-09-30",
+                "recruitment_end_at": "2026-09-30",
                 "body": "",
             }
         ),
@@ -159,7 +159,7 @@ def test_the_test_screen_does_not_call_a_list_only_detail_field_a_failure() -> N
                 "list_title": "프론트엔드 개발자",
                 "list_date": "2026-10-15",
                 "title": "프론트엔드 개발자",
-                "deadline": "2026-10-15",
+                "recruitment_end_at": "2026-10-15",
                 "body": "",
             }
         ),
@@ -193,8 +193,8 @@ def test_a_site_with_detail_links_still_fails_a_broken_detail_field() -> None:
             "detail": {
                 "title": "p.title",
                 "body": "div.body",
-                "requirements": "",
-                "deadline": "",
+                "qualifications": "",
+                "recruitment_end_at": "",
                 "department": "",
             },
         }

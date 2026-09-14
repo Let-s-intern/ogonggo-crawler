@@ -35,7 +35,7 @@
     <h3 id="app-modal-title" class="text-base font-semibold text-slate-900">{{ job.title or "제목 값 없음" }}</h3>
     <p class="mt-1 text-sm text-slate-600">
       수집 건 {{ job.raw_job_id }} · 공고 {{ job.id }} ·
-      {{ job.parent_company or "모회사 값 없음" }}{% if job.company %} / {{ job.company }}{% endif %} ·
+      {{ job.parent_company_name or "모회사 값 없음" }}{% if job.company_name %} / {{ job.company_name }}{% endif %} ·
       워크플로우 {{ job.workflow_id }} - {{ job.workflow_name }}
     </p>
   </header>
@@ -82,7 +82,7 @@
         {# 모회사는 크롤러가 정하는 값이라 여기서 고치지 않는다. 틀렸으면 크롤러 화면에서
            `default_company` 를 고치고 재정규화한다 — 그 크롤러의 공고 전부가 함께 고쳐진다 #}
         <tr><th scope="row">모회사</th>
-            <td>{{ job.parent_company or "값 없음" }} <span class="text-xs text-slate-500">크롤러가 정한다. 고치려면 크롤러 화면에서 회사명을 바꾸고 재정규화한다</span></td></tr>
+            <td>{{ job.parent_company_name or "값 없음" }} <span class="text-xs text-slate-500">크롤러가 정한다. 고치려면 크롤러 화면에서 회사명을 바꾸고 재정규화한다</span></td></tr>
         <tr><th scope="row">수집 시각</th><td>{{ job.crawled_at | as_time }}</td></tr>
         <tr><th scope="row">정규화 시각</th><td>{{ job.normalized_at | as_time }}</td></tr>
         <tr><th scope="row">전달</th>

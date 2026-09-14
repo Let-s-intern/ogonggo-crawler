@@ -49,14 +49,14 @@ DETAIL_HTML = """
 """
 
 SELECTORS = {
-    "list": {"item": "li.job", "title": "a", "link": "a", "date": ".date", "company": ""},
+    "list": {"item": "li.job", "title": "a", "link": "a", "date": ".date", "company_name": ""},
     "detail": {
         "title": "h1",
         "body": ".body",
-        "requirements": "",
-        "deadline": "",
+        "qualifications": "",
+        "recruitment_end_at": "",
         "department": "",
-        "company": "",
+        "company_name": "",
     },
 }
 
@@ -184,7 +184,7 @@ async def test_api_list_with_an_api_detail(conn: sqlite3.Connection) -> None:
 
     row = stored(conn)[0]
     assert row["source_url"] == "https://careers.lg.com/apply/detail?id=1002029"
-    assert row["company"] == "LG유플러스"
+    assert row["company_name"] == "LG유플러스"
 
 
 async def test_api_list_with_a_rendered_detail(conn: sqlite3.Connection) -> None:

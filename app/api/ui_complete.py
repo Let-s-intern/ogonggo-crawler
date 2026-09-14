@@ -6,11 +6,11 @@
 
 ## "완성" 은 열여섯 칸 중 60% 이상(열 칸 이상)이 채워졌다는 뜻이다
 
-`app/normalize/rules.py` 의 `NORMALIZED_FIELDS` 열여섯 칸(수집이 채우는 것, 분류가 채우는
-것, 직무 분류 둘 포함) 중 값이 있는 칸 수를 세어 임계치(`_THRESHOLD`) 이상이면 완성으로
-본다. 사이트에 따라 `preferred`·`hiring_process`·`etc_info` 처럼 빈 것이 정상인 칸이
-있어서(`app/api/review_filter.py` 의 `EMPTY_NOTES`) 열여섯 칸 전부를 요구하면 통과하는
-건이 지나치게 적어진다 — 2026-08-29 운영자 요청으로 100% -> 80% -> 60% 로 두 번 낮췄다.
+`app/normalize/rules.py` 의 `NORMALIZED_FIELDS` 열여섯 칸(수집이 채우는 것, 분류가 채우는 것, 직무
+분류 둘 포함) 중 값이 있는 칸 수를 세어 임계치(`_THRESHOLD`) 이상이면 완성으로 본다. 사이트에 따라
+`preferred_qualifications`·`hiring_process`·`recruitment_notice` 처럼 빈 것이 정상인 칸이
+있어서(`app/api/review_filter.py` 의 `EMPTY_NOTES`) 열여섯 칸 전부를 요구하면 통과하는 건이 지나치게
+적어진다 — 2026-08-29 운영자 요청으로 100% -> 80% -> 60% 로 두 번 낮췄다.
 
 사람이 고친 값(`job_field_overrides`)은 여기서 보지 않는다. 목록·상세 모두
 `normalized_jobs` 원 컬럼만 본다 — 검수해서 고친 값을 보려면 `/review`로 간다.
@@ -65,17 +65,17 @@ _COMPLETE_WHERE = f"({_FILLED_COUNT_SQL}) >= {_REQUIRED_FILLED}"
 # 자회사·모회사 각각의 로고 표를 조인해 자회사 우선으로 고른다. 두 조인의 별칭(sub/par)은
 # 아래 SELECT 의 COALESCE(sub.logo_url, par.logo_url) 와 짝이 맞아야 한다
 _LOGO_JOIN_SQL = """
-          LEFT JOIN companies sub ON sub.name = NULLIF(n.company, '')
-          LEFT JOIN companies par ON par.name = n.parent_company
+          LEFT JOIN companies sub ON sub.name = NULLIF(n.company_name, '')
+          LEFT JOIN companies par ON par.name = n.parent_company_name
 """
 
 
-def _d_day(deadline: str | None) -> str | None:
+def _d_day(recruitment_end_at: str | None) -> str | None:
     """마감까지 며칠인지. 못 읽으면(형식이 다르거나 없으면) None 이다."""
-    if not deadline:
+    if not recruitment_end_at:
         return None
     try:
-        target = date.fromisoformat(deadline.strip()[:10])
+        target = date.fromisoformat(recruitment_end_at.strip()[:10])
     except ValueError:
         return None
     delta = (target - date.today()).days
@@ -97,9 +97,9 @@ def _rows(
     params.append(limit)
     return conn.execute(
         f"""
-        SELECT n.id, n.raw_job_id, n.parent_company, n.company, n.title, n.job_role,
-               n.job_major, n.job_minor, n.employment_type, n.career_level,
-               n.work_location, n.deadline, n.source_url,
+        SELECT n.id, n.raw_job_id, n.parent_company_name, n.company_name, n.title,
+               n.job_field, n.job_role, n.employment_type, n.experience_type,
+               n.region, n.recruitment_end_at, n.source_url,
                COALESCE(sub.logo_url, par.logo_url) AS logo_url
           FROM normalized_jobs n
           {_LOGO_JOIN_SQL}
@@ -123,7 +123,7 @@ def recent_completed(conn: sqlite3.Connection, limit: int) -> list[dict[str, obj
     """가장 최근 완성 공고. 목록 카드(`cards`)와 같은 모양이라 대시보드가 같은 카드
     마크업을 그대로 재사용할 수 있다."""
     rows = _rows(conn, None, limit=limit)
-    return [{"row": row, "d_day": _d_day(row["deadline"])} for row in rows]
+    return [{"row": row, "d_day": _d_day(row["recruitment_end_at"])} for row in rows]
 
 
 def _read_detail(conn: sqlite3.Connection, normalized_id: int) -> sqlite3.Row | None:
@@ -155,7 +155,7 @@ def complete_list_fragment(
     같은 빈 요청을 반복한다.
     """
     rows = _rows(conn, after)
-    cards = [{"row": row, "d_day": _d_day(row["deadline"])} for row in rows]
+    cards = [{"row": row, "d_day": _d_day(row["recruitment_end_at"])} for row in rows]
     next_after = int(rows[-1]["id"]) if len(rows) == PAGE_SIZE else None
     return render(
         request,
@@ -182,5 +182,5 @@ def complete_preview_fragment(
         request,
         "fragments/complete_preview.html",
         job=row,
-        d_day=_d_day(row["deadline"]),
+        d_day=_d_day(row["recruitment_end_at"]),
     )

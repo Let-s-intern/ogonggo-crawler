@@ -42,11 +42,11 @@ from app.storage import s3
 from app.storage import settings as store
 
 
-def add_job(conn: sqlite3.Connection, company: str, seq: int, parent: str = "") -> None:
+def add_job(conn: sqlite3.Connection, company_name: str, seq: int, parent: str = "") -> None:
     """공고 한 건을 정규화까지 넣는다. 없던 회사면 행이 함께 생긴다."""
-    record = {"title": f"공고 {seq}", "body": "본문", "company": company}
+    record = {"title": f"공고 {seq}", "body": "본문", "company_name": company_name}
     if parent:
-        record["parent_company"] = parent
+        record["parent_company_name"] = parent
     cursor = conn.execute(
         """
         INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash)
@@ -299,7 +299,7 @@ def test_알린_건수가_그_회사의_공고_수와_같다(client: TestClient,
     ).text
 
     counted = conn.execute(
-        "SELECT count(*) AS n FROM normalized_jobs WHERE company = '토스'"
+        "SELECT count(*) AS n FROM normalized_jobs WHERE company_name = '토스'"
     ).fetchone()["n"]
     assert counted == 2
     assert f"공고 {counted}건에 붙는다" in body
@@ -496,7 +496,7 @@ def test_올린_객체_이름에_회사명을_넣지_않는다(
     )
 
     assert "토스" not in seen["name"]
-    assert seen["name"].startswith("company/")
+    assert seen["name"].startswith("company_name/")
 
 
 def test_저장소가_거절하면_사유가_그_줄에_남는다(

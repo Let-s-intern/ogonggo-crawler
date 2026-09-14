@@ -176,7 +176,7 @@
 
          머리글이 어디서 온 값인지까지 적는다. 회사 화면에도 `모회사` 칸이 있는데 그쪽은
          사람이 적는 `companies.parent_name` 이고 이쪽은 크롤러가 정한
-         `normalized_jobs.parent_company` 다. 같은 회사인데 두 화면이 다른 이름을 보이는
+         `normalized_jobs.parent_company_name` 다. 같은 회사인데 두 화면이 다른 이름을 보이는
          것이 정상이고, 이름표가 같으면 그것이 고장으로 읽힌다 (`.claude/docs/data-model.md`) #}
       <th scope="col" title="크롤러에 적어 둔 회사명이거나 크롤러 이름이다. 회사 화면에서 사람이 적는 모회사와 다른 값이다">모회사 (크롤러가 정함)</th>
       {% for field in fields %}<th scope="col">{{ labels[field] }}</th>{% endfor %}
@@ -202,7 +202,7 @@
       <td>{{ review_open_button(job) }}</td>
       <td>{{ review_delivery(job.id, job.delivered_at, item.override_count) }}</td>
       <td class="num">{{ review_override_count(job.id, item.override_count) }}</td>
-      <td>{{ job.parent_company or "값 없음" }}</td>
+      <td>{{ job.parent_company_name or "값 없음" }}</td>
       {% for cell in item.cells %}{{ review_cell(cell) }}{% endfor %}
       <td>{{ job.workflow_id }} - {{ job.workflow_name }}</td>
       <td>{{ job.crawled_at | as_time }}</td>
@@ -215,7 +215,7 @@
     {# 머리글의 열 수와 같아야 한다. 작으면 안내 문구가 왼쪽 몇 칸에 갇히고 오른쪽에 빈 칸이
        줄줄이 남아, 조건에 맞는 것이 없다는 말이 표가 깨진 것처럼 보인다. 스물다섯은
        고르기·번호·고치기·전달·보정·모회사 여섯에 값 칸 열여섯(`OVERRIDABLE_FIELDS`, 0025 가
-       `job_major`·`job_minor` 를 더해 열넷에서 늘었다)과 워크플로우·수집 시각·원문 셋을
+       `job_field`·`job_role` 를 더해 열넷에서 늘었다)과 워크플로우·수집 시각·원문 셋을
        더한 수다. 중복 조건이 걸리면 묶음 열이 하나 는다.
        `tests/test_ui_review_columns.py` 가 이 수를 머리글에서 세어 맞춘다 #}
     {{ empty_row(fields|length + (10 if dup_picked else 9), "조건에 맞는 공고가 없다. 조회 조건을 넓히거나, 워크플로우가 한 번이라도 실행됐는지 워크플로우 화면에서 확인한다") }}

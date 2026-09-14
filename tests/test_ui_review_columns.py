@@ -75,7 +75,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         connection.execute(
             """
             INSERT INTO normalized_jobs
-                   (raw_job_id, parent_company, company, title, body, source_url)
+                   (raw_job_id, parent_company_name, company_name, title, body, source_url)
             VALUES (?, ?, '엘지전자', ?, '본문', ?)
             """,
             (raw_id, PARENT, f"공고 {raw_id}", source_url),

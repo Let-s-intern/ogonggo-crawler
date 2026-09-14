@@ -15,7 +15,7 @@
 
 ## 회사명은 두 칸이다
 
-`parent_company` 는 그 크롤러의 `crawlers.default_company`, **오직 그것뿐이다.** 비어 있으면
+`parent_company_name` 는 그 크롤러의 `crawlers.default_company`, **오직 그것뿐이다.** 비어 있으면
 NULL 이다 — 크롤러 이름으로 대신 채우지 않는다.
 
 **2026-08-26 에는 비어 있으면 크롤러 이름을 대신 썼다.** 목록이 회사명을 주지 않는
@@ -25,15 +25,15 @@ NULL 이다 — 크롤러 이름으로 대신 채우지 않는다.
 이다. 이 결정 전에 등록돼 비어 있던 행은 `migrations/0022_backfill_default_company.sql`
 이 그 시점의 크롤러 이름으로 한 번 채웠다. 그 뒤로 새로 만들거나 비운 행은 없다.
 
-`company` 는 `raw_data_json.company` 그대로이고, 뽑히지 않았으면 NULL 이다. **모회사 이름으로
-채우지 않는다.** 채우면 두 칸이 같은 값이 되어 칸을 가른 일이 없던 일이 된다. 자회사가 비어
+`company_name` 는 `raw_data_json.company_name` 그대로이고, 뽑히지 않았으면 NULL 이다. **모회사
+이름으로 채우지 않는다.** 채우면 두 칸이 같은 값이 되어 칸을 가른 일이 없던 일이 된다. 자회사가 비어
 있다는 것은 "이 사이트는 계열사를 말하지 않는다" 는 사실이고, 그 사실이 값으로 남아야 한다.
 
 칸이 하나였을 때는 둘을 합쳐 넣고 어느 쪽을 썼는지 `company_source` 에 적었다. 칸 이름이
 출처를 말하게 된 뒤로 그 열은 할 말이 없다 (`migrations/0018_parent_company.sql`).
 
-`company` 에는 다른 필드와 똑같이 규칙이 적용된다. "삼성전기(주)" 를 "삼성전기" 로 맞추는
-것은 `mapping` 규칙의 일이다. `parent_company` 에는 규칙을 태우지 않는다 — 사이트가 준 원문이
+`company_name` 에는 다른 필드와 똑같이 규칙이 적용된다. "삼성전기(주)" 를 "삼성전기" 로 맞추는
+것은 `mapping` 규칙의 일이다. `parent_company_name` 에는 규칙을 태우지 않는다 — 사이트가 준 원문이
 아니라 운영자가 크롤러에 적어 둔 값을 그대로 옮기는 칸이다.
 
 ## 처음 보는 회사는 행이 생긴다
@@ -48,9 +48,9 @@ NULL 이다 — 크롤러 이름으로 대신 채우지 않는다.
 
 ## 여섯 칸은 수집이, 아홉 칸은 분류가 가진다
 
-수집은 어느 사이트나 확실히 주는 여섯 칸만 한다 — `title` `body` `company` `deadline`
-`start_date` `source_url`. 나머지 아홉 칸은 공고를 읽어 나눈 결과가 채운다 (`app/classify/`).
-그 결과는 `job_classifications` 에 따로 남아 있다.
+수집은 어느 사이트나 확실히 주는 여섯 칸만 한다 — `title` `body` `company_name` `recruitment_end_at`
+`recruitment_start_at` `source_url`. 나머지 아홉 칸은 공고를 읽어 나눈 결과가 채운다
+(`app/classify/`). 그 결과는 `job_classifications` 에 따로 남아 있다.
 
 **분류가 있으면 그 아홉 칸은 전부 분류 값이다.** 규칙이 만든 값이 있어도 덮고, 분류가 빈 칸을
 냈으면 빈 칸이 된다. 칸의 출처가 하나여야 소비 측이 한 가지 규칙으로 읽는다 (2026-08-26 결정).
@@ -59,8 +59,8 @@ NULL 이다 — 크롤러 이름으로 대신 채우지 않는다.
 둔 값(`Permanent`)이 남고, 그 순간 판정 칸 둘의 닫힌 목록이
 `.claude/docs/api-contract.md` 가 약속한 대로 성립하지 않는다.
 
-수집이 주는 여섯 칸은 분류가 건드리지 않는다. `deadline` 은 마감 지난 공고를 거르는 데 쓰이고
-`company` 는 계열사를 가르는 값이라 본문 판독으로 바꿀 것이 아니다.
+수집이 주는 여섯 칸은 분류가 건드리지 않는다. `recruitment_end_at` 은 마감 지난 공고를 거르는 데
+쓰이고 `company_name` 는 계열사를 가르는 값이라 본문 판독으로 바꿀 것이 아니다.
 
 분류가 없으면(아직 돌지 않았으면) 아무것도 하지 않는다. 그 행은 규칙이 만든 값을 그대로
 유지하고, 나중에 분류를 돌리면 다음 정규화에서 넘어간다.
@@ -77,7 +77,7 @@ NULL 이다 — 크롤러 이름으로 대신 채우지 않는다.
 보정도 `raw_jobs` 처럼 읽기만 한다. 정규화가 사람이 고친 값을 다시 쓰면 규칙 하나가 검수 결과를
 덮어쓰게 되고, 그것이 이 테이블을 따로 둔 이유를 없앤다.
 
-`parent_company` 는 보정 대상이 아니다. 모회사가 틀렸으면 크롤러의 값을 고치고 재정규화한다 —
+`parent_company_name` 는 보정 대상이 아니다. 모회사가 틀렸으면 크롤러의 값을 고치고 재정규화한다 —
 공고 한 건이 아니라 그 크롤러가 모은 전부가 함께 고쳐지고, 그것이 맞는 단위다.
 
 ## 빈 값에는 규칙을 적용하지 않는다
@@ -142,7 +142,7 @@ _BLANK_RUN = re.compile(r"\n{3,}")
 
 # 규칙이 만드는 필드가 아니라 크롤러가 정하는 값이다. `NORMALIZED_FIELDS` 에 넣지 않는다 —
 # 그 목록은 "규칙이 값을 바꿀 수 있는 칸" 이고 이 칸은 그대로 옮기는 자리다.
-PARENT_COMPANY = "parent_company"
+PARENT_COMPANY = "parent_company_name"
 
 # 사람이 고칠 수 있는 필드. `job_field_overrides.field_name` 의 CHECK 제약과 같은 값이어야
 # 한다. `source_url` 은 공고의 신원이라 들어 있지 않다.
@@ -195,15 +195,15 @@ def load_rules(conn: sqlite3.Connection) -> list[Rule]:
 def normalize_fields(
     raw: Mapping[str, object],
     rules: Sequence[Rule],
-    parent_company: str | None = None,
+    parent_company_name: str | None = None,
     classification: Mapping[str, str] | None = None,
 ) -> dict[str, str | None]:
     """원문 필드에서 `normalized_jobs` 의 값들을 만든다. 값이 없는 필드는 None 이다.
 
-    `parent_company` 는 규칙을 타지 않고 받은 값 그대로 나온다. 빈 값은 NULL 이다 — 빈
+    `parent_company_name` 는 규칙을 타지 않고 받은 값 그대로 나온다. 빈 값은 NULL 이다 — 빈
     문자열로 채우면 "모회사를 모른다" 와 "모회사가 빈 이름이다" 가 구분되지 않는다.
 
-    `company` 는 이제 다른 필드와 똑같다. 뽑히지 않았으면 NULL 이고, 모회사 이름이 그 자리를
+    `company_name` 는 이제 다른 필드와 똑같다. 뽑히지 않았으면 NULL 이고, 모회사 이름이 그 자리를
     메우지 않는다.
     """
     ordered = _by_field(rules)
@@ -217,18 +217,19 @@ def normalize_fields(
         for rule in ordered.get(field_name, ()):
             value = _apply(value, rule)
             if not value:
-                # 규칙이 값을 비웠으면 거기서 멈춘다. 빈 값을 다음 규칙에 넘기면
-                # date_parse 가 읽을 것이 없다며 실패하고, 그 공고가 통째로 빠진다.
-                # "상시채용" 을 mapping 으로 비우는 것이 이 경로다 — deadline 만 NULL 이 되고
-                # 공고는 남아야 한다.
+                # 규칙이 값을 비웠으면 거기서 멈춘다. 빈 값을 다음 규칙에 넘기면 date_parse 가 읽을
+                # 것이 없다며 실패하고, 그 공고가 통째로 빠진다. "상시채용" 을 mapping 으로 비우는
+                # 것이 이 경로다 — recruitment_end_at 만 NULL 이 되고 공고는 남아야 한다.
                 break
         result[field_name] = value or None
     # 마감을 못 뽑았거나 규칙이 비웠으면(`상시채용` 매핑 등) "상시모집" 으로 채운다
     # (2026-08-29 결정). 빈 마감은 셀렉터가 놓친 것과 정말 마감이 없는 상시채용을 화면에서
-    # 구분하지 못했다 — `career_level` 을 "무관" 으로 채운 것과 같은 실사용 판단이다
-    if result.get("deadline") is None:
-        result["deadline"] = "상시모집"
-    result[PARENT_COMPANY] = parent_company if parent_company and parent_company.strip() else None
+    # 구분하지 못했다 — `experience_type` 을 "무관" 으로 채운 것과 같은 실사용 판단이다
+    if result.get("recruitment_end_at") is None:
+        result["recruitment_end_at"] = "상시모집"
+    result[PARENT_COMPANY] = (
+        parent_company_name if parent_company_name and parent_company_name.strip() else None
+    )
     return apply_classification(result, classification)
 
 
@@ -242,11 +243,11 @@ def apply_classification(
     가진 채로 남고, 나중에 분류를 돌리면 재정규화 없이도 다음 정규화에서 넘어간다.
 
     수집이 주는 여섯 칸은 `STORED_CLASSIFY_FIELDS` 에 없으므로 여기를 지나가지 않는다.
-    `job_major`/`job_minor` 는 `job_taxonomy` 표에서 고르는 판정 칸이라 정적 스키마 목록
+    `job_field`/`job_role` 는 `job_taxonomy` 표에서 고르는 판정 칸이라 정적 스키마 목록
     (`CLASSIFY_FIELDS`)에는 없지만, 저장 경로는 이 둘까지 아는 `STORED_CLASSIFY_FIELDS` 를
     쓴다(`app/classify/schema.py`).
 
-    **`career_level` 만 빈 칸을 "무관" 으로 채운다 (2026-08-28 결정).** 근거가 없어 판단하지
+    **`experience_type` 만 빈 칸을 "무관" 으로 채운다 (2026-08-28 결정).** 근거가 없어 판단하지
     못한 것과 사이트가 경력무관이라고 밝힌 것은 원래 다른 뜻이지만, 실사용에서는 사이트가
     경력을 아예 언급하지 않은 공고 대부분이 실제로 경력무관이다. 다른 칸은 이 규칙을 타지
     않는다 — 빈 칸이 그대로 있어야 검수 화면에서 못 뽑은 것을 잡아낼 수 있다.
@@ -255,8 +256,8 @@ def apply_classification(
         return fields
     for name in STORED_CLASSIFY_FIELDS:
         fields[name] = classification.get(name, "").strip() or None
-    if fields.get("career_level") is None:
-        fields["career_level"] = "무관"
+    if fields.get("experience_type") is None:
+        fields["experience_type"] = "무관"
     return fields
 
 
@@ -370,7 +371,8 @@ def normalized_values(
     버린다. 사람이 고친 제목은 그 위에 덮인다.
 
     직무가 조직 아래 나뉜 공고는 직무 이름에 조직 이름 줄이 함께 온다(`HS사업본부` / `기계`).
-    제목과 `job_role` 에는 한 줄로 이어 넣는다 — 줄바꿈이 든 제목은 목록에서 잘려 보인다.
+    제목에는 한 줄로 이어 넣는다 — 줄바꿈이 든 제목은 목록에서 잘려 보인다. 직무 이름은 분류가
+    뽑은 `position_name` 이고, 오공고에 받을 칸이 없어 제목에만 쓴다 (2026-09-14 결정).
     """
     part = part or PostingPart()
     source_url, data = read_raw(conn, raw_job_id)
@@ -380,8 +382,6 @@ def normalized_values(
         read_parent_company(conn, raw_job_id),
         read_classification(conn, raw_job_id, part.number),
     )
-    if fields.get("job_role"):
-        fields["job_role"] = " ".join(str(fields["job_role"]).split())
     if part.split:
         source_url = f"{source_url}#{part.number}"
         role = " ".join(part.role.split())
@@ -403,7 +403,7 @@ def insert_normalized(
     """
     part = part or PostingPart()
     source_url, fields = normalized_values(conn, raw_job_id, rules, part)
-    companies.register(conn, fields["company"], fields[PARENT_COMPANY])
+    companies.register(conn, fields["company_name"], fields[PARENT_COMPANY])
     # 컬럼 이름은 이 모듈의 상수에서만 온다. 밖에서 오는 값이 들어오지 않는다. 손으로 적은
     # 목록을 두면 칸이 늘 때마다 여기와 `NORMALIZED_FIELDS` 가 갈리고, 갈린 순간 새 칸은
     # 조용히 NULL 로만 남는다
@@ -486,9 +486,9 @@ def flatten_html(value: str) -> str:
 def _parse_date(value: str, rule: Rule, config: DateParseConfig) -> str:
     """`formats` 를 순서대로 시도한다. 하나도 맞지 않으면 실패다.
 
-    맞지 않는 값을 원문 그대로 통과시키지 않는다. 그러면 `deadline` 컬럼에 날짜와 "상시채용"
-    이 섞여 들어가고, 소비 측은 그것을 날짜로 읽는다. 날짜가 아닌 표기가 섞이는 사이트라면
-    앞 순번에 `mapping` 규칙을 두어 먼저 걸러야 한다.
+    맞지 않는 값을 원문 그대로 통과시키지 않는다. 그러면 `recruitment_end_at` 컬럼에 날짜와
+    "상시채용" 이 섞여 들어가고, 소비 측은 그것을 날짜로 읽는다. 날짜가 아닌 표기가 섞이는
+    사이트라면 앞 순번에 `mapping` 규칙을 두어 먼저 걸러야 한다.
     """
     text = value.strip()
     for fmt in config.formats:

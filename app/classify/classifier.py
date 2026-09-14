@@ -6,7 +6,7 @@
 ## 칸이 두 가지다
 
 **뽑는 칸** 일곱은 원문 글자를 그대로 옮긴다. 옮긴 값은 원문에서 그대로 찾을 수 있어야 한다.
-여섯은 본문에서 오고 `job_role` 하나만 **제목**에서 온다 — 열한 사이트에서 제목이 직무를
+여섯은 본문에서 오고 `position_name` 하나만 **제목**에서 온다 — 열한 사이트에서 제목이 직무를
 말하는 곳이 아홉이고 그중 본문이 같은 글자를 되풀이하는 곳은 셋뿐이었다
 (`tests/test_job_role_source.py`).
 
@@ -25,16 +25,16 @@
 **보내는 것은 제목과 상세 원문뿐이고 상한이 있다.** 원본 HTML 도 페이지도 보내지 않는다.
 원문이 없는 건은 본문으로 떨어진다 (`app/classify/store.py`). 상한을 넘으면 잘라 보내고 그
 사실을 `notes` 에 남긴다. 자른 것으로 무엇을 놓쳤는지는 응답을 보는 사람이 알아야 한다.
-제목은 자르지 않는다 — 한 줄이고, 그 한 줄이 `job_role` 의 출처다.
+제목은 자르지 않는다 — 한 줄이고, 그 한 줄이 `position_name` 의 출처다.
 
 **깨진 응답만 1회 다시 묻는다.** 스키마에 없는 칸을 지어낸 응답은 다시 물어도 같은 답이 온다.
 
-**이미 값이 있는 칸은 채우지 않고 제안한다.** 수집이 채우는 여섯 칸 중 `company`·`deadline`·
-`start_date` 셋은 값이 있으면 아무리 근거가 있어도 그 자리에서 덮지 않는다 — `deadline` 은
-마감 지난 공고를 거르고 `company` 는 계열사를 가르는 값이라 모델 판단 하나로 바뀌면 안 된다
-(`.claude/tasks/todo/prd-side-workflows.md` 6절). 대신 `ClassificationResult.suggestions` 로
-나가고, 저장은 `job_field_suggestions` 하나뿐이다 — 사람이 검수 화면에서 수락해야 값이
-바뀐다.
+**이미 값이 있는 칸은 채우지 않고 제안한다.** 수집이 채우는 여섯 칸 중
+`company_name`·`recruitment_end_at`·`recruitment_start_at` 셋은 값이 있으면 아무리 근거가 있어도 그
+자리에서 덮지 않는다 — `recruitment_end_at` 은 마감 지난 공고를 거르고 `company_name` 는 계열사를
+가르는 값이라 모델 판단 하나로 바뀌면 안 된다 (`.claude/tasks/todo/prd-side-workflows.md` 6절). 대신
+`ClassificationResult.suggestions` 로 나가고, 저장은 `job_field_suggestions` 하나뿐이다 — 사람이
+검수 화면에서 수락해야 값이 바뀐다.
 
 호출 자체와 비용 기록은 고른 제공자 항목이 한다 (`app/llm/`). 셀렉터 생성과 같은 경로이고,
 **이 파일은 어느 제공자인지 모른다** — 그 선택은 설정이 정한다 (`app/llm/providers.py`).
@@ -61,8 +61,8 @@ from app.classify.schema import (
     COLLECTED_REVIEW_FIELDS,
     COLLECTED_REVIEW_LABELS,
     EXTRACT_FIELDS,
-    JOB_MAJOR,
-    JOB_MINOR,
+    JOB_FIELD,
+    JOB_ROLE,
     JUDGE_CHOICES,
     UNDECIDED,
     Classification,
@@ -132,12 +132,12 @@ _PROMPT = """아래는 채용공고의 제목과 본문이다. 줄마다 앞에 
 - 모든 직무에 똑같이 해당하는 내용(공통 자격요건, 복지, 전형 절차, 회사 소개 등)은 common 에
   한 번만 담는다. 공고마다 common 이 붙으므로 같은 내용을 postings 에 되풀이하지 않는다.
 - 한 직무에만 해당하는 내용은 그 직무의 posting 에 담는다.
-- job_role 과 판정하는 칸은 posting 마다 그 직무를 보고 답한다. common 에는 없다.
+- position_name 과 판정하는 칸은 posting 마다 그 직무를 보고 답한다. common 에는 없다.
 - 직무가 하나인 공고는 전부 그 posting 에 담고 common 을 비워 둬도 된다.
 
 # 뽑는 칸 — 어느 줄의 어느 부분인지를 조각으로 답한다
 
-- job_role: 직무. **직무가 하나인 공고는 제목([0])에서만 가져온다.** 그 공고가 어떤 일을
+- position_name: 직무. **직무가 하나인 공고는 제목([0])에서만 가져온다.** 그 공고가 어떤 일을
   할 사람을 뽑는지 제목이 말하는 부분이다. 회사명·연도·`경력사원 채용`·`영입` 같은 말은
   빼고 직무를 가리키는 부분만 남긴다. 제목이 직무를 말하지 않으면(`전 직군 채용`,
   `신입사원 채용`) 빈 목록으로 둔다. **직무마다 나눈 공고는 본문에서 그 직무의 이름이 적힌
@@ -145,19 +145,19 @@ _PROMPT = """아래는 채용공고의 제목과 본문이다. 줄마다 앞에 
   조직 이름이 적힌 줄도 조각으로 함께 낸다 — 조직 이름 조각을 먼저, 직무 이름 조각을 다음에
   (`orgName: HS사업본부` 와 `[기계]` 이면 `HS사업본부`, `기계`). 다른 조직에 같은 이름의
   직무가 있어 조직 이름이 없으면 어느 공고인지 알 수 없다
-- duties: 주요 업무·담당 업무
-- requirements: 자격요건·지원자격
-- preferred: 우대사항
+- responsibilities: 주요 업무·담당 업무
+- qualifications: 자격요건·지원자격
+- preferred_qualifications: 우대사항
 - hiring_process: 전형 절차
-- work_location: 근무지
+- region: 근무지
 - company_and_team_introduction: 회사·팀 소개. **공고에 `회사 소개`·`팀 소개`·`회사 및
   팀 소개` 같은 소제목으로 된 구역이 있을 때만** 그 구역의 내용을 가져온다. 그런 구역이
   없으면 빈 목록으로 둔다. 다른 곳에 흩어진 회사 소개 문장은 모아 오지 않는다
 - compensation: 급여·처우·연봉
 - benefits: 복지·혜택
 - recruitment_headcount: 모집 인원. 적힌 그대로 옮긴다(`0명`, `O명`, `00명` 도 그대로)
-- etc_info: 위 어디에도 맞지 않는, **이 공고만의** 안내(전형 유의사항, 제출 서류, 보훈·장애인
-  우대 문구 등)
+- recruitment_notice: 위 어디에도 맞지 않는, **이 공고만의** 안내(전형 유의사항, 제출 서류,
+  보훈·장애인 우대 문구 등)
 
 답하는 모양:
 - 칸마다 조각 목록으로 답한다. 조각 하나는 {{"line": 줄 번호, "text": 그 줄에서 이 칸에
@@ -165,7 +165,7 @@ _PROMPT = """아래는 채용공고의 제목과 본문이다. 줄마다 앞에 
 - **text 는 그 줄에 적힌 글자 그대로 옮긴다.** 단어를 바꾸거나, 요약하거나, 줄이거나,
   오타를 고치지 않는다. 줄 앞의 [번호] 는 text 에 넣지 않는다.
 - 공고의 소제목이 칸 이름과 달라도 된다. `지원자격`·`필수요건`·`이런 분을 찾아요` 아래
-  내용은 requirements 다. 소제목 자체는 조각에 넣지 않는다.
+  내용은 qualifications 다. 소제목 자체는 조각에 넣지 않는다.
 - 한 줄에 소제목과 내용이 같이 있으면(`주요업무 : 결제 서버 개발`) 내용 부분만 옮긴다
   (`결제 서버 개발`).
 - 한 줄에 여러 칸이 섞여 있으면(`근무지: 성남 | 고용형태: 정규직`) 그 칸에 해당하는
@@ -174,22 +174,23 @@ _PROMPT = """아래는 채용공고의 제목과 본문이다. 줄마다 앞에 
   값인지 알려 주는 표시다. 키 이름은 옮기지 않고 값 부분만 옮긴다(`본사(서울 63빌딩)`).
 - 내용이 여러 줄이면 줄마다 조각을 하나씩 낸다. 본문 여러 곳에 흩어져 있으면 그 줄들을
   모두 조각으로 낸다.
-- 어느 칸에도 맞지 않는 내용만 etc_info 에 모은다. 본문 전체를 etc_info 에 넣지 않는다.
+- 어느 칸에도 맞지 않는 내용만 recruitment_notice 에 모은다. 본문 전체를 recruitment_notice 에 넣지
+  않는다.
 - **슬로건·화면 UI 문구는 어느 칸에도 옮기지 않는다.** "간편하면서도 안전한 금융을
   만든다" 같은 한 줄 슬로건, "N개 계열사·N개의 포지션이 열려 있어요"·"1개 포지션" 같은
   화면 카운트 문구는 이 공고 하나만 말하는 정보가 아니다. 회사·팀 소개는 소제목 구역이
   있을 때 company_and_team_introduction 에만 담고, 다른 칸에는 옮기지 않는다. 공고 자체에
-  대한 안내만 etc_info 에 담는다.
+  대한 안내만 recruitment_notice 에 담는다.
 
 # 판정하는 칸 — 본문을 읽고 목록에서 고른다
 
 - employment_type: 고용형태. {employment_type}
-- career_level: 경력 구분. {career_level}
+- experience_type: 경력 구분. {experience_type}
 - education_level: 요구 학력. {education_level}
 
 규칙:
 - **이 칸들은 글자가 본문에 그대로 없어도 된다.** 본문을 읽고 판단해서 고른다. `채용 후
-  정규직 전환` 이면 employment_type 은 인턴이다. `5년 이상 경험` 이면 career_level 은
+  정규직 전환` 이면 employment_type 은 인턴이다. `5년 이상 경험` 이면 experience_type 은
   경력이다.
 - education_level 은 지원 자격이 요구하는 **최소 학력**을 고른다. `학사 이상`·`대졸`
   이면 학사, `고졸 이상` 이면 고졸, `학력 무관` 이면 무관이다. 우대사항에만 있는
@@ -200,7 +201,7 @@ _PROMPT = """아래는 채용공고의 제목과 본문이다. 줄마다 앞에 
   근거가 되는 본문 문장을 그대로 옮겨 적는다.** 한 문장이면 된다. 본문에 없는 문장을 적지
   않는다. 줄 앞의 [번호] 는 넣지 않는다. 근거를 적을 수 없으면 그 칸을 판단불가 로 둔다.
 - 회사명·모집 시작일·마감일은 위 칸 어디에도 넣지 않는다. 그 셋을 원문과 견주는 자리는
-  값이 이미 있을 때만 아래에 따로 나온다. 제목도 `job_role` 말고는 어느 칸에도 넣지 않는다.
+  값이 이미 있을 때만 아래에 따로 나온다. 제목도 `position_name` 말고는 어느 칸에도 넣지 않는다.
 {taxonomy_block}{current_values_block}
 [제목]
 {title}
@@ -267,9 +268,9 @@ class ClassificationResult:
     usage: Usage
     attempts: int
     notes: list[str] = field(default_factory=list)
-    # 이미 값이 있는 칸(`company`·`deadline`·`start_date`)에 원문이 다르다고 낸 값. 근거
-    # 검사를 통과하고 지금 값과 실제로 다른 것만 남는다 — 저장은 `job_field_suggestions` 뿐이고
-    # 여기 값이 `normalized_jobs` 를 자동으로 덮는 경로는 없다
+    # 이미 값이 있는 칸(`company_name`·`recruitment_end_at`·`recruitment_start_at`)에 원문이
+    # 다르다고 낸 값. 근거 검사를 통과하고 지금 값과 실제로 다른 것만 남는다 — 저장은
+    # `job_field_suggestions` 뿐이고 여기 값이 `normalized_jobs` 를 자동으로 덮는 경로는 없다
     suggestions: dict[str, str] = field(default_factory=dict)
     suggestion_reasons: dict[str, str] = field(default_factory=dict)
 
@@ -308,7 +309,7 @@ _PART_BLOCK = """
 이 글은 직무가 여럿인 긴 공고에서 **한 직무**의 줄과 모든 직무에 공통인 줄만 떼어 온 것이다.
 줄 번호는 원래 공고의 번호라 건너뛴 번호가 있다.
 - postings 는 하나만 낸다. 이 직무다.
-- job_role 은 제목이 아니라 본문에서 이 직무의 이름이 적힌 줄에서 가져온다. 직무가 사업부·조직
+- position_name 은 제목이 아니라 본문에서 이 직무의 이름이 적힌 줄에서 가져온다. 직무가 사업부·조직
   아래에 있으면 그 조직 이름이 적힌 줄도 조각으로 먼저 낸다.
 - 공통 줄의 내용도 이 공고의 내용이다. common 에 담아도 되고 posting 에 담아도 된다.
 """
@@ -401,17 +402,17 @@ def _taxonomy_block(tree: Sequence[tuple[str, tuple[str, ...]]]) -> str:
     )
     return (
         "\n# 직무 분류 — 아래 목록에서만 고른다\n\n"
-        "job_major 는 대분류, job_minor 는 그 대분류 밑의 소분류다. 목록에 없는 이름을\n"
+        "job_field 는 대분류, job_role 는 그 대분류 밑의 소분류다. 목록에 없는 이름을\n"
         "새로 만들지 않는다. 직무마다 나눈 공고는 posting 마다 그 직무를 보고 고른다.\n\n"
         "**가능하면 항상 채운다.** 정확히 들어맞는 대분류가 없어도, 이 공고가 하는 일과\n"
         "가장 가까운 대분류를 고른다 — 완벽히 맞는 것을 찾는 것이 아니라 다른 후보보다\n"
-        "조금이라도 더 가까운 것을 고르는 일이다. job_major 를 판단불가 로 두는 것은 본문에\n"
+        "조금이라도 더 가까운 것을 고르는 일이다. job_field 를 판단불가 로 두는 것은 본문에\n"
         "무슨 일을 하는 사람을 뽑는지 알 만한 내용이 전혀 없을 때뿐이다.\n\n"
         "대분류는 골랐는데 그 밑의 소분류 중 맞는 것이 없으면, 그 대분류 목록의 마지막에\n"
-        "있는 `기타`로 시작하는 소분류(예: 기타IT·개발)를 고른다 — job_minor 를 판단불가 로\n"
-        "두지 않는다. job_minor 는 반드시 그 job_major 줄에 적힌 소분류 중에서 고른다 —\n"
+        "있는 `기타`로 시작하는 소분류(예: 기타IT·개발)를 고른다 — job_role 를 판단불가 로\n"
+        "두지 않는다. job_role 는 반드시 그 job_field 줄에 적힌 소분류 중에서 고른다 —\n"
         "다른 대분류의 소분류를 고르지 않는다.\n\n"
-        "고른 값마다 job_major_evidence / job_minor_evidence 에 그렇게 판단한 본문 근거\n"
+        "고른 값마다 job_field_evidence / job_role_evidence 에 그렇게 판단한 본문 근거\n"
         "문장을 그대로 옮겨 적는다. `기타` 소분류를 골랐을 때도 이 공고가 그 대분류의 일을\n"
         "한다고 볼 수 있는 본문 문장을 그대로 옮겨 적는다 — 근거 문장은 항상 원문에 있는\n"
         "그대로여야 하고, 소분류 이름 자체를 짐작해 지어내지 않는다.\n\n"
@@ -433,7 +434,7 @@ def build_prompt(
 
     `body` 는 상세 원문이거나, 원문이 없는 건에서 본문이다 (`app/classify/store.py`).
 
-    `title` 이 `job_role` 의 출처다. 제목을 보내지 않으면 그 칸은 영원히 빈다. 제목이 없는
+    `title` 이 `position_name` 의 출처다. 제목을 보내지 않으면 그 칸은 영원히 빈다. 제목이 없는
     공고는 빈 줄이 들어가고, 모델은 옮길 것이 없어 빈 문자열을 낸다 — 수집이 제목을 못 뽑는
     것은 수집의 실패이지 여기서 메울 일이 아니다 (`app/crawler/parser.py`).
 
@@ -441,10 +442,10 @@ def build_prompt(
     고르는지 모르는 채로 고르면 목록에서 가장 가까운 값이 아니라 첫 값이 나온다. 목록의
     출처는 스키마 하나다 — 여기에 손으로 적으면 두 목록이 갈린다.
 
-    `current_values` 는 `company`·`deadline`·`start_date` 중 이미 채워진 값이다
-    (`app/classify/store.py` 의 `read_current_values`). 무엇이 이미 채워져 있는지 모르면
-    "원문과 다르다" 를 모델이 말할 수 없다 — 값이 없으면 그 칸은 프롬프트에 아예 나오지 않고,
-    나오지 않은 칸을 모델이 지어내 제안하면 근거 검사가 버린다.
+    `current_values` 는 `company_name`·`recruitment_end_at`·`recruitment_start_at` 중 이미 채워진
+    값이다 (`app/classify/store.py` 의 `read_current_values`). 무엇이 이미 채워져 있는지 모르면
+    "원문과 다르다" 를 모델이 말할 수 없다 — 값이 없으면 그 칸은 프롬프트에 아예 나오지 않고, 나오지
+    않은 칸을 모델이 지어내 제안하면 근거 검사가 버린다.
 
     `taxonomy_tree` 는 `app.taxonomy.enabled_tree()` 가 만든 (대분류, 소분류들) 목록이다.
     빈 목록이면(표가 비었거나 씨앗을 아직 안 넣었으면) 이 구역 자체가 프롬프트에 없다.
@@ -591,12 +592,12 @@ async def classify_body(
     보내고, 한 번에 나눈 공고는 직무 목록을 알려 같은 개수로 답하게 한다. 개수가 다르면
     `parts_mismatch` 로 실패하고 부르는 쪽은 기존 분류를 그대로 둔다.
 
-    `title` 은 `job_role` 의 출처다. 비어 있어도 나머지 여덟 칸은 그대로 나오므로 분류가
+    `title` 은 `position_name` 의 출처다. 비어 있어도 나머지 여덟 칸은 그대로 나오므로 분류가
     실패하지 않는다 — 나눌 것이 없는 것은 본문이 빈 경우뿐이다.
 
-    `current_values` 는 `company`·`deadline`·`start_date` 중 이미 채워진 값이다. 값이 있는
-    칸에 원문이 다른 값을 말하면 `ClassificationResult.suggestions` 로 나가고, `fields` 의
-    아홉 칸은 건드리지 않는다 — 이 셋은 애초에 `CLASSIFY_FIELDS` 에 없다.
+    `current_values` 는 `company_name`·`recruitment_end_at`·`recruitment_start_at` 중 이미 채워진
+    값이다. 값이 있는 칸에 원문이 다른 값을 말하면 `ClassificationResult.suggestions` 로 나가고,
+    `fields` 의 아홉 칸은 건드리지 않는다 — 이 셋은 애초에 `CLASSIFY_FIELDS` 에 없다.
 
     `taxonomy_tree` 와 `response_model` 은 함께 온다 — 부르는 쪽(`app/classify/batch.py`)이
     배치 시작 전에 `app.taxonomy.enabled_tree()` 와 `build_classification_model()` 로 한 번만
@@ -850,10 +851,10 @@ def _taxonomy_choices(
     """근거 검사가 직무 분류를 볼 목록. 표가 비었으면 None 이라 그 두 칸을 보지 않는다."""
     if not taxonomy_tree:
         return None
-    choices = {JOB_MAJOR: tuple(major for major, _ in taxonomy_tree)}
+    choices = {JOB_FIELD: tuple(major for major, _ in taxonomy_tree)}
     minors = tuple(minor for _, minor_list in taxonomy_tree for minor in minor_list)
     if minors:
-        choices[JOB_MINOR] = minors
+        choices[JOB_ROLE] = minors
     return choices
 
 
@@ -945,7 +946,7 @@ def _posting_result(
 
     # 받은 값을 그 자리에서 **보낸 그 글**에 돌려 본다. 못 찾은 칸은 버린다. 보낸 것과
     # 다른 값에 돌려 보면 옳게 뽑은 칸이 버려진다 — 원문으로 물어 놓고 본문에 돌려 보면
-    # 본문 밖 이름표에서 온 근무지가 통째로 사라진다. 제목까지 보는 것은 `job_role` 이
+    # 본문 밖 이름표에서 온 근무지가 통째로 사라진다. 제목까지 보는 것은 `position_name` 이
     # 거기서 오기 때문이다 (`app/classify/grounding.py`).
     #
     # 넘기는 것은 자르기 전 값이다. 모델이 본 것은 앞 `MAX_BODY_CHARS` 자뿐이라, 전체에

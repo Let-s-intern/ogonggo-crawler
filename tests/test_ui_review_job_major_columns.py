@@ -60,14 +60,15 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     # 1번은 분류가 끝난 건, 2번은 아직 분류를 돌리지 않은 건이다
     connection.execute(
         """
-        INSERT INTO normalized_jobs (raw_job_id, company, title, source_url, job_major, job_minor)
+        INSERT INTO normalized_jobs (raw_job_id, company_name, title, source_url, job_field,
+        job_role)
         VALUES (1, '예시회사', ?, ?, ?, ?)
         """,
         (TITLES[1], f"{LIST_URL}1/", MAJOR, MINOR),
     )
     connection.execute(
         """
-        INSERT INTO normalized_jobs (raw_job_id, company, title, source_url)
+        INSERT INTO normalized_jobs (raw_job_id, company_name, title, source_url)
         VALUES (2, '예시회사', ?, ?)
         """,
         (TITLES[2], f"{LIST_URL}2/"),
@@ -96,7 +97,7 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
 
 REVIEW_TABLE = re.compile(r"<caption>검수 대상 공고</caption>.*?</table>", re.DOTALL)
 CELL = re.compile(
-    r'id="review-cell-(\d+)-(job_major|job_minor)"[^>]*>\s*<span[^>]*>([^<]*)</span>', re.DOTALL
+    r'id="review-cell-(\d+)-(job_field|job_role)"[^>]*>\s*<span[^>]*>([^<]*)</span>', re.DOTALL
 )
 
 
@@ -106,10 +107,11 @@ def _table(client: TestClient, **params: str) -> str:
     return found.group(0)
 
 
-def test_직무와_직무_대분류_소분류_머리글이_따로_있다(client: TestClient) -> None:
+def test_직무_대분류_소분류_머리글이_있다(client: TestClient) -> None:
     table = _table(client)
 
-    assert ">직무</th>" in table
+    # 제목에서 옮기던 자유 글자 직무 열은 0031 이 지웠다
+    assert ">직무</th>" not in table
     assert ">직무 대분류</th>" in table
     assert ">직무 소분류</th>" in table
 
@@ -118,7 +120,7 @@ def test_분류된_건은_값이_안된_건은_값없음이_나온다(client: Te
     html = client.get("/ui/review").text
     cells = {(int(m.group(1)), m.group(2)): m.group(3) for m in CELL.finditer(html)}
 
-    assert cells[(1, "job_major")] == MAJOR
-    assert cells[(1, "job_minor")] == MINOR
-    assert cells[(2, "job_major")] == "값 없음"
-    assert cells[(2, "job_minor")] == "값 없음"
+    assert cells[(1, "job_field")] == MAJOR
+    assert cells[(1, "job_role")] == MINOR
+    assert cells[(2, "job_field")] == "값 없음"
+    assert cells[(2, "job_role")] == "값 없음"

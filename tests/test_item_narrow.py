@@ -25,8 +25,8 @@ def selectors(item: str, title: str, link: str = "", date: str = "dd.info_text")
             "detail": {
                 "title": "h1",
                 "body": "div.body",
-                "requirements": "",
-                "deadline": "",
+                "qualifications": "",
+                "recruitment_end_at": "",
                 "department": "",
             },
         }

@@ -38,7 +38,7 @@ def insert_job(
     raw_job_id: int,
     *,
     complete: bool,
-    job_major: str = "IT·개발",
+    job_field: str = "IT·개발",
     blank_count: int = 0,
 ) -> None:
     """`blank_count` 만큼 칸을 비운다. `complete=False` 면 60% 미만이 되도록 넉넉히 비운다."""
@@ -50,25 +50,25 @@ def insert_job(
         (raw_job_id, f"{LIST_URL}{raw_job_id}/", f"hash-{raw_job_id}"),
     )
     values = {name: f"값-{name}" for name in NORMALIZED_FIELDS}
-    values["job_major"] = job_major
+    values["job_field"] = job_field
     values["title"] = f"공고 {raw_job_id}"
-    values["company"] = "엘지전자"
+    values["company_name"] = "엘지전자"
     # title/company/job_role/job_major 는 카드 확인에 쓰므로 비우지 않는다. 0028 로 칸이
     # 스물하나가 되어 60% 는 12.6 -> 13칸 이상이 있어야 완성이다. 아홉 칸을 비우면 열두
     # 칸(57.1%)만 남아 미완성이 된다
     blankable = [
-        "deadline",
+        "recruitment_end_at",
         "body",
-        "requirements",
-        "start_date",
-        "duties",
-        "preferred",
+        "qualifications",
+        "recruitment_start_at",
+        "responsibilities",
+        "preferred_qualifications",
         "hiring_process",
-        "etc_info",
-        "work_location",
-        "career_level",
+        "recruitment_notice",
+        "region",
+        "experience_type",
         "employment_type",
-        "job_minor",
+        "job_role",
     ]
     blanks = 9 if not complete else blank_count
     for name in blankable[:blanks]:
@@ -76,7 +76,8 @@ def insert_job(
     columns = list(NORMALIZED_FIELDS)
     conn.execute(
         f"""
-        INSERT INTO normalized_jobs (raw_job_id, source_url, parent_company, {", ".join(columns)})
+        INSERT INTO normalized_jobs
+               (raw_job_id, source_url, parent_company_name, {", ".join(columns)})
         VALUES (?, ?, 'LG', {", ".join("?" for _ in columns)})
         """,
         (raw_job_id, f"{LIST_URL}{raw_job_id}/", *(values[name] for name in columns)),
@@ -181,14 +182,13 @@ def test_로고가_있으면_카드에_나온다(client: TestClient, conn: sqlit
 def test_카드_태그는_직무_대신_직무_분류를_보여준다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
-    """PRD 대분류·소분류가 카드 태그다. `job_role` 은 더 이상 태그로 쓰지 않는다."""
-    insert_job(conn, 1, complete=True, job_major="IT·개발")
+    """PRD 대분류·소분류가 카드 태그다. 0031 전에 태그로 쓰던 자유 글자 직무는 지웠다."""
+    insert_job(conn, 1, complete=True, job_field="IT·개발")
 
     body = client.get("/ui/complete").text
 
     assert "#IT·개발" in body
-    assert "#값-job_minor" in body
-    assert "값-job_role" not in body
+    assert "#값-job_role" in body
 
 
 def test_미리보기에_섹션과_본문이_나온다(client: TestClient, conn: sqlite3.Connection) -> None:
@@ -198,7 +198,7 @@ def test_미리보기에_섹션과_본문이_나온다(client: TestClient, conn:
 
     assert "공고 1" in body
     assert "주요 업무" in body
-    assert "값-duties" in body
+    assert "값-responsibilities" in body
     assert "원문 본문 전체 보기" in body
     assert "값-body" in body
     assert "data-modal-close" in body

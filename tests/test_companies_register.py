@@ -58,8 +58,8 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         connection.close()
 
 
-def add_raw(conn: sqlite3.Connection, company: str, seq: int) -> int:
-    record = {"title": f"공고 {seq}", "body": "본문", "company": company}
+def add_raw(conn: sqlite3.Connection, company_name: str, seq: int) -> int:
+    record = {"title": f"공고 {seq}", "body": "본문", "company_name": company_name}
     cursor = conn.execute(
         """
         INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash)
@@ -109,10 +109,10 @@ def test_a_posting_without_a_subsidiary_registers_the_parent(conn: sqlite3.Conne
 def test_the_name_is_what_the_rules_produced(conn: sqlite3.Connection) -> None:
     """`삼성전기(주)` 와 `삼성전기` 가 두 행이 되면 로고가 절반의 공고에만 붙는다.
 
-    이름을 맞추는 것은 `company` 에 걸린 mapping 규칙의 일이고, 회사 행은 규칙을 지난 값을
+    이름을 맞추는 것은 `company_name` 에 걸린 mapping 규칙의 일이고, 회사 행은 규칙을 지난 값을
     받는다 (`seeds/normalization-rules.json`).
     """
-    rule = build_rule("company", "mapping", {"map": {"삼성전기(주)": "삼성전기"}})
+    rule = build_rule("company_name", "mapping", {"map": {"삼성전기(주)": "삼성전기"}})
 
     insert_normalized(conn, add_raw(conn, "삼성전기(주)", 1), [rule])
     insert_normalized(conn, add_raw(conn, "삼성전기", 2), [rule])
@@ -197,17 +197,18 @@ def test_importing_a_snapshot_registers_its_companies(tmp_path: pathlib.Path) ->
         stored = {
             str(row["name"])
             for row in conn.execute(
-                "SELECT DISTINCT coalesce(company, parent_company) AS name FROM normalized_jobs"
-                " WHERE coalesce(company, parent_company) IS NOT NULL"
+                "SELECT DISTINCT coalesce(company_name, parent_company_name) AS name"
+                " FROM normalized_jobs"
+                " WHERE coalesce(company_name, parent_company_name) IS NOT NULL"
             )
         }
         # 자회사가 있는 행도 모회사가 자기 행을 따로 갖는다 (2026-08-29 결정). 그래서
         # 등록된 이름 집합은 위 `coalesce` 집합에 실제 모회사들을 더한 것과 같다
         parents = {
-            str(row["parent_company"])
+            str(row["parent_company_name"])
             for row in conn.execute(
-                "SELECT DISTINCT parent_company FROM normalized_jobs"
-                " WHERE parent_company IS NOT NULL"
+                "SELECT DISTINCT parent_company_name FROM normalized_jobs"
+                " WHERE parent_company_name IS NOT NULL"
             )
         }
         assert {name for name, _, _ in registered} == stored | parents
@@ -216,11 +217,11 @@ def test_importing_a_snapshot_registers_its_companies(tmp_path: pathlib.Path) ->
 
 
 def add_rule(conn: sqlite3.Connection, config: dict[str, object]) -> None:
-    """`company` 에 mapping 규칙 하나. 재정규화가 DB 에서 규칙을 읽으므로 표에 넣는다."""
+    """`company_name` 에 mapping 규칙 하나. 재정규화가 DB 에서 규칙을 읽으므로 표에 넣는다."""
     conn.execute(
         """
         INSERT INTO normalization_rules (field_name, rule_type, rule_config_json, priority)
-        VALUES ('company', 'mapping', ?, 0)
+        VALUES ('company_name', 'mapping', ?, 0)
         """,
         (json.dumps(config, ensure_ascii=False),),
     )
@@ -231,7 +232,7 @@ def test_renormalizing_registers_a_company_that_had_no_row(conn: sqlite3.Connect
     raw_job_id = add_raw(conn, "삼성SDS", 1)
     conn.execute(
         """
-        INSERT INTO normalized_jobs (raw_job_id, source_url, company, parent_company)
+        INSERT INTO normalized_jobs (raw_job_id, source_url, company_name, parent_company_name)
         VALUES (?, 'https://x/1', '삼성SDS', '삼성전자')
         """,
         (raw_job_id,),

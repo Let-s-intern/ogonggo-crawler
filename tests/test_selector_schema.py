@@ -24,8 +24,8 @@ VALID: dict[str, Any] = {
     "detail": {
         "title": "h1.listing-company .company-name",
         "body": "div.job-description",
-        "requirements": "div.job-description ul.simple",
-        "deadline": "",
+        "qualifications": "div.job-description ul.simple",
+        "recruitment_end_at": "",
         "department": "",
     },
 }
@@ -34,9 +34,9 @@ VALID: dict[str, Any] = {
 def stored(payload: dict[str, Any]) -> dict[str, Any]:
     """저장되는 모양. 선택 필드는 안 적어도 빈 문자열로 채워져 저장된다."""
     filled = json.loads(json.dumps(payload))
-    filled["list"].setdefault("company", "")
+    filled["list"].setdefault("company_name", "")
     filled["list"].setdefault("link_template", "")
-    filled["detail"].setdefault("company", "")
+    filled["detail"].setdefault("company_name", "")
     for name in SPLIT_DETAIL_FIELDS:
         filled["detail"].setdefault(name, "")
     return filled
@@ -46,7 +46,7 @@ def test_valid_payload_passes() -> None:
     selectors = validate_selectors(VALID)
 
     assert selectors.list.item == "ol.list-recent-jobs > li"
-    assert selectors.detail.deadline == ""
+    assert selectors.detail.recruitment_end_at == ""
     assert json.loads(selectors.to_json()) == stored(VALID)
 
 

@@ -81,17 +81,17 @@ SINGLES = (
 
 
 def _rows() -> list[tuple[int, str, str]]:
-    """(raw_job_id, company, title) 한 벌. 워크플로우는 회사 첫 글자로 갈린다."""
+    """(raw_job_id, company_name, title) 한 벌. 워크플로우는 회사 첫 글자로 갈린다."""
     found: list[tuple[int, str, str]] = []
-    for company in SAMSUNG_COMPANIES:
-        found.append((len(found) + 1, company, SAMSUNG))
+    for company_name in SAMSUNG_COMPANIES:
+        found.append((len(found) + 1, company_name, SAMSUNG))
     for _ in range(5):
         found.append((len(found) + 1, POOL_COMPANY, POOL))
     for title in PAIRS:
         found.append((len(found) + 1, f"한화{title[:2]}", title))
         found.append((len(found) + 1, f"한화솔루션{title[:2]}", title))
-    for company, title in SINGLES:
-        found.append((len(found) + 1, company, title))
+    for company_name, title in SINGLES:
+        found.append((len(found) + 1, company_name, title))
     # 제목이 비어 있는 두 건. 셀렉터가 놓친 것이지 중복이 아니다
     found.append((len(found) + 1, "에스케이온", ""))
     found.append((len(found) + 1, "에스케이스퀘어", "   "))
@@ -115,8 +115,8 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     )
     connection.execute("INSERT INTO workflows (crawler_id, name) VALUES (1, '대기업')")
     connection.execute("INSERT INTO workflows (crawler_id, name) VALUES (2, 'SK')")
-    for raw_job_id, company, title in ROWS:
-        workflow_id = 2 if company.startswith("에스케이") else 1
+    for raw_job_id, company_name, title in ROWS:
+        workflow_id = 2 if company_name.startswith("에스케이") else 1
         connection.execute(
             """
             INSERT INTO raw_jobs (id, workflow_id, source_url, raw_data_json, content_hash,
@@ -127,10 +127,10 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         )
         connection.execute(
             """
-            INSERT INTO normalized_jobs (raw_job_id, company, title, source_url, normalized_at)
+            INSERT INTO normalized_jobs (raw_job_id, company_name, title, source_url, normalized_at)
             VALUES (?, ?, ?, ?, '2026-08-20 02:00:00')
             """,
-            (raw_job_id, company, title, f"{LIST_URL}{raw_job_id}/"),
+            (raw_job_id, company_name, title, f"{LIST_URL}{raw_job_id}/"),
         )
     try:
         yield connection
@@ -192,12 +192,12 @@ def test_다른_조건과_함께_걸면_그_안에서만_센다(conn: sqlite3.Co
     """`SK 안에서만 중복 찾기` 다. SK 워크플로우에는 짝이 없다."""
     assert measured(conn, JobFilter(dup=DUP_TITLE, workflow_id=2)) == (0, 0, 0)
     assert measured(conn, JobFilter(dup=DUP_TITLE, workflow_id=1)) == (7, 22, 15)
-    assert measured(conn, JobFilter(dup=DUP_TITLE, company=POOL_COMPANY)) == (1, 5, 4)
+    assert measured(conn, JobFilter(dup=DUP_TITLE, company_name=POOL_COMPANY)) == (1, 5, 4)
 
 
 def test_좁힌_뒤에_짝을_잃은_한_건은_중복이_아니다(conn: sqlite3.Connection) -> None:
     """전체에서 센 묶음을 나중에 거르면 이 한 건이 `중복` 으로 남는다."""
-    picked = JobFilter(dup=DUP_TITLE, company="삼성SDI")
+    picked = JobFilter(dup=DUP_TITLE, company_name="삼성SDI")
     assert measured(conn, picked) == (0, 0, 0)
 
 
@@ -242,10 +242,11 @@ def test_보정으로_고친_제목이_중복_판정에_쓰인다(conn: sqlite3.
     assert before == (1, 5, 4)
     # 삼성SDI 한 건의 회사를 삼성전기로 고치면 그 둘이 제목+회사로 같아진다
     sdi = conn.execute(
-        "SELECT raw_job_id FROM normalized_jobs WHERE company = '삼성SDI'"
+        "SELECT raw_job_id FROM normalized_jobs WHERE company_name = '삼성SDI'"
     ).fetchone()
     conn.execute(
-        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (?, 'company', ?)",
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value)"
+        " VALUES (?, 'company_name', ?)",
         (int(sdi["raw_job_id"]), "삼성전기"),
     )
     assert measured(conn, JobFilter(dup=DUP_TITLE_COMPANY)) == (2, 7, 5)
@@ -366,7 +367,7 @@ def test_조건_전체_지우기는_묶음_전체를_대상으로_한다(
 
 
 def _add_row(
-    conn: sqlite3.Connection, raw_job_id: int, parent: str, company: str | None, title: str
+    conn: sqlite3.Connection, raw_job_id: int, parent: str, company_name: str | None, title: str
 ) -> None:
     """자회사가 빈 행을 하나 더한다. 손으로 센 픽스처를 건드리지 않으려고 테스트 안에서 넣는다."""
     conn.execute(
@@ -379,11 +380,12 @@ def _add_row(
     )
     conn.execute(
         """
-        INSERT INTO normalized_jobs (raw_job_id, parent_company, company, title, source_url,
+        INSERT INTO normalized_jobs (raw_job_id, parent_company_name, company_name, title,
+        source_url,
                                      normalized_at)
         VALUES (?, ?, ?, ?, ?, '2026-08-20 02:00:00')
         """,
-        (raw_job_id, parent, company, title, f"{LIST_URL}{raw_job_id}/"),
+        (raw_job_id, parent, company_name, title, f"{LIST_URL}{raw_job_id}/"),
     )
 
 

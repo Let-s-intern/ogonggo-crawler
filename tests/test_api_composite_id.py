@@ -25,7 +25,7 @@ CONFIG = validate_api_config(
             "url": "https://talent.hyundai.com/api/rec/AP-HM-FO-02730?hgrCd=1&lang=ko",
             "method": "GET",
             "items_path": "data.applyList",
-            "fields": {"title": "recuNoticeNm", "date": "appDispEdDt", "company": "logoNm"},
+            "fields": {"title": "recuNoticeNm", "date": "appDispEdDt", "company_name": "logoNm"},
             "id_field": "recuYy={recuYy}&recuType={recuType}&recuCls={recuCls}",
             "link_template": "https://talent.hyundai.com/apply/applyView.hc?{id}",
         }

@@ -13,7 +13,7 @@
         title="공고 미리보기">
   <div class="relative flex h-36 items-center justify-center bg-white">
     {% if row.logo_url %}
-    <img src="{{ row.logo_url }}" alt="{{ row.company or row.parent_company }} 로고"
+    <img src="{{ row.logo_url }}" alt="{{ row.company_name or row.parent_company_name }} 로고"
          class="h-full w-full object-contain p-1" loading="lazy">
     {% endif %}
     {% if card.d_day %}
@@ -22,10 +22,10 @@
   </div>
   <div class="p-3">
     <p class="mb-0 truncate text-sm font-semibold text-slate-900">
-      {{ row.company or row.parent_company }}
+      {{ row.company_name or row.parent_company_name }}
     </p>
     <p class="mt-1 line-clamp-2 text-sm font-bold text-slate-900">{{ row.title }}</p>
-    {% set tags = [row.job_major, row.job_minor, row.employment_type, row.career_level] | select | list %}
+    {% set tags = [row.job_field, row.job_role, row.employment_type, row.experience_type] | select | list %}
     {% if tags %}
     <p class="mb-0 mt-2 truncate text-xs text-slate-500">
       {% for tag in tags %}#{{ tag }}{% if not loop.last %} {% endif %}{% endfor %}

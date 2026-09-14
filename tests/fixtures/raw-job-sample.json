@@ -1,9 +1,9 @@
 {
   "source_url": "https://example.test/recruit/1042",
   "title": "백엔드 개발자 (Python)",
-  "deadline": "2026-09-30",
+  "recruitment_end_at": "2026-09-30",
   "body": "모집 분야: 서버 개발\n자격 요건: Python 3년 이상\n근무지: 서울 강남구",
-  "company": "예시컴퍼니",
+  "company_name": "예시컴퍼니",
   "view_count": "128",
   "posted_relative": "3일 전",
   "ad_text": "지금 지원하면 커피 쿠폰 증정",

@@ -37,7 +37,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         (URL,),
     )
     connection.executemany(
-        "INSERT INTO normalized_jobs (id, raw_job_id, part, company, title, body, source_url)"
+        "INSERT INTO normalized_jobs (id, raw_job_id, part, company_name, title, body, source_url)"
         " VALUES (?, 7, ?, '예시회사', ?, '본문', ?)",
         [
             (1, 1, f"{TITLE} - 로봇 SW 개발", f"{URL}#1"),
@@ -69,7 +69,7 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
 def suggest(conn: sqlite3.Connection, part: int, value: str) -> None:
     conn.execute(
         "INSERT INTO job_field_suggestions (raw_job_id, part, field_name, value, reason)"
-        " VALUES (7, ?, 'company', ?, '원문 하단 회사명이 다르다')",
+        " VALUES (7, ?, 'company_name', ?, '원문 하단 회사명이 다르다')",
         (part, value),
     )
 
@@ -124,10 +124,10 @@ def test_제안_수락은_그_번호의_제안만_처리한다(
     suggest(conn, 1, "첫째 회사")
     suggest(conn, 2, "둘째 회사")
 
-    client.post("/ui/review/suggestions/2/company", data={"action": "accept"})
+    client.post("/ui/review/suggestions/2/company_name", data={"action": "accept"})
 
-    assert rows(conn, "job_field_overrides") == [(2, "company", "둘째 회사")]
-    assert rows(conn, "job_field_suggestions") == [(1, "company", "첫째 회사")]
+    assert rows(conn, "job_field_overrides") == [(2, "company_name", "둘째 회사")]
+    assert rows(conn, "job_field_suggestions") == [(1, "company_name", "첫째 회사")]
 
 
 def test_제안_있음_조건은_번호마다_본다(client: TestClient, conn: sqlite3.Connection) -> None:

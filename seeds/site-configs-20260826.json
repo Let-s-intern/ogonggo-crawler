@@ -28,7 +28,7 @@
           "fields": {
             "title": "jobNoticeName",
             "date": "recEndDateTime",
-            "company": "companyName"
+            "company_name": "companyName"
           },
           "id_field": "jobNoticeId",
           "link_template": "https://careers.lg.com/apply/detail?id={id}",
@@ -47,9 +47,9 @@
           "fields": {
             "title": "data.jobNoticesDetail.jobNoticesDetail.jobNoticeName",
             "body": "data.jobNoticesDetail.recList.*.detailContext",
-            "deadline": "data.jobNoticesDetail.jobNoticesDetail.recEndDate",
-            "company": "data.jobNoticesDetail.jobNoticesDetail.companyName",
-            "start_date": "data.jobNoticesDetail.jobNoticesDetail.recStartDate"
+            "recruitment_end_at": "data.jobNoticesDetail.jobNoticesDetail.recEndDate",
+            "company_name": "data.jobNoticesDetail.jobNoticesDetail.companyName",
+            "recruitment_start_at": "data.jobNoticesDetail.jobNoticesDetail.recStartDate"
           },
           "headers": {}
         }
@@ -78,7 +78,7 @@
           "fields": {
             "title": "rtNm",
             "date": "rtAcptEndDttm",
-            "company": "sdNm"
+            "company_name": "sdNm"
           },
           "id_field": "rtSeq",
           "link_template": "https://www.hanwhain.com/portal/apply/recruit/detail?rtSeq={id}",
@@ -110,9 +110,9 @@
               "data.item.unitDt.*.ruDtlJob",
               "data.item.rtEct"
             ],
-            "deadline": "data.item.rtAcptEndDttm",
-            "company": "data.item.sdNm",
-            "start_date": "data.item.rtAcptStrtDttm"
+            "recruitment_end_at": "data.item.rtAcptEndDttm",
+            "company_name": "data.item.sdNm",
+            "recruitment_start_at": "data.item.rtAcptStrtDttm"
           },
           "headers": {
             "referer": "https://www.hanwhain.com/"
@@ -147,7 +147,7 @@
           "fields": {
             "title": "h3.title",
             "date": "span.period",
-            "company": "p.company"
+            "company_name": "p.company"
           },
           "id_field": "a[data-value]@data-value|digits",
           "link_template": "https://www.samsungcareers.com/recruit/detail.data?seqno={id}&strCode=",
@@ -177,8 +177,8 @@
               "data.items.*.titleKr",
               "data.items.*.taskKr"
             ],
-            "company": "data.result.cmpNameKr",
-            "start_date": "data.result.startdate"
+            "company_name": "data.result.cmpNameKr",
+            "recruitment_start_at": "data.result.startdate"
           },
           "headers": {
             "referer": "https://www.samsungcareers.com/hr/"
@@ -211,7 +211,7 @@
           "fields": {
             "title": "title",
             "date": "end",
-            "company": "corpName"
+            "company_name": "corpName"
           },
           "id_field": "noticeID",
           "link_template": "https://www.skcareers.com/Recruit/Detail/{id}",
@@ -230,17 +230,17 @@
           "title": ".title-area .title",
           "link": "a.list-link",
           "date": ".title-area .date",
-          "company": ".sub-text .company",
+          "company_name": ".sub-text .company",
           "link_template": ""
         },
         "detail": {
           "title": ".box-title",
           "body": ".detail-content-wrapper",
-          "requirements": "",
-          "deadline": ".box-detail-item:has(.label:-soup-contains(\"지원 기간\")) .value",
+          "qualifications": "",
+          "recruitment_end_at": ".box-detail-item:has(.label:-soup-contains(\"지원 기간\")) .value",
           "department": "",
-          "company": ".box-detail-item:has(.label:-soup-contains(\"회사\")) .value",
-          "start_date": ".box-detail-item:has(.label:-soup-contains(\"지원 기간\")) .value"
+          "company_name": ".box-detail-item:has(.label:-soup-contains(\"회사\")) .value",
+          "recruitment_start_at": ".box-detail-item:has(.label:-soup-contains(\"지원 기간\")) .value"
         }
       }
     },
@@ -286,8 +286,8 @@
               "data.applyInfo.aboutTeamNtc",
               "data.applyInfo.etc"
             ],
-            "deadline": "data.applyInfo.applyEndDt",
-            "start_date": "data.applyInfo.appDispStDt"
+            "recruitment_end_at": "data.applyInfo.applyEndDt",
+            "recruitment_start_at": "data.applyInfo.appDispStDt"
           },
           "headers": {
             "accept": "application/json, text/plain, */*",
@@ -312,17 +312,17 @@
           "title": ".card-tit a",
           "link": ".card-tit a",
           "date": ".card-foot .date",
-          "company": ".cmp-name",
+          "company_name": ".cmp-name",
           "link_template": ""
         },
         "detail": {
           "title": "h4.title",
           "body": ".board-content",
-          "requirements": "",
-          "deadline": ".date-detail",
+          "qualifications": "",
+          "recruitment_end_at": ".date-detail",
           "department": "",
-          "company": ".board-type",
-          "start_date": ".date-detail"
+          "company_name": ".board-type",
+          "recruitment_start_at": ".date-detail"
         }
       }
     },
@@ -340,17 +340,17 @@
           "title": "a.list-tit > strong",
           "link": "a.list-tit",
           "date": "div.deadline",
-          "company": "div.company",
+          "company_name": "div.company",
           "link_template": "https://career.doosan.com/dsp/sa/RecList.jsp?REC_ID={onclick|arg1}&REC_TYPE_CD={onclick|arg3}&q_REC_TYPE=&REC_MGT_CD={onclick|arg2}&OPEN_YN=&q_CHRG_ID=&q_SCHFIRM_ID=&BA_STATUS_CD=&q_COMP_CD={onclick|arg4}&PRE_URL=REC&MENU_ID=RecList&mode=goDetail"
         },
         "detail": {
           "title": "h2.h2-title",
           "body": "div.content",
-          "requirements": "",
-          "deadline": "th:-soup-contains(\"채용공고\") + td",
+          "qualifications": "",
+          "recruitment_end_at": "th:-soup-contains(\"채용공고\") + td",
           "department": "",
-          "company": "dt:-soup-contains(\"자회사/BG\") + dd",
-          "start_date": "th:-soup-contains(\"채용공고\") + td"
+          "company_name": "dt:-soup-contains(\"자회사/BG\") + dd",
+          "recruitment_start_at": "th:-soup-contains(\"채용공고\") + td"
         }
       }
     },
@@ -368,17 +368,17 @@
           "title": ".card_title",
           "link": "a.card_link",
           "date": "",
-          "company": ".company_logo .blind",
+          "company_name": ".company_logo .blind",
           "link_template": "https://recruit.navercorp.com/rcrt/view.do?annoId={onclick|arg1}&sw=&subJobCdArr=&sysCompanyCdArr=&empTypeCdArr=&entTypeCdArr=&workAreaCdArr="
         },
         "detail": {
           "title": "h4.card_title",
           "body": ".detail_wrap",
-          "requirements": "",
-          "deadline": ".card_info dt:-soup-contains(\"모집 기간\") + dd",
+          "qualifications": "",
+          "recruitment_end_at": ".card_info dt:-soup-contains(\"모집 기간\") + dd",
           "department": "",
-          "company": ".card_info dt:-soup-contains(\"모집 부서\") + dd",
-          "start_date": ".card_info dt:-soup-contains(\"모집 기간\") + dd"
+          "company_name": ".card_info dt:-soup-contains(\"모집 부서\") + dd",
+          "recruitment_start_at": ".card_info dt:-soup-contains(\"모집 기간\") + dd"
         }
       }
     },
@@ -396,17 +396,17 @@
           "title": "p[data-desktop-list-item-title]",
           "link": "",
           "date": "",
-          "company": "[data-desktop-addon-root='right-addon']",
+          "company_name": "[data-desktop-addon-root='right-addon']",
           "link_template": "https://toss.im{href}"
         },
         "detail": {
           "title": "title",
           "body": ".p-container__inner:not(.p-navbar__inner-container)",
-          "requirements": "",
-          "deadline": "blockquote:has(strong:-soup-contains(\"모집 기간\"))",
+          "qualifications": "",
+          "recruitment_end_at": "blockquote:has(strong:-soup-contains(\"모집 기간\"))",
           "department": "",
-          "company": "",
-          "start_date": ""
+          "company_name": "",
+          "recruitment_start_at": ""
         }
       }
     },
@@ -426,8 +426,8 @@
           "items_path": "jobList",
           "fields": {
             "title": "jobOfferTitle",
-            "company": "companyName",
-            "start_date": "regDate"
+            "company_name": "companyName",
+            "recruitment_start_at": "regDate"
           },
           "id_field": "realId",
           "link_template": "https://careers.kakao.com/jobs/{id}?skillSet=&part=BUSINESS_SERVICES&company=KAKAO&employeeType=&page=1",
@@ -444,17 +444,17 @@
           "title": "h4.tit_jobs",
           "link": "",
           "date": "dd:nth-of-type(1)",
-          "company": "dl.item_subinfo:nth-of-type(1) > dd",
+          "company_name": "dl.item_subinfo:nth-of-type(1) > dd",
           "link_template": ""
         },
         "detail": {
           "title": ".tit_jobs",
           "body": ".cont_board",
-          "requirements": "",
-          "deadline": ".list_info dt:-soup-contains(\"영입마감일\") + dd",
+          "qualifications": "",
+          "recruitment_end_at": ".list_info dt:-soup-contains(\"영입마감일\") + dd",
           "department": "",
-          "company": ".list_info dt:-soup-contains(\"회사정보\") + dd",
-          "start_date": ""
+          "company_name": ".list_info dt:-soup-contains(\"회사정보\") + dd",
+          "recruitment_start_at": ""
         }
       }
     },
@@ -474,7 +474,7 @@
           "items_path": "data.list",
           "fields": {
             "title": "recruitName",
-            "start_date": "recruitOpenDate"
+            "recruitment_start_at": "recruitOpenDate"
           },
           "id_field": "recruitNumber",
           "link_template": "https://career.woowayouths.com/recruitment/{id}/detail?category=jobGroupCodes%3ABA005010",
@@ -491,17 +491,17 @@
           "title": "a.title p.fr-view",
           "link": "a.title",
           "date": ".flag-type",
-          "company": "",
+          "company_name": "",
           "link_template": ""
         },
         "detail": {
           "title": ".recruit-detail-title-inner .title",
           "body": ".detail-view",
-          "requirements": "",
-          "deadline": ".flag-type span:nth-of-type(2)",
+          "qualifications": "",
+          "recruitment_end_at": ".flag-type span:nth-of-type(2)",
           "department": "",
-          "company": "",
-          "start_date": ""
+          "company_name": "",
+          "recruitment_start_at": ""
         }
       }
     }

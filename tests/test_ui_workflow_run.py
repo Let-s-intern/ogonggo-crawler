@@ -62,15 +62,21 @@ SELECTORS: dict[str, Any] = {
     "detail": {
         "title": "h1.listing-company span.company-name",
         "body": "div.job-description",
-        "requirements": "",
-        "deadline": "",
+        "qualifications": "",
+        "recruitment_end_at": "",
         "department": "span.listing-company-category a",
     },
 }
 
 MISSING_SELECTORS: dict[str, Any] = {
     "list": {"item": "ol.nothing-here > li", "title": "a", "link": "a", "date": "time"},
-    "detail": {"title": "h1", "body": "div", "requirements": "", "deadline": "", "department": ""},
+    "detail": {
+        "title": "h1",
+        "body": "div",
+        "qualifications": "",
+        "recruitment_end_at": "",
+        "department": "",
+    },
 }
 
 

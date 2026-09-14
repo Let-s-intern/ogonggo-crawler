@@ -59,7 +59,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         )
         connection.execute(
             """
-            INSERT INTO normalized_jobs (raw_job_id, company, title, source_url)
+            INSERT INTO normalized_jobs (raw_job_id, company_name, title, source_url)
             VALUES (?, '파이썬재단', ?, ?)
             """,
             (raw_job_id, title, f"{LIST_URL}{raw_job_id}/"),
@@ -68,7 +68,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         connection.execute(
             """
             INSERT INTO job_field_suggestions (raw_job_id, field_name, value, reason)
-            VALUES (?, 'company', '다른 회사명', '원문과 다르다')
+            VALUES (?, 'company_name', '다른 회사명', '원문과 다르다')
             """,
             (raw_job_id,),
         )

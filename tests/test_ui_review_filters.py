@@ -31,7 +31,8 @@ from app.main import app
 
 LIST_URL = "https://www.python.org/jobs/"
 
-# (raw_job_id, workflow_id, company, title, deadline, crawled_at, normalized_at, delivered)
+# (raw_job_id, workflow_id, company_name, title, recruitment_end_at, crawled_at, normalized_at,
+# delivered)
 ROWS = (
     (
         1,
@@ -102,7 +103,16 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     )
     connection.execute("INSERT INTO workflows (crawler_id, name) VALUES (1, 'LG')")
     connection.execute("INSERT INTO workflows (crawler_id, name) VALUES (2, 'example')")
-    for raw_job_id, workflow_id, company, title, deadline, crawled, normalized, sent in ROWS:
+    for (
+        raw_job_id,
+        workflow_id,
+        company_name,
+        title,
+        recruitment_end_at,
+        crawled,
+        normalized,
+        sent,
+    ) in ROWS:
         connection.execute(
             """
             INSERT INTO raw_jobs (id, workflow_id, source_url, raw_data_json, content_hash,
@@ -113,15 +123,16 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         )
         connection.execute(
             """
-            INSERT INTO normalized_jobs (raw_job_id, company, title, deadline, source_url,
+            INSERT INTO normalized_jobs (raw_job_id, company_name, title, recruitment_end_at,
+            source_url,
                                          normalized_at, delivered_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 raw_job_id,
-                company,
+                company_name,
                 title,
-                deadline,
+                recruitment_end_at,
                 f"{LIST_URL}{raw_job_id}/",
                 normalized,
                 "2026-08-22 03:00:00" if sent else None,
@@ -210,7 +221,9 @@ def test_정규화_시각_범위도_따로_걸린다(client: TestClient) -> None
 
 
 def test_조건_여럿을_함께_걸면_AND_다(client: TestClient) -> None:
-    assert titles(client, workflow_id="1", company="엘지전자", status="open") == ["백엔드 개발자"]
+    assert titles(client, workflow_id="1", company_name="엘지전자", status="open") == [
+        "백엔드 개발자"
+    ]
     assert total(client, workflow_id="1", status="none") == 1
 
 
@@ -224,7 +237,7 @@ def test_필터_폼에_새_조건이_모두_있다(client: TestClient) -> None:
 
     for name in (
         "workflow_id",
-        "company",
+        "company_name",
         "status",
         "delivered",
         "crawled_from",

@@ -63,7 +63,7 @@ SELECT c.name AS name,
        c.logo_url AS logo_url,
        COUNT(j.id) AS job_count
 FROM companies c
-LEFT JOIN normalized_jobs j ON j.company = c.name
+LEFT JOIN normalized_jobs j ON j.company_name = c.name
 {where}
 GROUP BY c.id
 {having}
@@ -275,7 +275,7 @@ def _row(
 
 
 # 올린 파일이 들어갈 자리. `_check/` 와 섞이지 않게 접두어를 둔다 (`app/storage/s3.py`)
-UPLOAD_PREFIX = "company/"
+UPLOAD_PREFIX = "company_name/"
 
 
 @router.post("/ui/companies/logo/upload", response_class=HTMLResponse)

@@ -32,8 +32,8 @@ GENERATED: dict[str, Any] = {
     "detail": {
         "title": "h1.listing-company span.company-name",
         "body": "div.job-description",
-        "requirements": "",
-        "deadline": "",
+        "qualifications": "",
+        "recruitment_end_at": "",
         "department": "span.listing-company-category a",
     },
 }
@@ -88,9 +88,9 @@ def test_empty_optional_selector_is_skipped_not_failed() -> None:
     report = verify_selectors(selectors_with(), LIST_HTML, DETAIL_HTML)
     statuses = {field.name: field.status for field in report.fields}
 
-    assert statuses["detail.requirements"] == "skipped"
-    assert statuses["detail.deadline"] == "skipped"
-    assert "detail.deadline" not in report.failed
+    assert statuses["detail.qualifications"] == "skipped"
+    assert statuses["detail.recruitment_end_at"] == "skipped"
+    assert "detail.recruitment_end_at" not in report.failed
 
 
 def test_syntax_error_is_a_failed_field_not_a_crash() -> None:

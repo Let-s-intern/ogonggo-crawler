@@ -64,8 +64,8 @@ LINKED_SELECTORS = parse_selectors(
             "detail": {
                 "title": "h1",
                 "body": "div.body",
-                "requirements": "",
-                "deadline": "",
+                "qualifications": "",
+                "recruitment_end_at": "",
                 "department": "",
             },
         }
@@ -80,8 +80,8 @@ LINKLESS_SELECTORS = parse_selectors(
             "detail": {
                 "title": "h1",
                 "body": "div.body",
-                "requirements": "",
-                "deadline": "",
+                "qualifications": "",
+                "recruitment_end_at": "",
                 "department": "",
             },
         }

@@ -38,7 +38,7 @@ KAKAO_SELECTORS = ListSelectors(
     title="h4.tit_jobs",
     link="",
     date="dl.list_info dd",
-    company="dl.item_subinfo dd",
+    company_name="dl.item_subinfo dd",
 )
 
 WOOWA_LIST_URL = "https://career.woowayouths.com/recruitment/"
@@ -51,7 +51,7 @@ WOOWA_SELECTORS = ListSelectors(
     title="a.title p.fr-view",
     link="a.title",
     date="div.flag-type span",
-    company="",
+    company_name="",
 )
 
 # 토스 목록 페이지가 렌더되는 동안 실제로 나간 JSON 응답들. 어느 것도 공고 배열이 아니다
