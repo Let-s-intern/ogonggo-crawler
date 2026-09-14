@@ -65,7 +65,7 @@ def db_path(tmp_path: pathlib.Path) -> pathlib.Path:
     save_classification(
         connection,
         1,
-        {"employment_type": "정규직", "responsibilities": "옛 업무 값"},
+        {"employment_type": "FULL_TIME", "responsibilities": "옛 업무 값"},
         model="옛모델",
         rules_version=0,
     )

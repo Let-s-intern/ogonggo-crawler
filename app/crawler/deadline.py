@@ -21,7 +21,7 @@
 
 ## 비교는 표시 시간대의 오늘로 한다
 
-마감일은 시각이 아니라 날짜다. UTC 의 오늘과 비교하면 한국 시각 오전 아홉 시간 동안 하루
+마감 시각이 있어도 날짜로 비교한다. UTC 의 오늘과 비교하면 한국 시각 오전 아홉 시간 동안 하루
 일찍 마감된 것으로 보인다. 검수 화면의 `진행중`/`마감 지남` 도 같은 기준을 쓴다
 (`app/api/review_filter.py`).
 """
@@ -32,7 +32,7 @@ from collections.abc import Sequence
 from datetime import date, datetime
 
 from app.api.ui import display_zone
-from app.normalize.engine import NormalizeError, normalize_fields
+from app.normalize.engine import NormalizeError, normalize_value
 from app.normalize.rules import Rule
 
 DEADLINE = "recruitment_end_at"
@@ -60,7 +60,7 @@ def _as_date(value: str, rules: Sequence[Rule]) -> date | None:
         return None
 
     try:
-        normalized = normalize_fields({DEADLINE: value}, rules)[DEADLINE]
+        normalized = normalize_value(DEADLINE, value, rules)
     except NormalizeError:
         # 규칙이 어느 형식으로도 읽지 못한 값이다. 사이트가 표기를 바꿨을 수 있으므로
         # 버리지 않고 진행 중으로 둔다
@@ -70,7 +70,9 @@ def _as_date(value: str, rules: Sequence[Rule]) -> date | None:
         return None
 
     try:
-        return date.fromisoformat(normalized.strip())
+        # 0033 부터 마감 시각까지 저장한다. 비교는 날짜로 한다 — 오늘 마감인 공고는 오늘 하루
+        # 진행 중이다
+        return date.fromisoformat(normalized.strip()[:10])
     except ValueError:
         # 규칙의 `output_format` 이 날짜 형식이 아니다. 마감으로 단정할 근거가 없다
         return None

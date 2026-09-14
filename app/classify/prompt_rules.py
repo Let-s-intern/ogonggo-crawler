@@ -31,7 +31,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from app.classify.schema import EXTRACT_FIELDS, JUDGE_FIELDS, TAXONOMY_FIELDS
+from app.classify.schema import EXTRACT_FIELDS, JUDGE_FIELDS, NUMBER_FIELDS, TAXONOMY_FIELDS
 
 # 칸의 종류. 화면이 카드에 적고, 프롬프트는 종류마다 다른 구역에 넣는다
 EXTRACT = "뽑는 칸"
@@ -53,7 +53,10 @@ RULE_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("recruitment_notice", "채용 안내사항", EXTRACT),
     ("employment_type", "고용 형태", JUDGE),
     ("experience_type", "경력 구분", JUDGE),
+    ("experience_min_years", "최소 경력 연수", JUDGE),
     ("education_level", "요구 학력", JUDGE),
+    ("closes_when_filled", "채용 시 마감", JUDGE),
+    ("application_method", "지원 방법", JUDGE),
     ("job_field", "직군", TAXONOMY),
     ("job_role", "직무", TAXONOMY),
 )
@@ -67,7 +70,7 @@ def names_of(kind: str) -> tuple[str, ...]:
 
 # 분류가 채우는 칸마다 규칙이 있어야 한다. 칸이 늘었는데 여기 없으면 모델이 그 칸을 모른다
 assert set(names_of(EXTRACT)) == set(EXTRACT_FIELDS)
-assert set(names_of(JUDGE)) == set(JUDGE_FIELDS)
+assert set(names_of(JUDGE)) == {*JUDGE_FIELDS, *NUMBER_FIELDS}
 assert set(names_of(TAXONOMY)) == set(TAXONOMY_FIELDS)
 
 # 적을 수 있는 길이. 규칙은 공고마다 프롬프트에 실려 토큰이 되고, 긴 프롬프트는 모델이 뒤를 흘린다
@@ -172,29 +175,59 @@ DEFAULT_RULES = RuleSet(
             "위 어디에도 맞지 않는, **이 공고만의** 안내(전형 유의사항, 제출 서류, "
             "보훈·장애인 우대 문구 등)"
         ),
-        "employment_type": FieldRule("고용형태.", (Example("채용 후 정규직 전환", "인턴"),)),
-        "experience_type": FieldRule("경력 구분.", (Example("5년 이상 경험", "경력"),)),
+        "employment_type": FieldRule(
+            "고용 형태. 전환을 약속해도 지금 뽑는 형태를 고른다. 주 몇 일·몇 시간만 일하면 "
+            "PART_TIME 이다.",
+            (
+                Example("채용 후 정규직 전환", "INTERN"),
+                Example("주 3일 근무", "PART_TIME"),
+            ),
+        ),
+        "experience_type": FieldRule(
+            "경력 구분. 신입과 경력을 함께 받으면 BOTH, 경력을 따지지 않거나 경력을 말하지 "
+            "않으면 IRRELEVANT 다.",
+            (
+                Example("5년 이상 경험", "EXPERIENCED"),
+                Example("신입/경력", "BOTH"),
+                Example("경력 무관", "IRRELEVANT"),
+            ),
+        ),
+        "experience_min_years": FieldRule(
+            "최소 경력 연수. experience_type 이 EXPERIENCED 이고 원문에 최소 연수가 적혀 있을 "
+            "때만 숫자만 적는다. 그 밖에는 빈 문자열이다.",
+            (Example("관련 경력 3년 이상", "3"),),
+        ),
         "education_level": FieldRule(
             "요구 학력. 지원 자격이 요구하는 **최소 학력**을 고른다. 우대사항에만 있는 "
             "학력(`석사 우대`)은 요구 조건이 아니라 고르지 않는다. 학력을 말하지 않으면 "
-            "판단불가 다.",
+            "ANY 다.",
             (
-                Example("학사 이상", "학사"),
-                Example("대졸", "학사"),
-                Example("고졸 이상", "고졸"),
-                Example("학력 무관", "무관"),
+                Example("학사 이상", "BACHELOR"),
+                Example("대졸", "BACHELOR"),
+                Example("고졸 이상", "HIGH_SCHOOL"),
+                Example("학력 무관", "ANY"),
             ),
         ),
+        "closes_when_filled": FieldRule(
+            "채용 시 마감 여부. 인원이 차면 마감일 전에 마감될 수 있다고 적혀 있으면 true, "
+            "그런 말이 없으면 false 다.",
+            (
+                Example("적격자 채용 시 조기 마감", "true"),
+                Example("충원 시 마감", "true"),
+            ),
+        ),
+        "application_method": FieldRule(
+            "지원 방법. 이메일로 지원서를 받는다고 적혀 있으면 EMAIL, 그 밖에는 EXTERNAL_PAGE 다.",
+            (Example("지원서를 이메일로 제출", "EMAIL"),),
+        ),
         "job_field": FieldRule(
-            "**가능하면 항상 채운다.** 정확히 들어맞는 대분류가 없어도, 이 공고가 하는 일과 "
-            "가장 가까운 대분류를 고른다 — 완벽히 맞는 것을 찾는 것이 아니라 다른 후보보다 "
-            "조금이라도 더 가까운 것을 고르는 일이다. job_field 를 판단불가 로 두는 것은 "
-            "본문에 무슨 일을 하는 사람을 뽑는지 알 만한 내용이 전혀 없을 때뿐이다."
+            "**항상 채운다.** 정확히 들어맞는 대분류가 없어도, 이 공고가 하는 일과 가장 "
+            "가까운 대분류를 고른다 — 완벽히 맞는 것을 찾는 것이 아니라 다른 후보보다 "
+            "조금이라도 더 가까운 것을 고르는 일이다. 비워 두지 않는다."
         ),
         "job_role": FieldRule(
             "대분류는 골랐는데 그 밑의 소분류 중 맞는 것이 없으면, 그 대분류 목록의 마지막에 "
-            "있는 `기타`로 시작하는 소분류(예: 기타IT·개발)를 고른다 — job_role 를 판단불가 로 "
-            "두지 않는다."
+            "있는 `기타`로 시작하는 소분류(예: 기타IT·개발)를 고른다 — 비워 두지 않는다."
         ),
     },
 )

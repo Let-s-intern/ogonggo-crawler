@@ -32,9 +32,9 @@
       {% if d_day %}
       <span class="badge {% if d_day == '마감' %}badge-idle{% else %}badge-warn{% endif %}">{{ d_day }}</span>
       {% endif %}
-      {% if job.recruitment_end_at %}<span class="badge badge-idle">마감 {{ job.recruitment_end_at }}</span>{% endif %}
-      {% if job.employment_type %}<span class="badge badge-idle">{{ job.employment_type }}</span>{% endif %}
-      {% if job.experience_type %}<span class="badge badge-idle">{{ job.experience_type }}</span>{% endif %}
+      {% if job.recruitment_end_at %}<span class="badge badge-idle">마감 {{ job.recruitment_end_at[:16] }}</span>{% endif %}
+      {% if job.employment_type %}<span class="badge badge-idle">{{ job.employment_type | value_label("employment_type") }}</span>{% endif %}
+      {% if job.experience_type %}<span class="badge badge-idle">{{ job.experience_type | value_label("experience_type") }}</span>{% endif %}
       {% if job.region %}<span class="badge badge-idle">{{ job.region }}</span>{% endif %}
     </div>
     <p class="mt-2 text-sm text-slate-600">

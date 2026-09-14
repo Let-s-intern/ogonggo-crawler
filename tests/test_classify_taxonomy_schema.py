@@ -47,8 +47,11 @@ def test_대분류_소분류가_있으면_그_이름이_enum이_된다(conn: sql
 
     major_choices = set(get_args(posting.model_fields["job_field"].annotation))
     minor_choices = set(get_args(posting.model_fields["job_role"].annotation))
-    assert major_choices == {"IT·개발", "AI·데이터", "판단불가"}
-    assert minor_choices == {"서버·백엔드", "프론트엔드", "데이터 엔지니어", "판단불가"}
+    # 판단불가 는 없다. 반드시 목록에서 고른다 (2026-09-14 결정)
+    assert major_choices == {"IT·개발", "AI·데이터"}
+    assert minor_choices == {"서버·백엔드", "프론트엔드", "데이터 엔지니어"}
+    assert posting.model_fields["job_field"].is_required()
+    assert posting.model_fields["job_role"].is_required()
     assert issubclass(model, Classification)
 
 
@@ -79,9 +82,15 @@ def test_모델은_직접_만들_수_있고_기존_아홉_칸도_그대로_있�
     taxonomy.create(conn, parent_id=None, name="IT·개발")
 
     model = build_classification_model(conn)
-    instance = model.model_validate(
-        {"postings": [{"job_field": "IT·개발", "experience_type": "경력"}]}
-    )
+    posting = {
+        "job_field": "IT·개발",
+        "employment_type": "FULL_TIME",
+        "experience_type": "EXPERIENCED",
+        "education_level": "ANY",
+        "closes_when_filled": "false",
+        "application_method": "EXTERNAL_PAGE",
+    }
+    instance = model.model_validate({"postings": [posting]})
 
     assert instance.postings[0].job_field == "IT·개발"
-    assert instance.postings[0].experience_type == "경력"
+    assert instance.postings[0].experience_type == "EXPERIENCED"

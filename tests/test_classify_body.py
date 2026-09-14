@@ -26,6 +26,7 @@ from app.classify.classifier import (
 )
 from app.classify.grounding import (
     NO_EVIDENCE,
+    NOT_A_NUMBER,
     NOT_IN_LIST,
     NOT_IN_SOURCE,
     drop_exact_repeat,
@@ -37,6 +38,8 @@ from app.classify.schema import (
     EXTRACT_FIELDS,
     JUDGE_CHOICES,
     JUDGE_FIELDS,
+    NUMBER_FIELDS,
+    VALUE_LABELS,
 )
 from app.config import Settings
 from app.crawler.parser import parse_detail
@@ -268,11 +271,11 @@ async def test_a_role_that_is_in_neither_the_title_nor_the_body_is_thrown_away()
 async def test_a_judgement_may_take_its_evidence_from_the_title() -> None:
     """`[채용연계형 인턴]` 은 고용형태의 근거다. 본문에 없다고 버릴 이유가 없다."""
     result, _ = await classify(
-        response(employment_type="인턴", employment_type_evidence="[채용연계형 인턴]"),
+        response(employment_type="INTERN", employment_type_evidence="[채용연계형 인턴]"),
         title="[채용연계형 인턴] 파트너 영업 Specialist(신입)",
     )
 
-    assert result.postings[0].fields["employment_type"] == "인턴"
+    assert result.postings[0].fields["employment_type"] == "INTERN"
     assert result.postings[0].evidence["employment_type"] == "[채용연계형 인턴]"
     assert result.postings[0].dropped == []
 
@@ -367,17 +370,36 @@ def test_grounding_keeps_an_empty_column_empty_without_calling_it_invented() -> 
     assert set(grounded.fields) == set(CLASSIFY_FIELDS)
 
 
-def test_the_two_kinds_of_columns_add_up_to_the_nine() -> None:
+def test_the_three_kinds_of_columns_add_up() -> None:
     """칸이 늘거나 옮겨 다니면 여기서 걸린다."""
-    assert set(EXTRACT_FIELDS) | set(JUDGE_FIELDS) == set(CLASSIFY_FIELDS)
+    assert set(EXTRACT_FIELDS) | set(JUDGE_FIELDS) | set(NUMBER_FIELDS) == set(CLASSIFY_FIELDS)
     assert not set(EXTRACT_FIELDS) & set(JUDGE_FIELDS)
+    assert not set(NUMBER_FIELDS) & (set(EXTRACT_FIELDS) | set(JUDGE_FIELDS))
 
 
 def test_the_judge_columns_have_a_closed_list() -> None:
-    """목록을 정하지 않으면 같은 일이 사이트마다 다른 이름으로 쌓인다."""
-    assert JUDGE_CHOICES["employment_type"] == ("정규직", "계약직", "인턴", "기타")
-    assert JUDGE_CHOICES["experience_type"] == ("신입", "경력", "무관")
-    assert JUDGE_CHOICES["education_level"] == ("무관", "고졸", "전문학사", "학사", "석사", "박사")
+    """목록을 정하지 않으면 같은 일이 사이트마다 다른 이름으로 쌓인다.
+
+    목록은 오공고(Spring) enum 과 같다. 하나라도 갈리면 보낼 때 오공고가 400 으로 거절한다.
+    """
+    assert JUDGE_CHOICES["employment_type"] == (
+        "FULL_TIME",
+        "CONTRACT",
+        "INTERN",
+        "PART_TIME",
+        "ETC",
+    )
+    assert JUDGE_CHOICES["experience_type"] == ("NEWCOMER", "EXPERIENCED", "BOTH", "IRRELEVANT")
+    assert JUDGE_CHOICES["education_level"] == (
+        "ANY",
+        "HIGH_SCHOOL",
+        "ASSOCIATE",
+        "BACHELOR",
+        "MASTER",
+        "DOCTORATE",
+    )
+    assert JUDGE_CHOICES["closes_when_filled"] == ("true", "false")
+    assert JUDGE_CHOICES["application_method"] == ("EXTERNAL_PAGE", "EMAIL")
     for values in JUDGE_CHOICES.values():
         assert "" not in values
 
@@ -386,38 +408,41 @@ async def test_a_judgement_does_not_need_the_words_to_be_in_the_body() -> None:
     """본문에 "경력" 이라고 적혀 있지 않다. 글자 일치를 요구하면 이 칸은 영원히 빈다."""
     result, _ = await classify(
         response(
-            experience_type="경력",
+            experience_type="EXPERIENCED",
             experience_type_evidence="Product Owner로서 5년 이상 경험이 있으신 분",
-            employment_type="정규직",
+            employment_type="FULL_TIME",
             employment_type_evidence="정규직",
         )
     )
 
-    assert result.postings[0].fields["experience_type"] == "경력"
-    assert result.postings[0].fields["employment_type"] == "정규직"
+    assert result.postings[0].fields["experience_type"] == "EXPERIENCED"
+    assert result.postings[0].fields["employment_type"] == "FULL_TIME"
     assert result.postings[0].dropped == []
 
 
-async def test_a_judgement_without_evidence_in_the_body_is_thrown_away() -> None:
-    """읽고 고른 것인지 지어낸 것인지 가를 방법이 근거 문장뿐이다."""
+async def test_a_judgement_whose_evidence_is_not_in_the_body_keeps_its_value() -> None:
+    """판정 칸은 오공고가 반드시 받는다. 근거를 못 찾아도 AI 가 고른 값을 남긴다 (2026-09-14 결정).
+
+    근거 문장은 남기지 않는다 — 검수 화면이 그 칸을 `근거 없음` 으로 보인다.
+    """
     result, _ = await classify(
         response(
-            experience_type="신입",
+            experience_type="NEWCOMER",
             experience_type_evidence="신입 사원을 우대합니다",
         )
     )
 
-    assert result.postings[0].dropped == ["experience_type"]
-    assert result.postings[0].reasons["experience_type"] == NO_EVIDENCE
-    assert result.postings[0].fields["experience_type"] == ""
+    assert result.postings[0].dropped == []
+    assert result.postings[0].fields["experience_type"] == "NEWCOMER"
     assert result.postings[0].evidence == {}
 
 
-async def test_a_judgement_with_no_evidence_at_all_is_thrown_away() -> None:
-    result, _ = await classify(response(employment_type="정규직"))
+async def test_a_judgement_with_no_evidence_at_all_keeps_its_value() -> None:
+    result, _ = await classify(response(employment_type="FULL_TIME"))
 
-    assert result.postings[0].dropped == ["employment_type"]
-    assert result.postings[0].reasons["employment_type"] == NO_EVIDENCE
+    assert result.postings[0].dropped == []
+    assert result.postings[0].fields["employment_type"] == "FULL_TIME"
+    assert "employment_type" not in result.postings[0].evidence
 
 
 async def test_a_judgement_outside_the_list_is_thrown_away() -> None:
@@ -434,7 +459,7 @@ async def test_a_judgement_outside_the_list_is_thrown_away() -> None:
 async def test_the_evidence_comes_back_with_the_result() -> None:
     """표본 스무 건 표가 판정 칸마다 근거 문장을 적어야 한다 (1.8.V)."""
     result, _ = await classify(
-        response(employment_type="정규직", employment_type_evidence="◆ 직원 유형")
+        response(employment_type="FULL_TIME", employment_type_evidence="◆ 직원 유형")
     )
 
     assert result.postings[0].evidence == {"employment_type": "◆ 직원 유형"}
@@ -467,30 +492,75 @@ def test_the_enum_never_carries_an_empty_value() -> None:
     """
     from typing import get_args
 
-    from app.classify.schema import UNDECIDED, Posting
+    from app.classify.schema import Posting
 
     for name in JUDGE_FIELDS:
         values = get_args(Posting.model_fields[name].annotation)
         assert values, name
         assert "" not in values, name
-        assert UNDECIDED in values, name
+        # 기본값이 없어 반드시 하나를 고른다. 화면 이름 표와도 같다
+        assert Posting.model_fields[name].is_required(), name
+        assert set(values) == set(VALUE_LABELS[name]), name
 
 
-async def test_undecided_is_stored_as_an_empty_column_and_is_not_counted_as_invented() -> None:
-    """ "고를 수 없다" 는 답이다. 버린 것이 아니라 본문에 근거가 없다는 뜻이다."""
-    from app.classify.schema import UNDECIDED
-
-    result, _ = await classify(response(employment_type=UNDECIDED, experience_type=UNDECIDED))
+async def test_an_unanswered_judgement_is_blank_and_not_counted_as_invented() -> None:
+    """스키마를 거치지 않은 응답이 판정 칸을 비워도 지어낸 것으로 세지 않는다."""
+    result, _ = await classify(response(employment_type="", experience_type=""))
 
     assert result.postings[0].fields["employment_type"] == ""
     assert result.postings[0].dropped == []
     assert result.postings[0].evidence == {}
 
 
-async def test_the_prompt_offers_the_undecided_answer() -> None:
-    """자리가 없으면 모델은 아무거나 고른다."""
-    from app.classify.schema import UNDECIDED
+async def test_the_prompt_offers_no_undecided_answer() -> None:
+    """판단불가 는 없앴다 (2026-09-14 결정).
 
+    모델은 목록의 이름과 화면 이름을 함께 보고 하나를 고른다.
+    """
     _, client = await classify(response())
 
-    assert UNDECIDED in client.calls[0]["contents"]
+    prompt = client.calls[0]["contents"]
+    assert "판단불가" not in prompt
+    assert "FULL_TIME(정규직)" in prompt
+
+
+async def test_minimum_years_need_their_evidence_in_the_body() -> None:
+    """최소 경력 연수는 사실 값이다. 근거 문장이 원문에 없으면 버린다."""
+    kept, _ = await classify(
+        response(
+            experience_min_years="5",
+            experience_min_years_evidence="Product Owner로서 5년 이상 경험이 있으신 분",
+        )
+    )
+    invented, _ = await classify(response(experience_min_years="7"))
+
+    assert kept.postings[0].fields["experience_min_years"] == "5"
+    assert kept.postings[0].dropped == []
+    assert invented.postings[0].fields["experience_min_years"] == ""
+    assert invented.postings[0].reasons["experience_min_years"] == NO_EVIDENCE
+
+
+async def test_minimum_years_that_are_not_a_number_are_thrown_away() -> None:
+    result, _ = await classify(
+        response(
+            experience_min_years="5년",
+            experience_min_years_evidence="Product Owner로서 5년 이상 경험이 있으신 분",
+        )
+    )
+
+    assert result.postings[0].fields["experience_min_years"] == ""
+    assert result.postings[0].reasons["experience_min_years"] == NOT_A_NUMBER
+
+
+async def test_json_true_and_numbers_are_read_as_their_words() -> None:
+    """스키마는 글자로 적게 하지만 모델이 JSON 참·숫자로 답해도 뜻은 같다. 다시 묻지 않는다."""
+    result, _ = await classify(
+        response(
+            closes_when_filled=True,
+            experience_min_years=5,
+            experience_min_years_evidence="Product Owner로서 5년 이상 경험이 있으신 분",
+        )
+    )
+
+    assert result.postings[0].fields["closes_when_filled"] == "true"
+    assert result.postings[0].fields["experience_min_years"] == "5"

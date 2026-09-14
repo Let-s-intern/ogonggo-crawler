@@ -17,10 +17,12 @@
 {% macro review_cell_inner(cell, oob=False, changed=False) %}
 <div id="review-cell-{{ cell.job_id }}-{{ cell.field }}"{% if oob %} hx-swap-oob="true"{% endif %}
      class="max-w-[16rem] rounded-md p-1{% if changed %} just-changed{% endif %}">
-  <span class="block truncate text-sm text-slate-800" title="{{ cell.value or '값 없음' }}">{{ cell.value or "값 없음" }}</span>
+  {% set shown = cell.value | value_label(cell.field) %}
+  <span class="block truncate text-sm text-slate-800" title="{{ shown or '값 없음' }}">{{ shown or "값 없음" }}</span>
   {% if cell.overridden %}
   <span class="badge badge-ok">사람 보정</span>
-  <span class="mt-0.5 block truncate text-xs text-slate-500" title="{{ cell.rule_value or '값 없음' }}">규칙값: {{ cell.rule_value or "값 없음" }}</span>
+  {% set rule_shown = cell.rule_value | value_label(cell.field) %}
+  <span class="mt-0.5 block truncate text-xs text-slate-500" title="{{ rule_shown or '값 없음' }}">규칙값: {{ rule_shown or "값 없음" }}</span>
   {% else %}
   <span class="badge badge-idle">규칙값</span>
   {% endif %}

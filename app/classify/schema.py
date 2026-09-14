@@ -8,17 +8,18 @@
 (`migrations/0011_split_body_columns.sql`). 0016 이 부서·직군·모집인원을 뺐고
 (`migrations/0016_drop_department_category_headcount.sql`) 0017 이 직무를 더했다
 (`migrations/0017_job_role.sql`). 0028 이 오공고가 받는 다섯 칸(회사·팀 소개, 급여·처우,
-복지·혜택, 학력, 모집인원)을 더했다 (`migrations/0028_add_posting_detail_fields.sql`).
+복지·혜택, 학력, 모집인원)을 더했다 (`migrations/0028_add_posting_detail_fields.sql`). 0033 이
+오공고가 받는 판정 칸 셋(최소 경력 연수, 채용 시 마감, 지원 방법)을 더했다
+(`migrations/0033_spring_job_values.sql`).
 
-## 칸이 두 가지다
+## 칸이 세 가지다
 
 **뽑는 칸**은 원문에 있는 글자를 그대로 가져온다. 모델은 글자를 쓰지 않고 몇 번 줄의 어느
 부분인지를 조각으로 답하고, 저장하는 글자는 원문에서 잘라 온다 (`app/classify/pieces.py`).
 
 `position_name` 만 원문이 본문이 아니라 **제목**이다. 열한 사이트 픽스처에서 제목이 직무를 말하는
 곳이 아홉이고 그중 본문이 같은 글자를 되풀이하는 곳은 셋뿐이었다
-(`tests/test_job_role_source.py`). 직무를 판정 칸으로 만들지 않는 것은 값이 자유 텍스트이기
-때문이다 — 닫힌 목록을 만들 수 있었으면 그것이 직군이고, 직군은 0016 이 지웠다.
+(`tests/test_job_role_source.py`).
 
 **판정하는 칸**은 본문을 읽고 정해진 값 중에서 고른다. `정규직 채용` 이라고 본문에 그대로
 적혀 있지 않은 공고가 많다 — 글자 일치를 요구하면 이 칸은 영원히 빈다. 매핑 방식의 채움률이
@@ -28,16 +29,17 @@
 쌓인다 — 운영 DB 640건에 `Permanent` 71건과 `정규직` 7건과 `정규` 3건이 따로 있고,
 `Experienced` 77건과 `경력` 100건이 따로 있다. 그러면 소비 측이 그 칸으로 거를 수 없다.
 
-목록은 프롬프트로 부탁하지 않고 **응답 스키마의 enum 으로 강제한다.** 부탁은 대개 지켜지고,
-대개는 640건에서 스무 건쯤 어긋난다는 뜻이다.
+목록은 오공고(Spring) enum 과 같은 이름이다(`FULL_TIME` 등). 크롤러 DB 에도 그 이름 그대로
+저장하고, 화면에만 한글 이름을 보인다 (2026-09-14 결정). 목록은 프롬프트로 부탁하지 않고 **응답
+스키마의 enum 으로 강제한다.** 부탁은 대개 지켜지고, 대개는 640건에서 스무 건쯤 어긋난다는 뜻이다.
 
-판정 칸에는 근거 문장이 따라온다(`*_evidence`). 그 문장이 본문에 없으면 판정을 버린다 —
-읽고 고른 것인지 지어낸 것인지 가를 방법이 그것뿐이다.
+**판정 칸은 늘 하나를 고른다.** "본문만으로는 고를 수 없다" 를 답하던 `판단불가` 는 없앴다 —
+빈 값으로 보내 오공고가 기본값을 만들게 하지 않고, 크롤러 AI 가 공고를 읽고 가장 그럴듯한 값을
+고른다 (2026-09-14 결정). 근거 문장(`*_evidence`)은 함께 받되, 본문에서 찾지 못해도 값은 남기고
+검수 화면이 `근거 없음` 으로 보인다 (`app/classify/grounding.py`).
 
-"본문만으로는 고를 수 없다" 를 답할 자리가 `판단불가` 다. 그 자리가 없으면 모델은 아무거나
-고른다. 빈 문자열을 쓰지 않는 것은 **Gemini 가 빈 문자열이 든 enum 을 400 으로 거절하기
-때문이다** (2026-08-26 확인: `response_schema.properties[experience_type].enum[0]: cannot be
-empty`). `판단불가` 는 저장되지 않고 빈 칸이 된다.
+**숫자 칸**(최소 경력 연수)은 사실 값이라 원문에 근거가 있을 때만 채운다. 근거 문장을 찾지 못한
+값은 버린다.
 
 ## 공고가 여럿일 수 있다
 
@@ -72,12 +74,34 @@ from app import taxonomy
 # 스키마에 없는 칸 이름을 거르는 일은 `validate_classification()` 이 받은 뒤에 한다.
 
 
-# 본문만으로는 고를 수 없다는 답. 목록의 값이 아니라 "고르지 않았다" 는 표시이고, 저장될
-# 때는 빈 칸이 된다. 빈 문자열을 쓰지 못하는 것은 Gemini 가 빈 값이 든 enum 을 거절해서다.
-#
-# 아래 `Literal` 안에는 이 이름 대신 같은 글자를 적는다. 타입 검사기는 Literal 안에서 변수를
-# 읽지 못한다. 둘이 갈리지 않는지는 `_choices()` 아래의 검사가 본다
-UNDECIDED: Final = "판단불가"
+# 오공고(Spring) enum 과 같은 값. 키가 저장하는 이름이고 값이 화면 이름이다. 화면 이름은 오공고
+# enum 의 설명을 그대로 옮겼다 (`ogonggo-core/.../job/domain/*.kt`)
+EMPLOYMENT_TYPES: Final[dict[str, str]] = {
+    "FULL_TIME": "정규직",
+    "CONTRACT": "계약직",
+    "INTERN": "인턴",
+    "PART_TIME": "파트타임",
+    "ETC": "기타",
+}
+EXPERIENCE_TYPES: Final[dict[str, str]] = {
+    "NEWCOMER": "신입",
+    "EXPERIENCED": "경력",
+    "BOTH": "신입·경력",
+    "IRRELEVANT": "경력 무관",
+}
+EDUCATION_LEVELS: Final[dict[str, str]] = {
+    "ANY": "학력 무관",
+    "HIGH_SCHOOL": "고등학교 졸업",
+    "ASSOCIATE": "전문학사",
+    "BACHELOR": "학사",
+    "MASTER": "석사",
+    "DOCTORATE": "박사",
+}
+CLOSES_WHEN_FILLED: Final[dict[str, str]] = {"true": "채용 시 마감", "false": "마감일까지 접수"}
+APPLICATION_METHODS: Final[dict[str, str]] = {"EXTERNAL_PAGE": "외부 페이지", "EMAIL": "이메일"}
+# 모델이 고르지 않고 정규화가 마감일에서 정하는 두 칸 (`app/normalize/engine.py`)
+RECRUITMENT_TYPES: Final[dict[str, str]] = {"PERIOD": "기간 채용", "ALWAYS_OPEN": "상시 채용"}
+AUTO_CLOSE: Final[dict[str, str]] = {"true": "마감일에 자동 종료", "false": "자동 종료 안 함"}
 
 
 # 뽑는 칸의 조각 하나를 코드 안에서 들고 다니는 모양. (줄 번호, 그 줄에서 가져올 부분)
@@ -98,23 +122,34 @@ class Posting(BaseModel):
     """나눈 공고 하나의 칸들과, 판정 칸의 근거 문장.
 
     뽑는 칸은 조각 목록이고 원문에 없으면 빈 목록이다. 판정 칸은 `Literal` 이라 목록에
-    없는 값이 애초에 응답에 담기지 못한다. `판단불가` 가 목록에 있는 것은 "본문만으로는 고를
-    수 없다" 를 답할 자리가 있어야 하기 때문이다 — 자리가 없으면 모델은 아무거나 고른다.
+    없는 값이 애초에 응답에 담기지 못하고, 기본값이 없어 반드시 하나를 골라야 한다.
+
+    `Literal` 안의 글자는 위 표의 키와 같아야 한다. 타입 검사기가 Literal 안에서 변수를 읽지
+    못해 글자로 적는다. 둘이 갈리지 않는지는 `JUDGE_CHOICES` 아래의 검사가 본다.
     """
 
-    # 판정하는 칸. 목록은 운영 DB 640건의 실제 값에서 뽑았다
-    employment_type: Literal["판단불가", "정규직", "계약직", "인턴", "기타"] = UNDECIDED
+    # 판정하는 칸. 오공고 enum 이름으로 고른다
+    employment_type: Literal["FULL_TIME", "CONTRACT", "INTERN", "PART_TIME", "ETC"]
     employment_type_evidence: str = ""
 
-    experience_type: Literal["판단불가", "신입", "경력", "무관"] = UNDECIDED
+    experience_type: Literal["NEWCOMER", "EXPERIENCED", "BOTH", "IRRELEVANT"]
     experience_type_evidence: str = ""
 
-    # 0028. 지원 자격이 요구하는 최소 학력. 우대사항에만 있는 학력은 고르지 않고, 학력을
-    # 말하지 않는 공고는 판단불가(빈 칸)다. 오공고로 보낼 때 그쪽 목록으로 옮긴다
-    education_level: Literal["판단불가", "무관", "고졸", "전문학사", "학사", "석사", "박사"] = (
-        UNDECIDED
-    )
+    # 0033. 경력 공고에서 원문이 최소 연수를 말할 때만 숫자다. 근거 문장이 없으면 버린다
+    experience_min_years: str = ""
+    experience_min_years_evidence: str = ""
+
+    # 0028. 지원 자격이 요구하는 최소 학력. 우대사항에만 있는 학력은 고르지 않는다
+    education_level: Literal["ANY", "HIGH_SCHOOL", "ASSOCIATE", "BACHELOR", "MASTER", "DOCTORATE"]
     education_level_evidence: str = ""
+
+    # 0033. 인원이 차면 마감될 수 있다고 적혀 있으면 true 다
+    closes_when_filled: Literal["true", "false"]
+    closes_when_filled_evidence: str = ""
+
+    # 0033. 이메일로 지원서를 받으면 EMAIL 이다
+    application_method: Literal["EXTERNAL_PAGE", "EMAIL"]
+    application_method_evidence: str = ""
 
     # 뽑는 칸. 모델은 글자를 쓰지 않고 몇 번 줄의 어느 부분인지를 조각으로 답한다. 저장은
     # 원문에서 잘라 온 글자다 (`app/classify/pieces.py`). `position_name` 만 0 번 줄(제목)에서 온다
@@ -126,7 +161,7 @@ class Posting(BaseModel):
     qualifications: list[LinePiece] = Field(default_factory=list)
     recruitment_notice: list[LinePiece] = Field(default_factory=list)
     # 0028. 회사·팀 소개는 공고에 그 소제목 구역이 있을 때만 채운다. 모집인원은 적힌 그대로다 —
-    # 숫자로 바꾸는 것은 오공고로 보낼 때 한다
+    # 숫자로 바꾸는 것은 정규화가 한다 (`app/normalize/engine.py`)
     company_and_team_introduction: list[LinePiece] = Field(default_factory=list)
     compensation: list[LinePiece] = Field(default_factory=list)
     benefits: list[LinePiece] = Field(default_factory=list)
@@ -204,7 +239,27 @@ class Outline(SuggestionFields):
 
 
 # 본문을 읽고 정해진 값 중에서 고르는 칸
-JUDGE_FIELDS: tuple[str, ...] = ("employment_type", "experience_type", "education_level")
+JUDGE_FIELDS: tuple[str, ...] = (
+    "employment_type",
+    "experience_type",
+    "education_level",
+    "closes_when_filled",
+    "application_method",
+)
+
+# 원문에 근거가 있을 때만 숫자를 적는 칸. 판정 칸처럼 근거 문장이 따라오지만 목록이 없다
+NUMBER_FIELDS: tuple[str, ...] = ("experience_min_years",)
+
+# 칸마다 저장하는 이름과 화면 이름. 모델이 고르는 칸과 정규화가 정하는 칸이 함께 있다
+VALUE_LABELS: Final[dict[str, dict[str, str]]] = {
+    "employment_type": EMPLOYMENT_TYPES,
+    "experience_type": EXPERIENCE_TYPES,
+    "education_level": EDUCATION_LEVELS,
+    "closes_when_filled": CLOSES_WHEN_FILLED,
+    "application_method": APPLICATION_METHODS,
+    "recruitment_type": RECRUITMENT_TYPES,
+    "auto_close_enabled": AUTO_CLOSE,
+}
 
 # 수집이 채우는 여섯 칸 중, 원문을 읽어 다른 값을 낼 수 있는 셋. `title` 은 이미 `position_name` 의
 # 출처로 프롬프트에 그대로 들어가 있어 다시 비교할 이유가 없고, `body` 는 모델에게 보내는
@@ -237,8 +292,10 @@ def suggestion_reason_field(name: str) -> str:
     return f"{name}_suggestion_reason"
 
 
-# 판정 칸마다 따라오는 근거 문장. 컬럼이 아니라 검증과 보고를 위한 값이다
-EVIDENCE_FIELDS: tuple[str, ...] = tuple(f"{name}_evidence" for name in JUDGE_FIELDS)
+# 판정 칸과 숫자 칸마다 따라오는 근거 문장. 컬럼이 아니라 검증과 보고를 위한 값이다
+EVIDENCE_FIELDS: tuple[str, ...] = tuple(
+    f"{name}_evidence" for name in (*JUDGE_FIELDS, *NUMBER_FIELDS)
+)
 
 # 원문에 있는 글자를 그대로 가져오는 칸. `position_name` 은 제목에서, 나머지는 본문에서 온다
 EXTRACT_FIELDS: tuple[str, ...] = (
@@ -256,7 +313,7 @@ EXTRACT_FIELDS: tuple[str, ...] = (
 )
 
 # 분류가 채우는 칸. `normalized_jobs` 의 같은 이름 컬럼으로 간다
-CLASSIFY_FIELDS: tuple[str, ...] = (*JUDGE_FIELDS, *EXTRACT_FIELDS)
+CLASSIFY_FIELDS: tuple[str, ...] = (*JUDGE_FIELDS, *NUMBER_FIELDS, *EXTRACT_FIELDS)
 
 # 응답 맨 위에 올 수 있는 이름 전부
 RESPONSE_FIELDS: tuple[str, ...] = tuple(Classification.model_fields)
@@ -275,10 +332,7 @@ assert set(COMMON_FIELDS) == set(EXTRACT_FIELDS) - {"position_name"}
 # pydantic 모델)에도, 위 `CLASSIFY_FIELDS`/`RESPONSE_FIELDS`(둘 다 그 정적 모델에서 뽑는다)
 # 에도 없다 — 목록이 배포 없이 바뀌어야 해서 호출 시점에 `build_classification_model()` 이
 # 이 두 칸을 가진 모델을 새로 만든다. `CLASSIFY_FIELDS` 를 그대로 넓히지 않는 이유는
-# `EXTRACT_FIELDS | JUDGE_FIELDS == CLASSIFY_FIELDS` (`tests/test_classify_body.py`)가
-# "이 아홉 칸은 전부 정적 모델의 필드다" 를 지키는 불변식이기 때문이다. 근거 검사
-# (`app/classify/grounding.py`)에 이 둘을 엮는 것은 Push 3 이 한다 — 지금은 저장 경로
-# (`app/classify/store.py`, `app/normalize/engine.py`)만 이 두 칸을 안다
+# "이 칸들은 전부 정적 모델의 필드다" 를 지키는 불변식이기 때문이다 (`tests/test_classify_body.py`)
 JOB_FIELD: Final = "job_field"
 JOB_ROLE: Final = "job_role"
 TAXONOMY_FIELDS: tuple[str, ...] = (JOB_FIELD, JOB_ROLE)
@@ -291,27 +345,26 @@ STORED_CLASSIFY_FIELDS: tuple[str, ...] = (*CLASSIFY_FIELDS, *TAXONOMY_FIELDS)
 
 def _choices(name: str) -> tuple[str, ...]:
     annotation = Posting.model_fields[name].annotation
-    return tuple(value for value in get_args(annotation) if value and value != UNDECIDED)
+    return tuple(get_args(annotation))
 
 
-# 판정 칸이 고를 수 있는 값. `판단불가` 는 값이 아니라 "고르지 않았다" 는 표시라 여기 없다.
-# 모델에 보내는 목록과 받은 뒤 거르는 목록이 같아야 해서 스키마 하나에서 뽑는다 — 두 벌을
-# 두면 목록을 넓힐 때 한쪽만 넓어진다
+# 판정 칸이 고를 수 있는 값. 모델에 보내는 목록과 받은 뒤 거르는 목록이 같아야 해서 스키마
+# 하나에서 뽑는다 — 두 벌을 두면 목록을 넓힐 때 한쪽만 넓어진다
 JUDGE_CHOICES: dict[str, tuple[str, ...]] = {name: _choices(name) for name in JUDGE_FIELDS}
 
-# 스키마에 적은 글자와 위 상수가 갈리면 "고르지 않았다" 가 목록 안의 값이 되어 그대로 저장된다.
-# 임포트 시점에 걸린다 — 640건을 돌린 뒤에 알게 될 일이 아니다
+# 스키마에 적은 글자와 화면 이름 표가 갈리면 저장된 값이 화면에서 이름 없이 나온다. 임포트
+# 시점에 걸린다 — 640건을 돌린 뒤에 알게 될 일이 아니다
 for _name in JUDGE_FIELDS:
-    assert UNDECIDED in get_args(Posting.model_fields[_name].annotation), _name
+    assert set(JUDGE_CHOICES[_name]) == set(VALUE_LABELS[_name]), _name
 
 
 def build_classification_model(conn: sqlite3.Connection) -> type[Classification]:
     """`job_taxonomy` 의 켜진 값으로 `job_field`/`job_role` 를 더한 모델을 만든다.
 
     두 칸은 공고마다 고르는 칸이라 공고 모델(`Posting`)에 더하고, 그 공고 모델을 담는 응답
-    모델을 돌려준다.
+    모델을 돌려준다. 다른 판정 칸처럼 기본값이 없어 반드시 하나를 고른다 (2026-09-14 결정).
 
-    `Classification` 은 고치지 않는다 — 그 클래스는 배포 시점에 고정된 아홉 칸의 모양이고,
+    `Classification` 은 고치지 않는다 — 그 클래스는 배포 시점에 고정된 칸의 모양이고,
     직무 분류는 운영 중에 표가 바뀌면 다음 호출부터 목록이 따라와야 한다. 그래서 매 호출
     시점에 이 함수로 새 모델을 만든다.
 
@@ -331,11 +384,11 @@ def build_classification_model(conn: sqlite3.Connection) -> type[Classification]
     )
 
     fields: dict[str, Any] = {
-        JOB_FIELD: (Literal[(*major_names, UNDECIDED)], UNDECIDED),
+        JOB_FIELD: (Literal[major_names], ...),
         f"{JOB_FIELD}_evidence": (str, ""),
     }
     if minor_names:
-        fields[JOB_ROLE] = (Literal[(*minor_names, UNDECIDED)], UNDECIDED)
+        fields[JOB_ROLE] = (Literal[minor_names], ...)
         fields[f"{JOB_ROLE}_evidence"] = (str, "")
 
     posting: Any = create_model("PostingWithTaxonomy", __base__=Posting, **fields)
@@ -453,8 +506,17 @@ def _object(name: str, raw: Any) -> Mapping[str, Any]:
 
 
 def _text(name: str, raw: Any) -> str:
+    """글자 칸 하나. 참·거짓과 정수는 글자로 읽는다.
+
+    스키마는 채용 시 마감을 `"true"`/`"false"` 글자로, 경력 연수를 숫자 글자로 적게 하지만, 모델이
+    JSON 의 참·거짓이나 숫자로 답해도 뜻은 같다. 그 한 가지 때문에 공고를 다시 묻지 않는다.
+    """
     if raw is None:
         return ""
+    if isinstance(raw, bool):
+        return "true" if raw else "false"
+    if isinstance(raw, int):
+        return str(raw)
     if not isinstance(raw, str):
         raise ClassifySchemaError(
             "unparsable", f"`{name}` 이 문자열이 아니다: {type(raw).__name__}"

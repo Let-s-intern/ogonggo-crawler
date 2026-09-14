@@ -190,7 +190,13 @@ def _snapshot_counts() -> dict[str, int]:
         names = [
             str(row[0]) for row in source.execute("SELECT field_name FROM normalization_rules")
         ]
-        counts["normalization_rules_kept"] = sum(
+        # 0033 전에 뜬 파일이라 시작일 규칙이 없다. 가져오기가 마감일 규칙을 시작일에도 건다
+        # (`app/field_values.py`)
+        translated = [field_names.field_name(name) for name in names]
+        copies = (
+            0 if "recruitment_start_at" in translated else translated.count("recruitment_end_at")
+        )
+        counts["normalization_rules_kept"] = copies + sum(
             1 for name in names if field_names.field_name(name) in NORMALIZED_FIELDS
         )
         return counts

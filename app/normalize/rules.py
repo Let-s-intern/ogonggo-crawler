@@ -85,7 +85,15 @@ NORMALIZED_FIELDS: tuple[str, ...] = (
     "benefits",
     "education_level",
     "recruitment_headcount",
+    # 0033 이 더한 칸. 분류가 채우고 사람이 고칠 수 있다 (`migrations/0033_spring_job_values.sql`)
+    "experience_min_years",
+    "closes_when_filled",
+    "application_method",
 )
+
+# 규칙도 보정도 걸리지 않고 정규화가 다른 칸에서 정하는 칸. `normalized_jobs` 에만 있다 — 모집
+# 유형과 자동 종료는 마감일에서 정한다 (`app/normalize/engine.py` 의 `settle_fields`, 0033)
+DERIVED_FIELDS: tuple[str, ...] = ("recruitment_type", "auto_close_enabled")
 
 # `normalization_rules.rule_type` 의 CHECK 제약과 같은 값이어야 한다.
 RULE_TYPES: tuple[str, ...] = ("mapping", "regex", "trim", "date_parse", "html_text")
@@ -160,7 +168,8 @@ class DateParseConfig(_Config):
     """날짜 표기 통일. `formats` 는 시도할 순서대로 적는다."""
 
     formats: list[str]
-    output_format: str = "%Y-%m-%d"
+    # 0033 부터 시각까지 쓴다. 오공고가 모집 일시를 일시로 받는다 (2026-09-14 결정)
+    output_format: str = "%Y-%m-%d %H:%M:%S"
 
     @field_validator("formats")
     @classmethod

@@ -241,14 +241,23 @@ async def test_every_normalized_column_can_be_corrected(conn: sqlite3.Connection
     """열여섯 칸 전부다. 자동으로 뽑은 값이 틀렸을 때 고칠 길이 없는 칸을 남기지 않는다."""
     await collect(conn)
 
-    for field in OVERRIDABLE_FIELDS:
-        set_override(conn, 1, field, f"{field} 를 사람이 고쳤다")
+    values = {field: f"{field} 를 사람이 고쳤다" for field in OVERRIDABLE_FIELDS}
+    # 정규화가 오공고 모양으로 마무리하는 칸은 그 모양으로 고친다. 모집 인원은 숫자로 읽히고,
+    # 최소 경력 연수는 경력 공고에만 남는다 (`app/normalize/engine.py` 의 `settle_fields`)
+    values.update(
+        {
+            "recruitment_headcount": "3명",
+            "experience_type": "EXPERIENCED",
+            "experience_min_years": "5",
+        }
+    )
+    for field, value in values.items():
+        set_override(conn, 1, field, value)
     run_renormalize(conn)
 
     row = normalized(conn, 1)
-    assert [row[field] for field in OVERRIDABLE_FIELDS] == [
-        f"{field} 를 사람이 고쳤다" for field in OVERRIDABLE_FIELDS
-    ]
+    expected = {**values, "recruitment_headcount": "3"}
+    assert {field: row[field] for field in OVERRIDABLE_FIELDS} == expected
 
 
 async def test_an_override_on_a_dropped_field_does_not_break_renormalization(

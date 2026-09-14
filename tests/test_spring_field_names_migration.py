@@ -107,6 +107,10 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
 
 def test_up_moves_every_name_and_keeps_the_values(conn: sqlite3.Connection) -> None:
     db.migrate_up(conn)
+    # 0031 이 올린 모습만 본다. 뒤의 0033 은 값의 모양까지 바꾼다
+    # (`tests/test_spring_job_values_migration.py`)
+    applied = db.applied_versions(conn)
+    db.migrate_down(conn, steps=len(applied) - applied.index("0031") - 1)
 
     job = conn.execute("SELECT * FROM normalized_jobs").fetchone()
     assert (job["company_name"], job["recruitment_end_at"], job["parent_company_name"]) == (

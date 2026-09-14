@@ -49,14 +49,14 @@ SPLIT = response(
             position_name=pieces("로봇 SW 개발", 5),
             responsibilities=pieces("로봇 제어 소프트웨어를 개발합니다", 6),
             qualifications=pieces("C++ 경력 3년 이상", 7),
-            experience_type="경력",
+            experience_type="EXPERIENCED",
             experience_type_evidence="C++ 경력 3년 이상",
         ),
         posting_body(
             position_name=pieces("비전 AI 연구", 8),
             responsibilities=pieces("영상 인식 모델을 연구합니다", 9),
             qualifications=pieces("석사 이상 학위 보유", 10),
-            education_level="석사",
+            education_level="MASTER",
             education_level_evidence="석사 이상 학위 보유",
         ),
     ],
@@ -95,8 +95,11 @@ async def test_직무_이름과_판정_칸은_공고마다_따로다() -> None:
         "로봇 제어 소프트웨어를 개발합니다",
         "영상 인식 모델을 연구합니다",
     )
-    assert (first.fields["experience_type"], second.fields["experience_type"]) == ("경력", "")
-    assert (first.fields["education_level"], second.fields["education_level"]) == ("", "석사")
+    assert (first.fields["experience_type"], second.fields["experience_type"]) == (
+        "EXPERIENCED",
+        "",
+    )
+    assert (first.fields["education_level"], second.fields["education_level"]) == ("", "MASTER")
 
 
 async def test_직무가_하나인_공고는_나누지_않는다() -> None:

@@ -100,7 +100,11 @@ async def test_프롬프트에_트리가_한번에_들어간다(conn: sqlite3.Co
     assert "영업" in prompt
 
 
-async def test_근거가_원문에_없으면_버려진다(conn: sqlite3.Connection) -> None:
+async def test_근거가_원문에_없어도_고른_값은_남고_근거만_빠진다(conn: sqlite3.Connection) -> None:
+    """직무 분류도 판정 칸처럼 늘 고른다 (2026-09-14 결정).
+
+    근거를 못 찾은 값은 검수 화면이 먼저 보인다.
+    """
     tree = taxonomy.enabled_tree(conn)
     model = build_classification_model(conn)
     text = response(
@@ -119,20 +123,20 @@ async def test_근거가_원문에_없으면_버려진다(conn: sqlite3.Connecti
         client=FakeClient(text),
     )
 
-    assert result.postings[0].fields.get("job_field", "") == ""
-    assert result.postings[0].fields.get("job_role", "") == ""
-    assert set(result.postings[0].dropped) == {"job_field", "job_role"}
+    assert result.postings[0].fields["job_field"] == "IT·개발"
+    assert result.postings[0].fields["job_role"] == "서버·백엔드"
+    assert result.postings[0].dropped == []
+    assert result.postings[0].evidence == {}
 
 
-async def test_대분류만_정해지고_소분류는_판단불가면_대분류만_남는다(
-    conn: sqlite3.Connection,
-) -> None:
+async def test_소분류를_비워_두면_대분류만_남는다(conn: sqlite3.Connection) -> None:
+    """스키마를 거치지 않은 응답이 소분류를 비워도 대분류는 버리지 않는다."""
     tree = taxonomy.enabled_tree(conn)
     model = build_classification_model(conn)
     text = response(
         job_field="IT·개발",
         job_field_evidence="서버 개발자를 찾습니다",
-        job_role="판단불가",
+        job_role="",
     )
 
     result = await classify_body(
@@ -149,8 +153,8 @@ async def test_대분류만_정해지고_소분류는_판단불가면_대분류�
     assert result.postings[0].dropped == []
 
 
-async def test_소분류_근거만_없으면_대분류는_그대로_남는다(conn: sqlite3.Connection) -> None:
-    """소분류가 근거 검사에서 버려져도 대분류까지 같이 버리지 않는다."""
+async def test_소분류_근거만_없어도_둘_다_남는다(conn: sqlite3.Connection) -> None:
+    """근거는 칸마다 따로 남는다. 소분류의 근거가 없어도 두 값은 그대로다."""
     tree = taxonomy.enabled_tree(conn)
     model = build_classification_model(conn)
     text = response(
@@ -170,16 +174,17 @@ async def test_소분류_근거만_없으면_대분류는_그대로_남는다(co
     )
 
     assert result.postings[0].fields["job_field"] == "IT·개발"
-    assert result.postings[0].fields.get("job_role", "") == ""
-    assert result.postings[0].dropped == ["job_role"]
+    assert result.postings[0].fields["job_role"] == "서버·백엔드"
+    assert result.postings[0].dropped == []
+    assert set(result.postings[0].evidence) == {"job_field"}
 
 
-async def test_대분류가_판단불가면_소분류도_비운다(conn: sqlite3.Connection) -> None:
+async def test_대분류가_목록_밖이면_소분류도_비운다(conn: sqlite3.Connection) -> None:
     """대분류 없이 소분류만 있는 상태는 만들지 않는다."""
     tree = taxonomy.enabled_tree(conn)
     model = build_classification_model(conn)
     text = response(
-        job_field="판단불가",
+        job_field="없는 대분류",
         job_role="서버·백엔드",
         job_role_evidence="백엔드 API 를 설계하고 운영합니다",
     )

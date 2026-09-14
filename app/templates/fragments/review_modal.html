@@ -163,7 +163,20 @@
       </div>
 
       {% set shown = drafts[field.field] if field.field in drafts else (field.value or "") %}
-      {% if field.long %}
+      {% if field.choices %}
+      {# 판정 값은 목록에서 고른다. 화면에는 한글 이름, 저장은 오공고 enum 이름이다 (2026-09-14 결정).
+         목록 밖의 값(옛 값, 사람이 친 값)이 들어 있으면 지우지 않고 한 줄 더 보인다 #}
+      <select id="review-field-{{ field.field }}" name="{{ field.field }}"
+              class="block w-full"{% if focus_field == field.field %} autofocus{% endif %}>
+        <option value=""{% if not shown %} selected{% endif %}>값 없음</option>
+        {% for value, label in field.choices.items() %}
+        <option value="{{ value }}"{% if shown == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+        {% if shown and shown not in field.choices %}
+        <option value="{{ shown }}" selected>{{ shown }} (목록 밖)</option>
+        {% endif %}
+      </select>
+      {% elif field.long %}
       <textarea id="review-field-{{ field.field }}" name="{{ field.field }}" rows="12"
                 class="block w-full"{% if focus_field == field.field %} autofocus{% endif %}>{{ shown }}</textarea>
       {% else %}
@@ -171,11 +184,24 @@
              class="block w-full" value="{{ shown }}"{% if focus_field == field.field %} autofocus{% endif %}>
       {% endif %}
 
+      {# 분류가 고른 값의 근거. 근거 문장을 찾지 못해도 값은 남는다 — 그런 값을 사람이 먼저
+         보게 한다 (2026-09-14 결정, `app/classify/grounding.py`) #}
+      {% if field.judged and field.rule_value %}
+      {% if field.evidence %}
+      <p class="mt-1 text-xs text-slate-600">근거: {{ field.evidence }}</p>
+      {% else %}
+      <p class="mt-1 text-xs text-amber-700">
+        <span class="badge badge-warn">근거 없음</span>
+        분류가 원문에서 근거 문장을 찾지 못한 채 고른 값이다
+      </p>
+      {% endif %}
+      {% endif %}
+
       {# 무엇에서 고치는 것인지 함께 본다. 보정이 없는 필드는 저장된 값이 곧 규칙이 만든 값이라
          같은 것을 두 번 보여주지 않는다 — 본문처럼 긴 필드에서 그 중복이 모달의 절반을 먹는다 #}
       {% if field.overridden %}
       <p class="mt-2 text-xs font-semibold text-slate-700">규칙이 만든 값</p>
-      <pre class="max-h-40 overflow-y-auto">{{ field.rule_value or "값 없음" }}</pre>
+      <pre class="max-h-40 overflow-y-auto">{{ (field.rule_value | value_label(field.field)) or "값 없음" }}</pre>
       {% else %}
       <p class="mt-1 text-xs text-slate-500">
         저장된 값이 곧 규칙이 만든 값이다. 아직 사람 보정이 없다.

@@ -118,6 +118,9 @@ FIELD_LABELS: dict[str, str] = {
     "benefits": "복지·혜택",
     "education_level": "학력",
     "recruitment_headcount": "모집인원",
+    "experience_min_years": "최소 경력 연수",
+    "closes_when_filled": "채용 시 마감",
+    "application_method": "지원 방법",
 }
 
 # `빈 값인 필드` 조건에서 "아무 필드나 하나라도 비었다" 를 가리키는 값
@@ -143,8 +146,9 @@ EMPTY_NOTES: dict[str, str] = {
     # 사이트에서는 전부 빈다 — 그때 빈 것은 놓친 것이 아니다
     # (`seeds/site-configs-20260826.json` 의 사이트별 note)
     "recruitment_start_at": "모집 시작일을 적지 않는 사이트가 있다. 그런 사이트는 전부 빈다",
-    "employment_type": "정규직/인턴 구분을 따로 주는 사이트가 넷뿐이다. 나머지는 전부 빈다",
-    "experience_type": "신입/경력 구분을 따로 주는 사이트가 다섯뿐이다. 나머지는 전부 빈다",
+    # 판정 칸은 분류가 늘 하나를 고른다 (2026-09-14 결정). 비어 있으면 아직 분류하지 않았다
+    "employment_type": "분류가 늘 고른다. 비어 있으면 아직 분류하지 않은 공고다",
+    "experience_type": "분류가 늘 고른다. 비어 있으면 아직 분류하지 않은 공고다",
     "region": "근무지를 따로 주지 않는 사이트면 늘 빈다",
     "responsibilities": (
         "본문에 주요 업무가 섞여 있는 사이트면 늘 빈다. 그 사이트는 이것이 정상이다"
@@ -156,14 +160,18 @@ EMPTY_NOTES: dict[str, str] = {
     "recruitment_notice": "기타 안내가 없는 공고는 빈다",
     # 0025 가 더한 직무 분류. 사이트 셀렉터가 아니라 분류가 채우는 칸이라, 아직 분류를
     # 돌리지 않았거나 본문으로 판단이 갈리지 않으면 빈다
-    "job_field": "아직 분류를 돌리지 않았거나 본문으로 판단할 근거가 없으면 빈다",
-    "job_role": "대분류만 정해지고 소분류가 본문으로 갈리지 않는 공고는 이 칸만 빈다",
+    "job_field": "분류가 늘 고른다. 비어 있으면 아직 분류하지 않았거나 직무 분류 표가 비었다",
+    "job_role": "분류가 늘 고른다. 비어 있으면 아직 분류하지 않았거나 그 직군에 켜진 직무가 없다",
     # 0028 이 더한 칸. 분류가 채우고, 공고가 그 내용을 적지 않으면 빈다
     "company_and_team_introduction": "회사·팀 소개 구역이 따로 없는 공고는 빈다",
     "compensation": "급여를 적지 않는 공고는 빈다",
     "benefits": "복지를 적지 않는 공고는 빈다",
-    "education_level": "학력을 말하지 않는 공고는 빈다. 오공고로는 학력 무관으로 나간다",
-    "recruitment_headcount": "모집 인원을 적지 않는 공고는 빈다",
+    "education_level": "분류가 늘 고른다. 비어 있으면 아직 분류하지 않은 공고다",
+    "recruitment_headcount": "모집 인원을 적지 않았거나 `0명` 처럼 가린 공고는 빈다",
+    # 0033 이 더한 칸
+    "experience_min_years": "경력 공고가 아니거나 원문이 최소 연수를 말하지 않으면 빈다",
+    "closes_when_filled": "분류가 늘 고른다. 비어 있으면 아직 분류하지 않은 공고다",
+    "application_method": "분류가 늘 고른다. 비어 있으면 아직 분류하지 않은 공고다",
 }
 
 # 같은 공고가 두 번 들어왔는지 보는 기준. 무엇을 중복으로 볼지가 상황마다 달라 고르게 둔다.

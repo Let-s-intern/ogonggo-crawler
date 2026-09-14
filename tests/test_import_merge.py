@@ -468,7 +468,13 @@ def _source_counts(path: pathlib.Path) -> dict[str, int]:
         names = [
             str(row[0]) for row in source.execute("SELECT field_name FROM normalization_rules")
         ]
-        counts["normalization_rules_kept"] = sum(
+        # 0033 전에 뜬 파일이라 시작일 규칙이 없다. 가져오기가 마감일 규칙을 시작일에도 건다
+        # (`app/field_values.py`)
+        translated = [field_names.field_name(name) for name in names]
+        copies = (
+            0 if "recruitment_start_at" in translated else translated.count("recruitment_end_at")
+        )
+        counts["normalization_rules_kept"] = copies + sum(
             1 for name in names if field_names.field_name(name) in NORMALIZED_FIELDS
         )
         return counts
@@ -515,7 +521,10 @@ def test_연도_없는_날짜_형식은_빼고_들이고_읽지_못하는_규칙
     assert [json.loads(row[0])["formats"] for row in stored] == [["%Y.%m.%d"]]
     assert result.normalize_failed == 0
     assert result.normalized_added == 1
-    assert rows(conn, "SELECT recruitment_end_at FROM normalized_jobs") == [("2026-12-31",)]
+    # 0033 부터 날짜만 있는 마감일은 그날이 끝날 때까지다
+    assert rows(conn, "SELECT recruitment_end_at FROM normalized_jobs") == [
+        ("2026-12-31 23:59:59",)
+    ]
 
 
 def test_연도_없는_형식을_빼는_모양이_0027_과_같다() -> None:

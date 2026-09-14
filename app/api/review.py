@@ -67,7 +67,8 @@ from app.api.review_filter import (
     workflow_label,
 )
 from app.api.ui import render, render_page
-from app.classify.store import read_suggestions, read_suggestions_batch
+from app.classify.schema import JUDGE_FIELDS, NUMBER_FIELDS, TAXONOMY_FIELDS, VALUE_LABELS
+from app.classify.store import read_evidence, read_suggestions, read_suggestions_batch
 from app.crawler.collect import API
 from app.normalize.engine import OVERRIDABLE_FIELDS
 from app.taxonomy import list_majors
@@ -124,6 +125,11 @@ _COLUMNS = """
            n.benefits AS benefits,
            n.education_level AS education_level,
            n.recruitment_headcount AS recruitment_headcount,
+           n.experience_min_years AS experience_min_years,
+           n.closes_when_filled AS closes_when_filled,
+           n.application_method AS application_method,
+           n.recruitment_type AS recruitment_type,
+           n.auto_close_enabled AS auto_close_enabled,
            n.source_url    AS source_url,
            n.normalized_at AS normalized_at,
            n.delivered_at  AS delivered_at,
@@ -159,11 +165,17 @@ def _page_numbers(page: int, total_pages: int) -> list[int]:
     return list(range(start, end + 1))
 
 
+# 분류가 근거 문장과 함께 고르는 칸. 근거를 찾지 못해도 값은 남아 검수 화면이 먼저 보여야 한다
+# (`app/classify/grounding.py`)
+_JUDGED_FIELDS: frozenset[str] = frozenset((*JUDGE_FIELDS, *NUMBER_FIELDS, *TAXONOMY_FIELDS))
+
+
 def _cell(
     job: sqlite3.Row,
     field: str,
     overrides: dict[str, str],
     suggestions: dict[str, dict[str, str]] | None = None,
+    evidence: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """셀 하나가 그려지는 데 필요한 전부.
 
@@ -192,6 +204,11 @@ def _cell(
         "suggested": suggestion is not None,
         "suggestion_value": suggestion["value"] if suggestion else "",
         "suggestion_reason": suggestion["reason"] if suggestion else "",
+        # 판정 값은 목록에서 고른다. 화면 이름과 저장 이름의 표다 (2026-09-14 결정)
+        "choices": VALUE_LABELS.get(field),
+        # 분류가 고른 칸이면 근거 문장을 함께 보인다. 없으면 `근거 없음` 이다
+        "judged": field in _JUDGED_FIELDS,
+        "evidence": (evidence or {}).get(field, ""),
     }
 
 
@@ -342,12 +359,15 @@ def _modal_response(
     raw_job_id, part = _posting_key(job)
     overrides = _read_overrides(conn, [(raw_job_id, part)]).get((raw_job_id, part), {})
     suggestions = read_suggestions(conn, raw_job_id, part)
+    evidence = read_evidence(conn, raw_job_id, part)
     response = render(
         request,
         "fragments/review_modal.html",
         job=job,
         source=_read_source(conn, raw_job_id),
-        fields=[_cell(job, field, overrides, suggestions) for field in OVERRIDABLE_FIELDS],
+        fields=[
+            _cell(job, field, overrides, suggestions, evidence) for field in OVERRIDABLE_FIELDS
+        ],
         override_count=len(overrides),
         drafts=drafts or {},
         focus_field=focus_field,

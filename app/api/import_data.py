@@ -75,7 +75,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-from app import db, field_names
+from app import db, field_names, field_values
 from app.crawler.hashing import content_hash
 from app.llm import settings as llm_settings
 from app.normalize.engine import (
@@ -301,13 +301,17 @@ def _merge(conn: sqlite3.Connection, source: sqlite3.Connection, version: str) -
     """
     # 0031 전에 내보낸 파일은 칸 이름이 옛 이름이다. 들여오면서 이 서버의 이름으로 옮긴다
     renamed = field_names.renamed_before(version)
+    # 0033 전에 내보낸 파일은 판정 값과 모집 일시가 옛 모양이다. 같은 방법으로 옮긴다
+    values = field_values.changed_before(version)
     crawler_ids, crawlers_added, crawlers_skipped = _merge_crawlers(conn, source, renamed=renamed)
     workflow_ids, workflows_added, workflows_skipped = _merge_workflows(conn, source, crawler_ids)
-    rules_added, rules_skipped = _merge_rules(conn, source, renamed=renamed)
+    rules_added, rules_skipped = _merge_rules(conn, source, renamed=renamed, values=values)
     raw_ids, new_raw_ids, raw_duplicate = _merge_raw_jobs(
         conn, source, workflow_ids, renamed=renamed
     )
-    overrides_added, overrides_skipped = _merge_overrides(conn, source, raw_ids, renamed=renamed)
+    overrides_added, overrides_skipped = _merge_overrides(
+        conn, source, raw_ids, renamed=renamed, values=values
+    )
     llm_added, llm_skipped = _merge_llm_settings(conn, source)
     normalized_added, normalize_failed, errors = _normalize(conn, new_raw_ids)
     return ImportResult(
@@ -453,7 +457,11 @@ def _merge_workflows(
 
 
 def _merge_rules(
-    conn: sqlite3.Connection, source: sqlite3.Connection, *, renamed: bool = False
+    conn: sqlite3.Connection,
+    source: sqlite3.Connection,
+    *,
+    renamed: bool = False,
+    values: bool = False,
 ) -> tuple[int, int]:
     """정규화 규칙을 더한다. 이미 있는 규칙은 건드리지 않는다.
 
@@ -474,39 +482,56 @@ def _merge_rules(
         (str(row[0]), str(row[1]), str(row[2]), int(row[3]))
         for row in conn.execute(f"SELECT {columns} FROM normalization_rules")
     }
-    added = skipped = 0
-    for row in source.execute(
+    rows = source.execute(
         f"SELECT {columns}, enabled, note FROM normalization_rules ORDER BY id"
-    ):
+    ).fetchall()
+    # 0033 전 파일에는 시작일 규칙이 없다. 마이그레이션처럼 마감일 규칙을 시작일에도 건다 — 정규화가
+    # 마감일 칸의 기간 앞쪽을 시작일 원문으로 쓰는데, 규칙이 없으면 날짜로 읽지 못한다
+    copy_start = values and not any(
+        _rule_field(str(row["field_name"]), renamed) == field_values.START for row in rows
+    )
+    added = skipped = 0
+    for row in rows:
         rule_type = str(row["rule_type"])
-        name = str(row["field_name"])
-        if renamed:
-            translated = field_names.field_name(name)
-            if translated is None:
-                # 옛 자유 글자 직무에 걸린 규칙이다. 받을 칸이 없다
-                skipped += 1
-                continue
-            name = translated
-        key = (
-            name,
-            rule_type,
-            without_yearless_formats(rule_type, str(row["rule_config_json"])),
-            int(row["priority"]),
-        )
-        if key in known or not _readable(*key):
+        name = _rule_field(str(row["field_name"]), renamed)
+        if name is None:
+            # 옛 자유 글자 직무에 걸린 규칙이다. 받을 칸이 없다
             skipped += 1
             continue
-        conn.execute(
-            """
-            INSERT INTO normalization_rules (field_name, rule_type, rule_config_json, priority,
-                                             enabled, note)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (*key, row["enabled"], row["note"]),
-        )
-        known.add(key)
-        added += 1
+        config, enabled = str(row["rule_config_json"]), int(row["enabled"])
+        if values:
+            config, enabled = field_values.rule(name, rule_type, config, enabled)
+        targets = [name]
+        if copy_start and name == field_values.END:
+            targets.append(field_values.START)
+        for target in targets:
+            key = (
+                target,
+                rule_type,
+                without_yearless_formats(rule_type, config),
+                int(row["priority"]),
+            )
+            if key in known or not _readable(*key):
+                # 복사한 시작일 규칙은 파일에 있던 규칙이 아니라 세지 않는다
+                if target == name:
+                    skipped += 1
+                continue
+            conn.execute(
+                """
+                INSERT INTO normalization_rules (field_name, rule_type, rule_config_json, priority,
+                                                 enabled, note)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (*key, enabled, row["note"]),
+            )
+            known.add(key)
+            added += 1
     return added, skipped
+
+
+def _rule_field(name: str, renamed: bool) -> str | None:
+    """규칙의 칸 이름. 옛 파일이면 새 이름으로 옮기고, 받을 칸이 없으면 None 이다."""
+    return field_names.field_name(name) if renamed else name
 
 
 def _readable(field_name: str, rule_type: str, config: str, priority: int) -> bool:
@@ -650,6 +675,7 @@ def _merge_overrides(
     raw_ids: dict[int, int],
     *,
     renamed: bool = False,
+    values: bool = False,
 ) -> tuple[int, int]:
     """사람이 검수한 값을 가져온다. 다시 만들 수 없는 값이라 빠뜨리지 않는다.
 
@@ -690,6 +716,9 @@ def _merge_overrides(
                 skipped += 1
                 continue
             name = translated
+        value = str(row["value"])
+        if values:
+            value = field_values.override_value(name, value)
         key = (raw_job_id, int(row["part"]), name)
         if key in known:
             skipped += 1
@@ -704,7 +733,7 @@ def _merge_overrides(
                 raw_job_id,
                 row["part"],
                 name,
-                row["value"],
+                value,
                 row["created_at"],
                 row["updated_at"],
             ),

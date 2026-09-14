@@ -3,7 +3,7 @@
 `.claude/rules/llm.md` 는 모델이 낸 것을 그 자리에서 돌려 보라고 한다. 셀렉터는 HTML 에
 돌려 보면 되지만 분류에는 돌릴 것이 없다 — 대신 **원문에 근거가 있는지** 를 본다.
 
-근거가 없는 칸은 버린다. 지어낸 값은 소비 측이 그대로 사실로 노출하고, 빈 칸보다 나쁘다
+근거가 없는 사실 값은 버린다. 지어낸 값은 소비 측이 그대로 사실로 노출하고, 빈 칸보다 나쁘다
 (`.claude/tasks/memos/보류/llm-classify/prd-llm-classify.md`).
 
 ## 돌려 보는 곳은 제목과 모델에게 보낸 글이다
@@ -28,10 +28,15 @@
 **뽑는 칸**은 값 자체가 원문에 있어야 한다. 원문 글자를 그대로 옮기는 칸이라 그렇다.
 
 **판정하는 칸**은 값이 원문에 글자로 있을 필요가 없다. `백엔드 개발자 채용` 어디에도
-"개발·IT" 라고 적혀 있지 않다. 대신 둘을 본다 — 고른 값이 **닫힌 목록 안**인지, 그리고
-모델이 함께 낸 **근거 문장이 원문에 있는지.** 근거 문장이 없으면 읽고 고른 것이 아니라
-지어낸 것이다. 제목이 근거일 수 있다 — `[채용연계형 인턴]` 은 고용형태의 근거이고, 그것을
-버릴 이유가 없다.
+"개발·IT" 라고 적혀 있지 않다. 고른 값이 **닫힌 목록 안**인지만 보고, 목록 밖이면 버린다.
+
+판정 칸의 근거 문장은 원문에서 찾으면 남기고, 찾지 못해도 **값은 남긴다** (2026-09-14 결정).
+판정 칸은 오공고가 반드시 받는 값이라, 비워 두면 오공고가 기본값을 지어내게 된다 — 그보다 공고를
+읽은 AI 의 판단이 낫다. 대신 근거가 없는 판정은 검수 화면이 `근거 없음` 으로 보여 사람이 먼저
+보게 한다. 제목이 근거일 수 있다 — `[채용연계형 인턴]` 은 고용형태의 근거이다.
+
+**숫자 칸**(최소 경력 연수)은 사실 값이라 근거 문장이 원문에 없으면 버린다. 숫자가 아닌 답도
+버린다.
 
 ## 무엇을 같다고 보는가
 
@@ -59,7 +64,7 @@ from app.classify.schema import (
     JOB_ROLE,
     JUDGE_CHOICES,
     JUDGE_FIELDS,
-    UNDECIDED,
+    NUMBER_FIELDS,
 )
 
 # 비교에서 지우는 글자. 공백, 글머리표, 구두점, 괄호, 따옴표다. 뜻을 나르는 글자는 남는다
@@ -68,9 +73,13 @@ _NOISE = re.compile(r"[\s·•·◦○●□■▪▶▷–—\-*_.,;:!?()\[\]{}
 # 이보다 짧아지는 줄은 검사 대상이 아니다
 _MIN_LENGTH = 2
 
+# 숫자 칸이 받는 모양. 경력 연수는 두 자리를 넘지 않는다
+_NUMBER = re.compile(r"\d{1,2}")
 
-# 버린 이유. 셋을 가르는 것은 고칠 자리가 다르기 때문이다 — 앞은 프롬프트의 "그대로 옮겨라"
-# 가 안 먹은 것이고, 가운데는 목록이 좁은 것이고, 뒤는 읽지 않고 고른 것이다.
+
+# 버린 이유. 가르는 것은 고칠 자리가 다르기 때문이다 — 첫째는 프롬프트의 "그대로 옮겨라" 가 안
+# 먹은 것이고, 둘째는 목록이 좁은 것이고, 셋째는 읽지 않고 적은 것이고, 넷째는 답의 모양이 틀린
+# 것이다.
 #
 # 문장이 두 번 바뀌었다. "본문에 없다" 에서 검사가 제목까지 보게 되어 "제목에도 본문에도"
 # 가 됐고, 보내는 값이 상세 원문이 되면서 "본문" 이 틀린 말이 됐다 — 원문으로 돌린 건에서
@@ -79,17 +88,18 @@ _MIN_LENGTH = 2
 NOT_IN_SOURCE = "제목에도 보낸 글에도 없다"
 NOT_IN_LIST = "목록 밖이다"
 NO_EVIDENCE = "근거 문장이 제목에도 보낸 글에도 없다"
+NOT_A_NUMBER = "숫자가 아니다"
 
 
 @dataclass(frozen=True)
 class Grounded:
-    """근거가 있는 것만 남긴 결과.
+    """근거 검사를 지난 결과.
 
     `dropped` 는 버린 칸 이름이고 `reasons` 는 그 이유다. 비어 있는 것이 정상이고, 값이
     있으면 실행 기록에 남는다 — 모델이 무엇을 지어냈는지는 세어 봐야 알 수 있다.
 
-    `evidence` 는 살아남은 판정 칸의 근거 문장이다. 사람이 그 판정을 읽고 검사할 수 있는
-    유일한 자리라 결과에 같이 싣는다.
+    `evidence` 는 원문에서 찾은 근거 문장이다. 판정 칸인데 여기 없으면 근거 없이 고른 값이고,
+    검수 화면이 그것을 `근거 없음` 으로 보인다.
     """
 
     fields: dict[str, str]
@@ -156,6 +166,14 @@ def missing_lines(value: str, body: str) -> list[str]:
     return missing
 
 
+def _quote_in(fields: Mapping[str, str], name: str, source: str) -> str:
+    """그 칸의 근거 문장이 원문에 있으면 그 문장, 없거나 비었으면 빈 문자열."""
+    quote = fields.get(f"{name}_evidence", "").strip()
+    if not quote or missing_lines(quote, source):
+        return ""
+    return quote
+
+
 def _ground_judged_field(
     name: str,
     choices: tuple[str, ...],
@@ -167,15 +185,16 @@ def _ground_judged_field(
     reasons: dict[str, str],
     evidence: dict[str, str],
 ) -> None:
-    """판정 칸 하나. 목록 안인지와 근거 문장이 원문에 있는지를 본다.
+    """판정 칸 하나. 목록 안이면 남기고, 근거 문장은 원문에서 찾았을 때만 함께 남긴다.
 
     직무 분류(`job_field`/`job_role`)도 이 경로를 탄다 — 다른 점은 `choices` 가
     `JUDGE_CHOICES` 처럼 고정 상수가 아니라 호출 시점의 `job_taxonomy` 표에서 온다는
     것뿐이다.
     """
     value = fields.get(name, "").strip()
-    if not value or value == UNDECIDED:
-        # 고르지 않았다는 답이다. 버린 것이 아니라 본문에 근거가 없다는 뜻이라 세지 않는다
+    if not value:
+        # 스키마가 반드시 고르게 하지만, 스키마를 통과하지 않는 경로가 있다. 고르지 않은 것은
+        # 버린 것이 아니라 셀 것이 없다
         kept[name] = ""
         return
     if value not in choices:
@@ -186,14 +205,40 @@ def _ground_judged_field(
         dropped.append(name)
         reasons[name] = NOT_IN_LIST
         return
-    quote = fields.get(f"{name}_evidence", "").strip()
-    if not quote or missing_lines(quote, source):
-        # 읽고 고른 것이 아니라 지어낸 것이다
+    kept[name] = value
+    quote = _quote_in(fields, name, source)
+    if quote:
+        evidence[name] = quote
+
+
+def _ground_number_field(
+    name: str,
+    fields: Mapping[str, str],
+    source: str,
+    *,
+    kept: dict[str, str],
+    dropped: list[str],
+    reasons: dict[str, str],
+    evidence: dict[str, str],
+) -> None:
+    """숫자 칸 하나. 숫자이고 근거 문장이 원문에 있을 때만 남긴다. 앞의 0 은 뗀다."""
+    value = fields.get(name, "").strip()
+    if not value:
+        kept[name] = ""
+        return
+    if not _NUMBER.fullmatch(value):
+        kept[name] = ""
+        dropped.append(name)
+        reasons[name] = NOT_A_NUMBER
+        return
+    quote = _quote_in(fields, name, source)
+    if not quote:
+        # 사실 값이다. 읽고 적은 것이 아니면 지어낸 것이다
         kept[name] = ""
         dropped.append(name)
         reasons[name] = NO_EVIDENCE
         return
-    kept[name] = value
+    kept[name] = str(int(value))
     evidence[name] = quote
 
 
@@ -206,8 +251,8 @@ def ground(
 ) -> Grounded:
     """근거가 없는 칸을 버린다. 버린 칸 이름과 이유를 함께 돌려준다.
 
-    받는 것은 응답 전체(뽑는 칸 일곱, 판정 칸 둘, 근거 문장 둘)이고, 돌려주는 `fields` 는
-    `normalized_jobs` 로 갈 아홉 칸이다. 근거 문장은 컬럼이 아니라 `evidence` 로 따로 나간다.
+    받는 것은 응답 전체(뽑는 칸, 판정 칸, 숫자 칸, 근거 문장)이고, 돌려주는 `fields` 는
+    `normalized_jobs` 로 갈 칸이다. 근거 문장은 컬럼이 아니라 `evidence` 로 따로 나간다.
 
     `body` 는 **모델에게 보낸 그 글이다.** 원문이거나, 원문이 없는 건에서 본문이다. 부르는
     쪽이 보낸 것과 다른 값을 여기 넘기면 멀쩡한 칸이 버려진다 (`app/classify/classifier.py`).
@@ -249,6 +294,11 @@ def ground(
             dropped=dropped,
             reasons=reasons,
             evidence=evidence,
+        )
+
+    for name in NUMBER_FIELDS:
+        _ground_number_field(
+            name, fields, source, kept=kept, dropped=dropped, reasons=reasons, evidence=evidence
         )
 
     if taxonomy_choices:

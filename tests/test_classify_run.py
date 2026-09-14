@@ -42,9 +42,9 @@ GOOD = response(
     responsibilities="제휴사 데이터 연동 구조 기획",
     qualifications="관련 경험 5년 이상이신 분",
     # 판정 칸은 목록에서 고르고 근거 문장이 본문에 있어야 산다
-    employment_type="정규직",
+    employment_type="FULL_TIME",
     employment_type_evidence="◆ 직원 유형",
-    experience_type="경력",
+    experience_type="EXPERIENCED",
     experience_type_evidence="관련 경험 5년 이상이신 분",
 )
 
@@ -107,8 +107,8 @@ async def test_it_classifies_the_postings_that_have_a_body(conn: sqlite3.Connect
     assert progress.processed == 3
     assert progress.failed == 0
     stored = read_classification(conn, 1)
-    assert stored["employment_type"] == "정규직"
-    assert stored["experience_type"] == "경력"
+    assert stored["employment_type"] == "FULL_TIME"
+    assert stored["experience_type"] == "EXPERIENCED"
     assert stored["responsibilities"] == "제휴사 데이터 연동 구조 기획"
     # 판정 칸을 그렇게 고른 근거가 남아 있어야 나중에 왜 그랬는지 답할 수 있다
     assert read_evidence(conn, 1)["experience_type"] == "관련 경험 5년 이상이신 분"
@@ -176,7 +176,7 @@ async def test_the_classified_columns_reach_normalized_jobs(conn: sqlite3.Connec
           FROM normalized_jobs WHERE raw_job_id = 1
         """
     ).fetchone()
-    assert row["employment_type"] == "정규직"
+    assert row["employment_type"] == "FULL_TIME"
     assert row["qualifications"] == "관련 경험 5년 이상이신 분"
     # 수집이 준 본문은 그대로다
     assert row["body"] == BODY
@@ -204,7 +204,7 @@ async def test_the_classification_wins_over_what_the_site_gave(conn: sqlite3.Con
     row = conn.execute(
         "SELECT employment_type FROM normalized_jobs WHERE raw_job_id = 1"
     ).fetchone()
-    assert row["employment_type"] == "정규직"
+    assert row["employment_type"] == "FULL_TIME"
 
 
 async def test_a_blank_classification_clears_the_old_collected_value(
@@ -347,14 +347,14 @@ def test_the_classification_survives_a_renormalization(conn: sqlite3.Connection)
     from app.classify.store import save_classification
     from app.normalize.backfill import BackfillProgress, renormalize
 
-    save_classification(conn, 1, {"employment_type": "정규직"}, model="gemini-3.5-flash")
+    save_classification(conn, 1, {"employment_type": "FULL_TIME"}, model="gemini-3.5-flash")
 
     renormalize(conn, BackfillProgress())
 
     row = conn.execute(
         "SELECT employment_type FROM normalized_jobs WHERE raw_job_id = 1"
     ).fetchone()
-    assert row["employment_type"] == "정규직"
+    assert row["employment_type"] == "FULL_TIME"
 
 
 def test_a_human_correction_still_wins_over_the_classification(

@@ -57,7 +57,7 @@ from app.normalize.engine import (
     normalized_values,
     posting_parts,
 )
-from app.normalize.rules import NORMALIZED_FIELDS, Rule
+from app.normalize.rules import DERIVED_FIELDS, NORMALIZED_FIELDS, Rule
 
 logger = logging.getLogger(__name__)
 
@@ -208,7 +208,7 @@ def rewrite_one(conn: sqlite3.Connection, raw_job_id: int, rules: list[Rule]) ->
     않은 필드뿐이고, 그것이 검수가 살아남는 유일한 순서다.
     """
     # 컬럼 이름은 이 모듈이 임포트한 상수에서만 온다. 밖에서 오는 값이 들어오지 않는다
-    columns = (*NORMALIZED_FIELDS, PARENT_COMPANY)
+    columns = (*NORMALIZED_FIELDS, *DERIVED_FIELDS, PARENT_COMPANY)
     # 분류가 공고를 나눴으면 번호마다 한 행이다. 같은 번호의 행을 고친다 — 나누기 전의 1번 행은
     # 그대로 1번 공고가 되고, 그 행의 전달 표시도 따라간다
     for part in posting_parts(conn, raw_job_id):

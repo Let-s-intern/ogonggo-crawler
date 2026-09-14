@@ -26,11 +26,12 @@ import pytest
 from app import db
 from app.classify.batch import ClassifyProgress, classify_ids
 from app.classify.classifier import MAX_BODY_CHARS, classify_body
-from app.classify.grounding import NO_EVIDENCE, NOT_IN_SOURCE, ground
+from app.classify.grounding import NOT_IN_SOURCE, ground
 from app.classify.store import (
     pending_count,
     pending_ids,
     read_classification,
+    read_evidence,
     read_source,
 )
 from app.config import Settings
@@ -141,28 +142,30 @@ def test_같은_값을_본문에_돌려_보면_버려진다() -> None:
 
 def test_판정_칸의_근거_문장도_원문에서_찾는다() -> None:
     kept = ground(
-        {"employment_type": "정규직", "employment_type_evidence": EVIDENCE_IN_SOURCE},
+        {"employment_type": "FULL_TIME", "employment_type_evidence": EVIDENCE_IN_SOURCE},
         SOURCE,
         "공고 1",
     )
 
-    assert kept.fields["employment_type"] == "정규직"
+    assert kept.fields["employment_type"] == "FULL_TIME"
     assert kept.evidence["employment_type"] == EVIDENCE_IN_SOURCE
 
+    # 본문에만 돌려 보면 근거를 못 찾는다. 판정 값은 남지만 근거가 빠져 검수 화면이 `근거 없음`
+    # 으로 보인다 (2026-09-14 결정)
     본문뿐 = ground(
-        {"employment_type": "정규직", "employment_type_evidence": EVIDENCE_IN_SOURCE},
+        {"employment_type": "FULL_TIME", "employment_type_evidence": EVIDENCE_IN_SOURCE},
         BODY,
         "공고 1",
     )
-    assert 본문뿐.fields["employment_type"] == ""
-    assert 본문뿐.reasons["employment_type"] == NO_EVIDENCE
+    assert 본문뿐.fields["employment_type"] == "FULL_TIME"
+    assert "employment_type" not in 본문뿐.evidence
 
 
 async def test_실행이_원문에서_뽑은_칸을_버리지_않는다(conn: sqlite3.Connection) -> None:
     """읽는 값과 돌려 보는 값이 갈리면 여기서 잡힌다. 같은 응답을 두 건에 준다."""
     답 = response(
         region=ONLY_IN_SOURCE,
-        employment_type="정규직",
+        employment_type="FULL_TIME",
         employment_type_evidence=EVIDENCE_IN_SOURCE,
     )
 
@@ -172,12 +175,15 @@ async def test_실행이_원문에서_뽑은_칸을_버리지_않는다(conn: sq
 
     원문_있는_건 = read_classification(conn, 1)
     assert 원문_있는_건["region"] == ONLY_IN_SOURCE
-    assert 원문_있는_건["employment_type"] == "정규직"
+    assert 원문_있는_건["employment_type"] == "FULL_TIME"
+    assert read_evidence(conn, 1)["employment_type"] == EVIDENCE_IN_SOURCE
 
-    # 원문이 없는 건은 지금까지와 같다. 본문에 없는 값은 여전히 버려진다
+    # 원문이 없는 건은 지금까지와 같다. 본문에 없는 뽑는 칸은 여전히 버려진다. 판정 값은 남고
+    # 근거만 빠진다
     본문뿐인_건 = read_classification(conn, 2)
     assert 본문뿐인_건["region"] == ""
-    assert 본문뿐인_건["employment_type"] == ""
+    assert 본문뿐인_건["employment_type"] == "FULL_TIME"
+    assert "employment_type" not in read_evidence(conn, 2)
 
 
 def test_상한을_넘는_원문은_잘리고_그_사실이_남는다() -> None:

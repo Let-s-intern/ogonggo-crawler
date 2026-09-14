@@ -101,7 +101,7 @@ def test_defaults_are_filled() -> None:
     assert parse_config("regex", {"pattern": "x"}) == RegexConfig(pattern="x", replacement="")
     assert parse_config("trim", {}) == TrimConfig(collapse_whitespace=True, strip_chars=None)
     assert parse_config("date_parse", {"formats": ["%Y"]}) == DateParseConfig(
-        formats=["%Y"], output_format="%Y-%m-%d"
+        formats=["%Y"], output_format="%Y-%m-%d %H:%M:%S"
     )
     assert parse_config("mapping", {"map": {"a": "b"}}) == MappingConfig(map={"a": "b"})
 

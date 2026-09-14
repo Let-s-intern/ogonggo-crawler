@@ -93,18 +93,15 @@ def raw_snapshot(conn: sqlite3.Connection) -> str:
 
 
 def test_trim_collapses_whitespace() -> None:
-    """값이 있는 필드만 채워진다. `recruitment_end_at` 만 예외로 "상시모집" 기본값을 갖는다."""
+    """값이 있는 필드만 채워진다. 마감일도 없으면 비어 있다 — 상시 채용이다 (2026-09-14 결정)."""
     rule = build_rule("title", "trim", {})
 
     fields = normalize_fields({"title": "  파이썬  \n  백엔드 개발자 "}, [rule])
 
     assert set(fields) == {*NORMALIZED_FIELDS, "parent_company_name"}
     assert fields["title"] == "파이썬 백엔드 개발자"
-    assert fields["recruitment_end_at"] == "상시모집"
-    assert [name for name, value in fields.items() if value is not None] == [
-        "title",
-        "recruitment_end_at",
-    ]
+    assert fields["recruitment_end_at"] is None
+    assert [name for name, value in fields.items() if value is not None] == ["title"]
 
 
 def test_trim_with_strip_chars() -> None:
@@ -136,14 +133,30 @@ def test_date_parse_reformats() -> None:
     rule = build_rule(
         "recruitment_end_at", "date_parse", {"formats": ["%Y년 %m월 %d일", "%Y.%m.%d"]}
     )
+    # 시각 없이 날짜만 읽은 마감일은 그날이 끝날 때까지다 (2026-09-14 결정)
     assert (
         normalize_fields({"recruitment_end_at": "2026.09.30"}, [rule])["recruitment_end_at"]
-        == "2026-09-30"
+        == "2026-09-30 23:59:59"
     )
     assert (
         normalize_fields({"recruitment_end_at": "2026년 9월 3일"}, [rule])["recruitment_end_at"]
-        == "2026-09-03"
+        == "2026-09-03 23:59:59"
     )
+
+
+def test_date_parse_keeps_a_written_time_and_starts_a_bare_start_date_at_midnight() -> None:
+    """적힌 시각은 그대로 쓴다. 날짜만 있는 시작일은 그날 00:00:00 이다."""
+    formats = {"formats": ["%Y.%m.%d %H:%M", "%Y.%m.%d"]}
+    end = build_rule("recruitment_end_at", "date_parse", formats)
+    start = build_rule("recruitment_start_at", "date_parse", formats)
+
+    fields = normalize_fields(
+        {"recruitment_end_at": "2026.09.30 18:00", "recruitment_start_at": "2026.09.01"},
+        [end, start],
+    )
+
+    assert fields["recruitment_end_at"] == "2026-09-30 18:00:00"
+    assert fields["recruitment_start_at"] == "2026-09-01 00:00:00"
 
 
 def test_date_parse_failure_is_an_error() -> None:
@@ -166,7 +179,7 @@ def test_priority_decides_order() -> None:
         normalize_fields({"recruitment_end_at": "마감: 2026.09.30"}, [parse, strip_prefix])[
             "recruitment_end_at"
         ]
-        == "2026-09-30"
+        == "2026-09-30 23:59:59"
     )
 
     # 순서를 뒤집으면 날짜로 읽을 수 없다. 우선순위가 실제로 적용된다는 증거다
@@ -190,14 +203,11 @@ def test_disabled_rule_is_skipped() -> None:
 
 
 def test_empty_value_skips_rules() -> None:
-    """값이 없는 필드에 규칙을 태우지 않는다. 없는 값이 규칙 실패로 둔갑하지 않는다.
-
-    `recruitment_end_at` 만 예외로, 규칙을 다 태워도 비면 "상시모집" 기본값이 대신 채워진다.
-    """
+    """값이 없는 필드에 규칙을 태우지 않는다. 없는 값이 규칙 실패로 둔갑하지 않는다."""
     rule = build_rule("region", "date_parse", {"formats": ["%Y.%m.%d"]})
     assert normalize_fields({"region": ""}, [rule])["region"] is None
     assert normalize_fields({}, [rule])["region"] is None
-    assert normalize_fields({}, [rule])["recruitment_end_at"] == "상시모집"
+    assert normalize_fields({}, [rule])["recruitment_end_at"] is None
 
 
 def test_no_rules_passes_values_through() -> None:
@@ -207,41 +217,43 @@ def test_no_rules_passes_values_through() -> None:
     assert fields["body"] == record["body"]
     # 픽스처의 셀렉터가 뽑지 않는 필드는 NULL 이다
     assert fields["company_name"] is None
-    # `recruitment_end_at` 만 예외로 "상시모집" 기본값이 채워진다(2026-08-29 결정)
-    assert fields["recruitment_end_at"] == "상시모집"
+    assert fields["recruitment_end_at"] is None
 
 
-def test_마감을_못_뽑으면_상시모집으로_채워진다() -> None:
-    """2026-08-29 결정. 셀렉터가 마감을 못 뽑거나 규칙이 비웠으면 "상시모집" 을 채운다."""
+def test_마감을_못_뽑으면_마감일은_비어_있다() -> None:
+    """2026-09-14 결정. "상시모집" 글자로 채우지 않는다 — 오공고는 마감 일시 칸에 일시만 받는다.
+
+    상시 채용인지는 정규화의 마무리가 모집 유형으로 가른다 (`tests/test_normalize_settle.py`).
+    """
     record = fixture_record()
     assert "recruitment_end_at" not in record or not record.get("recruitment_end_at")
 
     fields = normalize_fields(record, [])
 
-    assert fields["recruitment_end_at"] == "상시모집"
+    assert fields["recruitment_end_at"] is None
 
 
-def test_마감이_있으면_상시모집으로_덮지_않는다() -> None:
+def test_마감이_있으면_그_일시가_남는다() -> None:
     record = {**fixture_record(), "recruitment_end_at": "2026.09.30"}
     rule = build_rule("recruitment_end_at", "date_parse", {"formats": ["%Y.%m.%d"]})
 
     fields = normalize_fields(record, [rule])
 
-    assert fields["recruitment_end_at"] == "2026-09-30"
+    assert fields["recruitment_end_at"] == "2026-09-30 23:59:59"
 
 
-def test_규칙이_마감을_비워도_상시모집으로_채워진다() -> None:
+def test_규칙이_마감을_비우면_마감일은_비어_있다() -> None:
     """`상시채용` 을 빈 값으로 매핑하는 규칙(운영 규칙)과 같은 경로다."""
     record = {**fixture_record(), "recruitment_end_at": "상시채용"}
     rule = build_rule("recruitment_end_at", "mapping", {"map": {"상시채용": ""}})
 
     fields = normalize_fields(record, [rule])
 
-    assert fields["recruitment_end_at"] == "상시모집"
+    assert fields["recruitment_end_at"] is None
 
 
-def test_판단_못한_경력_구분은_무관으로_채워진다() -> None:
-    """2026-08-28 결정. 분류가 `experience_type` 을 비웠으면 "무관" 을 대신 넣는다.
+def test_판단_못한_경력_구분은_경력_무관으로_채워진다() -> None:
+    """2026-08-28 결정. 분류가 `experience_type` 을 비웠으면 `IRRELEVANT`(경력 무관)를 넣는다.
 
     사이트가 경력을 아예 언급하지 않은 공고 대부분이 실제로 경력무관이라, 근거 없어 판단
     못한 것과 결과적으로 같은 값이 되는 편이 검수 화면에서 유용하다. 다른 여덟 칸은 이
@@ -249,14 +261,14 @@ def test_판단_못한_경력_구분은_무관으로_채워진다() -> None:
     """
     record = fixture_record()
     fields = normalize_fields(record, [], classification={"experience_type": ""})
-    assert fields["experience_type"] == "무관"
+    assert fields["experience_type"] == "IRRELEVANT"
     assert fields["employment_type"] is None
 
 
-def test_경력_구분이_있으면_무관으로_덮지_않는다() -> None:
+def test_경력_구분이_있으면_경력_무관으로_덮지_않는다() -> None:
     record = fixture_record()
-    fields = normalize_fields(record, [], classification={"experience_type": "경력"})
-    assert fields["experience_type"] == "경력"
+    fields = normalize_fields(record, [], classification={"experience_type": "EXPERIENCED"})
+    assert fields["experience_type"] == "EXPERIENCED"
 
 
 def test_분류가_없으면_경력_구분도_채우지_않는다() -> None:
@@ -381,9 +393,7 @@ def test_rule_that_empties_a_value_stops_the_chain() -> None:
     """규칙이 값을 비우면 뒤 규칙에 넘기지 않는다.
 
     "상시채용" 을 mapping 으로 비운 뒤 date_parse 가 그 빈 값을 읽으려 하면 실패가 나고,
-    그 공고가 통째로 `normalized_jobs` 에서 빠진다. `recruitment_end_at` 은 규칙이 비운 자리를
-    "상시모집" 기본값이 채운다(2026-08-29) — 그래서 이 체인이 여기서 멈춘 것과, 멈추지
-    않고 date_parse 까지 갔다면 났을 실패가 다르다는 것은 별도로 확인해야 한다.
+    그 공고가 통째로 `normalized_jobs` 에서 빠진다. 멈추면 마감일만 비고 공고는 남는다.
     """
     rules = [
         build_rule(
@@ -404,7 +414,7 @@ def test_rule_that_empties_a_value_stops_the_chain() -> None:
 
     out = normalize_fields({"title": "개발자", "recruitment_end_at": "상시채용"}, rules)
 
-    assert out["recruitment_end_at"] == "상시모집"
+    assert out["recruitment_end_at"] is None
     assert out["title"] == "개발자"
 
 
@@ -436,4 +446,5 @@ def test_a_real_date_still_goes_through_the_whole_chain() -> None:
 
     out = normalize_fields({"recruitment_end_at": "2026-08-15 09:00 ~ 2026-08-30 17:00"}, rules)
 
-    assert out["recruitment_end_at"] == "2026-08-30"
+    # 시각을 떼는 규칙을 거쳐 날짜만 남았으니 그날이 끝날 때까지다
+    assert out["recruitment_end_at"] == "2026-08-30 23:59:59"

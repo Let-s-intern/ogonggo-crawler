@@ -193,6 +193,12 @@ def test_item_shape_matches_contract(client: TestClient, conn: sqlite3.Connectio
         "benefits",
         "education_level",
         "recruitment_headcount",
+        # 0033 이 더한 칸. 분류가 채우는 셋과 정규화가 마감일에서 정하는 둘이다
+        "experience_min_years",
+        "closes_when_filled",
+        "application_method",
+        "recruitment_type",
+        "auto_close_enabled",
         "source_url",
         "normalized_at",
     }

@@ -10,9 +10,10 @@
 말하는 곳이 아홉이고 그중 본문이 같은 글자를 되풀이하는 곳은 셋뿐이었다
 (`tests/test_job_role_source.py`).
 
-**판정하는 칸** 둘(고용형태·경력 구분)은 본문을 읽고 닫힌 목록에서 고른다. 목록은
-응답 스키마의 enum 으로 강제하고, 고른 값에는 근거 문장이 따라온다. 그 문장이 본문에 없으면
-판정을 버린다 — 읽고 고른 것인지 지어낸 것인지 가를 방법이 그것뿐이다.
+**판정하는 칸**(고용형태·경력 구분·학력·채용 시 마감·지원 방법)은 본문을 읽고 오공고 enum
+목록에서 반드시 하나를 고른다. 목록은 응답 스키마의 enum 으로 강제하고, 고른 값에는 근거
+문장이 따라온다. 근거 문장을 본문에서 찾지 못해도 값은 남기고 검수 화면이 `근거 없음` 으로
+보인다 (2026-09-14 결정). 최소 경력 연수만은 사실 값이라 근거 문장이 없으면 버린다.
 
 어느 칸이 어느 쪽인지와 목록이 왜 그 목록인지는 `app/classify/schema.py` 에 있다.
 
@@ -74,7 +75,7 @@ from app.classify.schema import (
     JOB_FIELD,
     JOB_ROLE,
     JUDGE_CHOICES,
-    UNDECIDED,
+    VALUE_LABELS,
     Classification,
     ClassifySchemaError,
     Outline,
@@ -170,11 +171,14 @@ _PROMPT = """아래는 채용공고의 제목과 본문이다. 줄마다 앞에 
 규칙:
 - **이 칸들은 글자가 본문에 그대로 없어도 된다.** 본문을 읽고 판단해서 고른다. 칸마다 적힌 예는
   원문 문장과 그때 고를 값이다.
-- **반드시 위 목록에 있는 값만 쓴다.** 목록에 없는 값을 새로 만들지 않는다. 어디에도 맞지
-  않으면 목록의 기타를, 본문만으로는 판단할 수 없으면 판단불가 를 쓴다.
-- 고른 칸마다 `employment_type_evidence` 처럼 `_evidence` 가 붙은 자리에 **그렇게 판단한
-  근거가 되는 본문 문장을 그대로 옮겨 적는다.** 한 문장이면 된다. 본문에 없는 문장을 적지
-  않는다. 줄 앞의 [번호] 는 넣지 않는다. 근거를 적을 수 없으면 그 칸을 판단불가 로 둔다.
+- **목록이 있는 칸은 반드시 목록의 값 하나를 고른다. 비워 두지 않는다.** 괄호 앞의 이름을
+  그대로 적는다(`FULL_TIME`). 목록에 없는 값을 새로 만들지 않는다. 본문이 분명히 말하지
+  않으면 공고 전체를 읽고 가장 그럴듯한 값을 고른다.
+- 칸마다 `employment_type_evidence` 처럼 `_evidence` 가 붙은 자리에 **그렇게 판단한 근거가
+  되는 본문 문장을 그대로 옮겨 적는다.** 한 문장이면 된다. 본문에 없는 문장을 적지 않는다.
+  줄 앞의 [번호] 는 넣지 않는다. 근거가 되는 문장이 없으면 `_evidence` 만 비우고 값은 고른다.
+- 목록이 없는 칸(`experience_min_years`)은 원문에 근거가 있을 때만 채우고 근거 문장을 반드시
+  적는다. 근거 문장이 없는 값은 버려진다.
 - 회사명·모집 시작일·마감일은 위 칸 어디에도 넣지 않는다. 그 셋을 원문과 견주는 자리는
   값이 이미 있을 때만 아래에 따로 나온다. 제목도 `position_name` 말고는 어느 칸에도 넣지 않는다.
 {taxonomy_block}{current_values_block}
@@ -380,7 +384,8 @@ def _taxonomy_block(
     return (
         "\n# 직무 분류 — 아래 목록에서만 고른다\n\n"
         "job_field 는 대분류(직군), job_role 는 그 대분류 밑의 소분류(직무)다. 목록에 없는 이름을\n"
-        "새로 만들지 않는다. 직무마다 나눈 공고는 posting 마다 그 직무를 보고 고른다.\n"
+        "새로 만들지 않고, 비워 두지 않는다.\n"
+        "직무마다 나눈 공고는 posting 마다 그 직무를 보고 고른다.\n"
         "job_role 는 반드시 그 job_field 줄에 적힌 소분류 중에서 고른다 — 다른 대분류의 소분류를\n"
         "고르지 않는다.\n\n"
         f"{render_fields(rules, names_of(TAXONOMY))}\n\n"
@@ -495,7 +500,11 @@ def _classification_prompt(
 
     규칙 한 벌의 모양과 판은 `app/classify/prompt_rules.py` 에 있다.
     """
-    choices = {name: " / ".join((*values, UNDECIDED)) for name, values in JUDGE_CHOICES.items()}
+    # 저장하는 이름 뒤에 화면 이름을 붙여 보낸다. 모델은 괄호 앞의 이름을 고른다
+    choices = {
+        name: " / ".join(f"{value}({VALUE_LABELS[name][value]})" for value in values)
+        for name, values in JUDGE_CHOICES.items()
+    }
     return _PROMPT.format(
         body=body,
         title=title,

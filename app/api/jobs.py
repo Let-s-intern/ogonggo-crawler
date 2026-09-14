@@ -41,7 +41,8 @@ _SELECT = """
            recruitment_start_at, employment_type, experience_type, region,
            responsibilities, preferred_qualifications, hiring_process, recruitment_notice,
            company_and_team_introduction, compensation, benefits, education_level,
-           recruitment_headcount,
+           recruitment_headcount, experience_min_years, closes_when_filled, application_method,
+           recruitment_type, auto_close_enabled,
            source_url, normalized_at
       FROM normalized_jobs
 """
@@ -64,8 +65,11 @@ class JobOut(BaseModel):
     않으면 `null` 이다 (`.claude/docs/api-contract.md`).
 
     0028 이 오공고가 받는 다섯 칸을 더했다 — 회사·팀 소개, 급여·처우, 복지·혜택, 학력,
-    모집인원. 모집인원은 적힌 그대로의 글자이고 숫자가 아니다
-    (`migrations/0028_add_posting_detail_fields.sql`).
+    모집인원 (`migrations/0028_add_posting_detail_fields.sql`).
+
+    0033 이 판정 값을 오공고 enum 이름으로, 모집 일시를 `YYYY-MM-DD HH:MM:SS` 로 바꾸고 최소 경력
+    연수·채용 시 마감·지원 방법·모집 유형·자동 종료를 더했다. 모집인원은 1 이상의 숫자 글자이고,
+    마감일이 없으면 상시 채용이다 (`migrations/0033_spring_job_values.sql`).
 
     사이트가 그 값을 주지 않으면 `null` 이다. 없는 값을 다른 값으로 채우지 않는다.
     """
@@ -93,6 +97,12 @@ class JobOut(BaseModel):
     benefits: str | None
     education_level: str | None
     recruitment_headcount: str | None
+    # 0033. 판정 값은 오공고 enum 이름이고, 참·거짓은 `true`/`false` 글자다
+    experience_min_years: str | None
+    closes_when_filled: str | None
+    application_method: str | None
+    recruitment_type: str | None
+    auto_close_enabled: str | None
     source_url: str
     normalized_at: str
 
@@ -200,6 +210,11 @@ def _out(row: sqlite3.Row) -> JobOut:
         benefits=row["benefits"],
         education_level=row["education_level"],
         recruitment_headcount=row["recruitment_headcount"],
+        experience_min_years=row["experience_min_years"],
+        closes_when_filled=row["closes_when_filled"],
+        application_method=row["application_method"],
+        recruitment_type=row["recruitment_type"],
+        auto_close_enabled=row["auto_close_enabled"],
         source_url=str(row["source_url"]),
         normalized_at=_iso(str(row["normalized_at"])),
     )

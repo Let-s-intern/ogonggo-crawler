@@ -37,7 +37,7 @@ CONFIG_HINTS: tuple[tuple[str, str], ...] = (
     ("mapping", '{"map": {"원문": "바꿀 값"}, "default": null}'),
     ("regex", '{"pattern": "\\\\s+", "replacement": " "}'),
     ("trim", '{"collapse_whitespace": true, "strip_chars": null}'),
-    ("date_parse", '{"formats": ["%Y-%m-%d"], "output_format": "%Y-%m-%d"}'),
+    ("date_parse", '{"formats": ["%Y-%m-%d"], "output_format": "%Y-%m-%d %H:%M:%S"}'),
 )
 
 

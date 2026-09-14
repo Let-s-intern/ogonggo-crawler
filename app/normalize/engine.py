@@ -99,7 +99,7 @@ import re
 import sqlite3
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time
 
 from bs4 import BeautifulSoup
 
@@ -112,6 +112,7 @@ from app.classify.store import read_classification, read_parts
 # (`.claude/rules/core.md`).
 from app.crawler.parser import BLOCK_TAGS
 from app.normalize.rules import (
+    DERIVED_FIELDS,
     NORMALIZED_FIELDS,
     DateParseConfig,
     HtmlTextConfig,
@@ -207,30 +208,64 @@ def normalize_fields(
     메우지 않는다.
     """
     ordered = _by_field(rules)
+    raw = _with_period_start(raw)
     result: dict[str, str | None] = {}
     for field_name in NORMALIZED_FIELDS:
         raw_value = raw.get(field_name)
-        value = raw_value if isinstance(raw_value, str) else ""
-        if not value:
-            result[field_name] = None
-            continue
-        for rule in ordered.get(field_name, ()):
-            value = _apply(value, rule)
-            if not value:
-                # 규칙이 값을 비웠으면 거기서 멈춘다. 빈 값을 다음 규칙에 넘기면 date_parse 가 읽을
-                # 것이 없다며 실패하고, 그 공고가 통째로 빠진다. "상시채용" 을 mapping 으로 비우는
-                # 것이 이 경로다 — recruitment_end_at 만 NULL 이 되고 공고는 남아야 한다.
-                break
-        result[field_name] = value or None
-    # 마감을 못 뽑았거나 규칙이 비웠으면(`상시채용` 매핑 등) "상시모집" 으로 채운다
-    # (2026-08-29 결정). 빈 마감은 셀렉터가 놓친 것과 정말 마감이 없는 상시채용을 화면에서
-    # 구분하지 못했다 — `experience_type` 을 "무관" 으로 채운 것과 같은 실사용 판단이다
-    if result.get("recruitment_end_at") is None:
-        result["recruitment_end_at"] = "상시모집"
+        result[field_name] = _run_rules(
+            raw_value if isinstance(raw_value, str) else "", ordered.get(field_name, ())
+        )
+    # 마감이 비면 상시 채용이다. 2026-08-29 부터 "상시모집" 글자로 채웠지만, 오공고는 마감 일시
+    # 칸에 일시만 받고 상시 채용을 모집 유형으로 가른다 (2026-09-14 결정, `settle_fields`)
     result[PARENT_COMPANY] = (
         parent_company_name if parent_company_name and parent_company_name.strip() else None
     )
     return apply_classification(result, classification)
+
+
+# 모집 기간을 마감일 칸 하나에 적는 사이트의 구분자. `2026-08-15 09:00 ~ 2026-08-30 17:00`
+_PERIOD_SEPARATOR = re.compile(r"\s*[~〜]\s*")
+START = "recruitment_start_at"
+END = "recruitment_end_at"
+
+
+def normalize_value(field_name: str, value: str, rules: Sequence[Rule]) -> str | None:
+    """칸 하나에 그 칸의 규칙만 태운다. 빈 값은 None 이다.
+
+    마감 거르기가 목록의 마감일 하나를 읽을 때 쓴다 (`app/crawler/deadline.py`). 공고 전체를
+    정규화하면 기간 앞쪽에서 나눈 시작일까지 읽다가, 그 칸의 실패 때문에 마감일을 못 읽는다.
+    """
+    return _run_rules(value, _by_field(rules).get(field_name, ()))
+
+
+def _run_rules(value: str, rules: Sequence[Rule]) -> str | None:
+    if not value:
+        return None
+    for rule in rules:
+        value = _apply(value, rule)
+        if not value:
+            # 규칙이 값을 비웠으면 거기서 멈춘다. 빈 값을 다음 규칙에 넘기면 date_parse 가 읽을
+            # 것이 없다며 실패하고, 그 공고가 통째로 빠진다. "상시채용" 을 mapping 으로 비우는
+            # 것이 이 경로다 — recruitment_end_at 만 NULL 이 되고 공고는 남아야 한다.
+            break
+    return value or None
+
+
+def _with_period_start(raw: Mapping[str, object]) -> Mapping[str, object]:
+    """마감일 칸이 기간이면 앞쪽을 시작일 원문으로 쓴다 (2026-09-14 결정).
+
+    수집이 시작일을 따로 주면 그 값이 먼저다. 마감일 칸은 그대로 두고, 뒤쪽만 남기는 일은 그 칸의
+    규칙이 한다 (`seeds/normalization-rules.json` 의 기간 regex). 시작일 칸에도 마감일과 같은
+    규칙이 걸려 있어야 날짜로 읽힌다 (`migrations/0033_spring_job_values.sql`).
+    """
+    start = raw.get(START)
+    end = raw.get(END)
+    if (isinstance(start, str) and start.strip()) or not isinstance(end, str):
+        return raw
+    parts = _PERIOD_SEPARATOR.split(end, maxsplit=1)
+    if len(parts) < 2 or not parts[0].strip():
+        return raw
+    return {**raw, START: parts[0]}
 
 
 def apply_classification(
@@ -247,9 +282,10 @@ def apply_classification(
     (`CLASSIFY_FIELDS`)에는 없지만, 저장 경로는 이 둘까지 아는 `STORED_CLASSIFY_FIELDS` 를
     쓴다(`app/classify/schema.py`).
 
-    **`experience_type` 만 빈 칸을 "무관" 으로 채운다 (2026-08-28 결정).** 근거가 없어 판단하지
-    못한 것과 사이트가 경력무관이라고 밝힌 것은 원래 다른 뜻이지만, 실사용에서는 사이트가
-    경력을 아예 언급하지 않은 공고 대부분이 실제로 경력무관이다. 다른 칸은 이 규칙을 타지
+    **빈 `experience_type` 은 `IRRELEVANT`(경력 무관)로 채운다 (2026-08-28 결정).**
+    근거가 없어 판단하지 못한 것과 사이트가 경력무관이라고 밝힌 것은 원래 다른 뜻이지만,
+    실사용에서는 사이트가 경력을 아예 언급하지 않은 공고 대부분이 실제로 경력무관이다. 다른 칸은
+    이 규칙을 타지
     않는다 — 빈 칸이 그대로 있어야 검수 화면에서 못 뽑은 것을 잡아낼 수 있다.
     """
     if not classification:
@@ -257,7 +293,7 @@ def apply_classification(
     for name in STORED_CLASSIFY_FIELDS:
         fields[name] = classification.get(name, "").strip() or None
     if fields.get("experience_type") is None:
-        fields["experience_type"] = "무관"
+        fields["experience_type"] = "IRRELEVANT"
     return fields
 
 
@@ -337,6 +373,41 @@ def apply_overrides(
     return fields
 
 
+# 모집 인원 글자에서 읽는 숫자. 천 단위 쉼표도 받는다
+_COUNT = re.compile(r"\d[\d,]*")
+_YEARS = re.compile(r"\d{1,2}")
+
+
+def settle_fields(fields: dict[str, str | None]) -> dict[str, str | None]:
+    """오공고가 받는 모양으로 마무리한다. 사람 보정까지 덮은 뒤의 값에서 정한다 (2026-09-14 결정).
+
+    - 모집 인원은 처음 나오는 1 이상의 숫자다. `0명`·`O명`·`00명` 처럼 가린 표기는 비운다.
+      분류는 적힌 글자를 그대로 옮기고, 숫자로 읽는 것은 여기서 한다 — 사람이 `3명` 으로 고쳐도
+      같은 모양이 된다
+    - 최소 경력 연수는 경력 공고(`EXPERIENCED`)에만 남긴다
+    - 모집 유형과 자동 종료는 마감일로 정한다. 마감일이 있으면 기간 채용이고 마감일에 닫힌다.
+      오공고는 상시 채용에 마감일이 있으면 받지 않는다
+    """
+    fields["recruitment_headcount"] = _headcount(fields.get("recruitment_headcount"))
+    years = fields.get("experience_min_years") or ""
+    if fields.get("experience_type") != "EXPERIENCED" or not _YEARS.fullmatch(years.strip()):
+        fields["experience_min_years"] = None
+    else:
+        fields["experience_min_years"] = str(int(years.strip()))
+    period = bool(fields.get(END))
+    fields["recruitment_type"] = "PERIOD" if period else "ALWAYS_OPEN"
+    fields["auto_close_enabled"] = "true" if period else "false"
+    return fields
+
+
+def _headcount(value: str | None) -> str | None:
+    for token in _COUNT.findall(value or ""):
+        number = int(token.replace(",", "") or "0")
+        if number >= 1:
+            return str(number)
+    return None
+
+
 @dataclass(frozen=True)
 class PostingPart:
     """정규화할 공고 하나. 나누지 않은 공고는 1번 하나이고 `split` 이 False 다."""
@@ -388,7 +459,8 @@ def normalized_values(
         if role:
             title = fields.get("title")
             fields["title"] = f"{title} - {role}" if title else role
-    return source_url, apply_overrides(fields, read_overrides(conn, raw_job_id, part.number))
+    overridden = apply_overrides(fields, read_overrides(conn, raw_job_id, part.number))
+    return source_url, settle_fields(overridden)
 
 
 def insert_normalized(
@@ -407,7 +479,7 @@ def insert_normalized(
     # 컬럼 이름은 이 모듈의 상수에서만 온다. 밖에서 오는 값이 들어오지 않는다. 손으로 적은
     # 목록을 두면 칸이 늘 때마다 여기와 `NORMALIZED_FIELDS` 가 갈리고, 갈린 순간 새 칸은
     # 조용히 NULL 로만 남는다
-    columns = (*NORMALIZED_FIELDS, PARENT_COMPANY)
+    columns = (*NORMALIZED_FIELDS, *DERIVED_FIELDS, PARENT_COMPANY)
     cursor = conn.execute(
         f"""
         INSERT INTO normalized_jobs
@@ -483,6 +555,12 @@ def flatten_html(value: str) -> str:
     return _BLANK_RUN.sub("\n\n", text).strip()
 
 
+# 시각 없이 날짜만 읽은 모집 일시에 붙이는 시각. 마감일은 그날이 끝날 때까지, 시작일은 그날이
+# 시작할 때부터다 (2026-09-14 결정). 시각이 적힌 표기는 그 시각을 쓴다
+_DAY_BOUNDARY = {END: time(23, 59, 59), START: time(0, 0, 0)}
+_TIME_DIRECTIVE = re.compile(r"%[HIMS]")
+
+
 def _parse_date(value: str, rule: Rule, config: DateParseConfig) -> str:
     """`formats` 를 순서대로 시도한다. 하나도 맞지 않으면 실패다.
 
@@ -493,9 +571,13 @@ def _parse_date(value: str, rule: Rule, config: DateParseConfig) -> str:
     text = value.strip()
     for fmt in config.formats:
         try:
-            return datetime.strptime(text, fmt).strftime(config.output_format)
+            parsed = datetime.strptime(text, fmt)
         except ValueError:
             continue
+        boundary = _DAY_BOUNDARY.get(rule.field_name)
+        if boundary is not None and not _TIME_DIRECTIVE.search(fmt.replace("%%", "")):
+            parsed = datetime.combine(parsed.date(), boundary)
+        return parsed.strftime(config.output_format)
     raise NormalizeError(
         rule.field_name,
         rule.rule_type,

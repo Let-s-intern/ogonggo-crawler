@@ -105,6 +105,12 @@ EXPECTED_COLUMNS = {
         "recruitment_headcount",
         # 0029 가 더한 번호. 수집 건 하나를 나눈 몇 번째 공고인지다
         "part",
+        # 0033 이 더한 칸. 분류가 채우는 셋과 정규화가 마감일에서 정하는 둘
+        "experience_min_years",
+        "closes_when_filled",
+        "application_method",
+        "recruitment_type",
+        "auto_close_enabled",
     },
     "normalization_rules": {
         "id",
@@ -255,6 +261,7 @@ ALL_VERSIONS = [
     "0030",
     "0031",
     "0032",
+    "0033",
 ]
 
 

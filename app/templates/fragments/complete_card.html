@@ -25,7 +25,7 @@
       {{ row.company_name or row.parent_company_name }}
     </p>
     <p class="mt-1 line-clamp-2 text-sm font-bold text-slate-900">{{ row.title }}</p>
-    {% set tags = [row.job_field, row.job_role, row.employment_type, row.experience_type] | select | list %}
+    {% set tags = [row.job_field, row.job_role, row.employment_type | value_label("employment_type"), row.experience_type | value_label("experience_type")] | select | list %}
     {% if tags %}
     <p class="mb-0 mt-2 truncate text-xs text-slate-500">
       {% for tag in tags %}#{{ tag }}{% if not loop.last %} {% endif %}{% endfor %}

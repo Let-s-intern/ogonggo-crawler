@@ -35,6 +35,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from app.classify.schema import VALUE_LABELS
 from app.config import get_settings
 from app.crawler.collect import API
 from app.crawler.playwright import PLAYWRIGHT, STATIC
@@ -411,6 +412,19 @@ templates.env.globals["next_step"] = next_step
 templates.env.globals["mode_word"] = mode_word
 templates.env.globals["reason_word"] = reason_word
 templates.env.filters["as_time"] = format_time
+
+
+def value_label(value: object, field: str) -> object:
+    """저장된 판정 값의 화면 이름. 목록 값이 아니면(옛 값, 사람이 친 값) 그대로 보인다.
+
+    DB 에는 오공고 enum 이름(`FULL_TIME`)으로 저장하고 화면에는 한글로 보인다 (2026-09-14 결정).
+    """
+    if not isinstance(value, str):
+        return value
+    return VALUE_LABELS.get(field, {}).get(value, value)
+
+
+templates.env.filters["value_label"] = value_label
 templates.env.filters["tidy_text"] = collapse_blank_lines
 
 

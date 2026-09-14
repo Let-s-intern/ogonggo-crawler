@@ -73,11 +73,12 @@ def test_default_rules_reach_the_prompt() -> None:
     prompt, _ = build_prompt("◆ 업무내용\n기획", "기획자 채용", None, TREE)
 
     assert "- responsibilities: 주요 업무·담당 업무" in prompt
-    assert "  예: `채용 후 정규직 전환` → `인턴`" in prompt
-    assert "  예: `고졸 이상` → `고졸`" in prompt
+    assert "  예: `채용 후 정규직 전환` → `INTERN`" in prompt
+    assert "  예: `고졸 이상` → `HIGH_SCHOOL`" in prompt
+    assert "판단불가" not in prompt
     assert "  고를 수 있는 값: " in prompt
     assert "# 공통 규칙" in prompt
-    assert "- job_field: **가능하면 항상 채운다.**" in prompt
+    assert "- job_field: **항상 채운다.**" in prompt
     # 자리표시자가 남으면 모델이 `{extract_rules}` 라는 글자를 규칙으로 읽는다
     assert "{extract_rules}" not in prompt
     assert "{common_rules}" not in prompt
