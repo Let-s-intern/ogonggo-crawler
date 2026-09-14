@@ -1,0 +1,73 @@
+{# 산업 목록. 직무 분류 트리(`fragments/taxonomy_tree.html`)와 같은 모양이고 단계가 하나다.
+
+   빈 표는 "없음" 으로 끝내지 않는다 — 완전히 비어 있을 때만 나오는 기본 산업 불러오기 버튼이
+   무엇을 하면 채워지는지 그 자리에서 말한다 (`.claude/rules/writing.md`). #}
+{% from "macros.html" import empty_row, wait, failure %}
+{% if error %}
+{{ failure(error.reason, error.message, title="저장하지 못했다") }}
+{% endif %}
+{% if message %}
+<p class="font-medium text-slate-700">{{ message }}</p>
+{% endif %}
+
+<div class="table-scroll">
+<table class="data-table">
+  <caption>산업. 공고 수는 지금 그 이름으로 분류된 <code>normalized_jobs</code> 건수다</caption>
+  <thead>
+    <tr>
+      <th scope="col">이름</th>
+      <th scope="col">순서</th>
+      <th scope="col">메모</th>
+      <th scope="col">상태</th>
+      <th scope="col" class="num">공고 수</th>
+      <th scope="col">동작</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    {% include "fragments/industry_row.html" with context %}
+    {% else %}
+    {{ empty_row(6, "산업 분류가 아직 없다. 아래 기본 산업 불러오기로 잡코리아 산업 11개를 한 번에 채우거나, 손으로 하나씩 만든다") }}
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if is_empty %}
+<form hx-post="/ui/industries/seed" hx-target="#industry-list" hx-swap="innerHTML"
+      hx-disabled-elt="find button"
+      hx-confirm="seeds/industries-jobkorea-20260914.json 의 산업 11개를 한 번에 넣는다. 계속할까">
+  <button type="submit">기본 산업 불러오기</button>
+  {{ wait("불러오는 중") }}
+  <span class="block text-xs text-slate-500">
+    표가 완전히 비어 있을 때만 보인다. 불러오면 이 버튼은 사라진다
+  </span>
+</form>
+{% else %}
+<h4>산업 추가</h4>
+<form hx-post="/ui/industries" hx-target="#industry-list" hx-swap="innerHTML"
+      hx-disabled-elt="find button">
+  <fieldset>
+    <legend>새 산업</legend>
+    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
+      <span>
+        <label for="new-industry-name" class="block">이름</label>
+        <input id="new-industry-name" name="name" type="text" required>
+      </span>
+      <span>
+        <label for="new-industry-order" class="block">순서</label>
+        <input id="new-industry-order" name="sort_order" type="number" value="0" size="4">
+      </span>
+    </p>
+    <p>
+      <label for="new-industry-note">메모</label>
+      <br>
+      <textarea id="new-industry-note" name="note" rows="2" class="w-full max-w-2xl"></textarea>
+    </p>
+    <p>
+      <button type="submit">추가</button>
+      {{ wait("추가하는 중") }}
+    </p>
+  </fieldset>
+</form>
+{% endif %}

@@ -89,6 +89,8 @@ NORMALIZED_FIELDS: tuple[str, ...] = (
     "experience_min_years",
     "closes_when_filled",
     "application_method",
+    # 0034 가 더한 산업. 분류가 산업 분류표에서 고른다 (`migrations/0034_industries.sql`)
+    "industry",
 )
 
 # 규칙도 보정도 걸리지 않고 정규화가 다른 칸에서 정하는 칸. `normalized_jobs` 에만 있다 — 모집

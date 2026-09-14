@@ -67,7 +67,7 @@ from typing import Any, Final, Literal, cast, get_args
 
 from pydantic import BaseModel, Field, create_model
 
-from app import taxonomy
+from app import industries, taxonomy
 
 # 아래 모델은 Gemini 의 response_schema 로 그대로 나간다. `extra="forbid"` 를 걸면
 # `additionalProperties: false` 로 변환되는데 Gemini 가 그 필드를 모르고 400 을 낸다.
@@ -337,10 +337,14 @@ JOB_FIELD: Final = "job_field"
 JOB_ROLE: Final = "job_role"
 TAXONOMY_FIELDS: tuple[str, ...] = (JOB_FIELD, JOB_ROLE)
 
+# 산업. `industries`(운영 DB 표)에서 공고마다 고르는 판정 칸이다 (`migrations/0034_industries.sql`).
+# 직무 분류와 같은 이유로 정적 모델에 없고 `build_classification_model()` 이 더한다
+INDUSTRY: Final = "industry"
+
 # 저장 경로(분류 결과 표, 정규화)가 옮기는 칸 전부. `CLASSIFY_FIELDS` 에 직무 분류 둘을 더한
 # 것이다 — `job_classifications`/`normalized_jobs` 양쪽 다 이 두 칸의 컬럼을 갖는다
 # (`migrations/0025_job_major_minor.sql`)
-STORED_CLASSIFY_FIELDS: tuple[str, ...] = (*CLASSIFY_FIELDS, *TAXONOMY_FIELDS)
+STORED_CLASSIFY_FIELDS: tuple[str, ...] = (*CLASSIFY_FIELDS, *TAXONOMY_FIELDS, INDUSTRY)
 
 
 def _choices(name: str) -> tuple[str, ...]:
@@ -368,28 +372,34 @@ def build_classification_model(conn: sqlite3.Connection) -> type[Classification]
     직무 분류는 운영 중에 표가 바뀌면 다음 호출부터 목록이 따라와야 한다. 그래서 매 호출
     시점에 이 함수로 새 모델을 만든다.
 
-    **켜진 대분류가 하나도 없으면(표가 비었거나 전부 껐으면) `Classification` 을 그대로
+    켜진 산업이 있으면 `industry` 도 같은 방법으로 더한다 (`migrations/0034_industries.sql`).
+
+    **켜진 대분류도 켜진 산업도 없으면(표가 비었거나 전부 껐으면) `Classification` 을 그대로
     돌려준다.** 고를 것이 없는 판정 칸을 모델에 보내면 그 자리를 채우라고 강요하는 것과
     같다. 대분류는 있는데 켜진 소분류가 하나도 없으면 `job_role` 없이 `job_field` 만 더한다.
     """
     majors = taxonomy.list_majors(conn, enabled_only=True)
-    if not majors:
+    industry_names = industries.enabled_names(conn)
+    if not majors and not industry_names:
         return Classification
 
-    major_names = tuple(major.name for major in majors)
-    minor_names = tuple(
-        minor.name
-        for major in majors
-        for minor in taxonomy.list_minors(conn, major.id, enabled_only=True)
-    )
-
-    fields: dict[str, Any] = {
-        JOB_FIELD: (Literal[major_names], ...),
-        f"{JOB_FIELD}_evidence": (str, ""),
-    }
-    if minor_names:
-        fields[JOB_ROLE] = (Literal[minor_names], ...)
-        fields[f"{JOB_ROLE}_evidence"] = (str, "")
+    fields: dict[str, Any] = {}
+    if majors:
+        major_names = tuple(major.name for major in majors)
+        minor_names = tuple(
+            minor.name
+            for major in majors
+            for minor in taxonomy.list_minors(conn, major.id, enabled_only=True)
+        )
+        fields[JOB_FIELD] = (Literal[major_names], ...)
+        fields[f"{JOB_FIELD}_evidence"] = (str, "")
+        if minor_names:
+            fields[JOB_ROLE] = (Literal[minor_names], ...)
+            fields[f"{JOB_ROLE}_evidence"] = (str, "")
+    # 0034. 켜진 산업이 있으면 공고마다 그중 하나를 고른다
+    if industry_names:
+        fields[INDUSTRY] = (Literal[industry_names], ...)
+        fields[f"{INDUSTRY}_evidence"] = (str, "")
 
     posting: Any = create_model("PostingWithTaxonomy", __base__=Posting, **fields)
     return create_model(

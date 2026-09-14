@@ -52,7 +52,7 @@ HEAD_CELL = re.compile(r'<th scope="col"')
 # 23 -> 25 다. 표의 필드 반복(`{% for field in fields %}`)이 그 목록을 그대로 따라간다.
 # 0028 이 오공고가 받는 다섯 칸을 더해 25 -> 30 이다. 0031 이 제목에서 옮기던 자유 글자 직무를
 # 지워 29 다
-TABLE_COLUMNS = 32
+TABLE_COLUMNS = 33
 
 INPUT_TAG = re.compile(r"<(?:input|textarea)\b[^>]*>")
 TEXTAREA_BODY = re.compile(r"<textarea\b[^>]*>(.*?)</textarea>", re.DOTALL)

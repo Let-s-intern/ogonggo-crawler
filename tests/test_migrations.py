@@ -111,6 +111,8 @@ EXPECTED_COLUMNS = {
         "application_method",
         "recruitment_type",
         "auto_close_enabled",
+        # 0034 가 더한 산업. 산업 분류표에서 고른 이름이다
+        "industry",
     },
     "normalization_rules": {
         "id",
@@ -209,6 +211,16 @@ EXPECTED_COLUMNS = {
         "note",
         "created_at",
     },
+    # 0034 가 만든 산업 분류표. 한 단계이고 지우지 않고 끈다
+    "industries": {
+        "id",
+        "name",
+        "sort_order",
+        "enabled",
+        "note",
+        "created_at",
+        "updated_at",
+    },
 }
 
 # 사람이 고칠 수 있는 필드. `source_url` 과 `delivered_at` 은 여기에 없다
@@ -262,6 +274,7 @@ ALL_VERSIONS = [
     "0031",
     "0032",
     "0033",
+    "0034",
 ]
 
 

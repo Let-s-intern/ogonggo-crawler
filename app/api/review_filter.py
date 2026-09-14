@@ -121,6 +121,7 @@ FIELD_LABELS: dict[str, str] = {
     "experience_min_years": "최소 경력 연수",
     "closes_when_filled": "채용 시 마감",
     "application_method": "지원 방법",
+    "industry": "산업",
 }
 
 # `빈 값인 필드` 조건에서 "아무 필드나 하나라도 비었다" 를 가리키는 값
@@ -172,6 +173,8 @@ EMPTY_NOTES: dict[str, str] = {
     "experience_min_years": "경력 공고가 아니거나 원문이 최소 연수를 말하지 않으면 빈다",
     "closes_when_filled": "분류가 늘 고른다. 비어 있으면 아직 분류하지 않은 공고다",
     "application_method": "분류가 늘 고른다. 비어 있으면 아직 분류하지 않은 공고다",
+    # 0034 가 더한 산업
+    "industry": "분류가 늘 고른다. 비어 있으면 아직 분류하지 않았거나 산업 분류표가 비었다",
 }
 
 # 같은 공고가 두 번 들어왔는지 보는 기준. 무엇을 중복으로 볼지가 상황마다 달라 고르게 둔다.

@@ -199,6 +199,8 @@ def test_item_shape_matches_contract(client: TestClient, conn: sqlite3.Connectio
         "application_method",
         "recruitment_type",
         "auto_close_enabled",
+        # 0034 가 더한 산업
+        "industry",
         "source_url",
         "normalized_at",
     }

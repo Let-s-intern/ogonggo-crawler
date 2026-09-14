@@ -67,7 +67,13 @@ from app.api.review_filter import (
     workflow_label,
 )
 from app.api.ui import render, render_page
-from app.classify.schema import JUDGE_FIELDS, NUMBER_FIELDS, TAXONOMY_FIELDS, VALUE_LABELS
+from app.classify.schema import (
+    INDUSTRY,
+    JUDGE_FIELDS,
+    NUMBER_FIELDS,
+    TAXONOMY_FIELDS,
+    VALUE_LABELS,
+)
 from app.classify.store import read_evidence, read_suggestions, read_suggestions_batch
 from app.crawler.collect import API
 from app.normalize.engine import OVERRIDABLE_FIELDS
@@ -130,6 +136,7 @@ _COLUMNS = """
            n.application_method AS application_method,
            n.recruitment_type AS recruitment_type,
            n.auto_close_enabled AS auto_close_enabled,
+           n.industry AS industry,
            n.source_url    AS source_url,
            n.normalized_at AS normalized_at,
            n.delivered_at  AS delivered_at,
@@ -167,7 +174,9 @@ def _page_numbers(page: int, total_pages: int) -> list[int]:
 
 # 분류가 근거 문장과 함께 고르는 칸. 근거를 찾지 못해도 값은 남아 검수 화면이 먼저 보여야 한다
 # (`app/classify/grounding.py`)
-_JUDGED_FIELDS: frozenset[str] = frozenset((*JUDGE_FIELDS, *NUMBER_FIELDS, *TAXONOMY_FIELDS))
+_JUDGED_FIELDS: frozenset[str] = frozenset(
+    (*JUDGE_FIELDS, *NUMBER_FIELDS, *TAXONOMY_FIELDS, INDUSTRY)
+)
 
 
 def _cell(

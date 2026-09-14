@@ -60,6 +60,7 @@ from dataclasses import dataclass, field
 
 from app.classify.schema import (
     EXTRACT_FIELDS,
+    INDUSTRY,
     JOB_FIELD,
     JOB_ROLE,
     JUDGE_CHOICES,
@@ -260,7 +261,8 @@ def ground(
     `title` 을 주지 않으면 보낸 글만 본다. 그것이 옛 동작이고, `position_name` 만 그 상태에서
     거의 전부 버려진다 — 부르는 쪽은 제목을 같이 넘긴다.
 
-    `taxonomy_choices` 는 `{"job_field": (...), "job_role": (...)}` 모양이다. 그 호출이
+    `taxonomy_choices` 는 `{"job_field": (...), "job_role": (...), "industry": (...)}`
+    모양이다. 그 호출이
     직무 분류를 물었을 때만 준다 — 주지 않으면 이 둘은 아예 보지 않는다(호출이 그 두 필드를
     묻지 않았으면 응답에도 없다). **대분류가 버려지면 소분류도 함께 비운다** — 대분류 없이
     소분류만 있는 상태는 만들지 않는다(PRD `job-taxonomy` 2절).
@@ -302,7 +304,7 @@ def ground(
         )
 
     if taxonomy_choices:
-        for name in (JOB_FIELD, JOB_ROLE):
+        for name in (JOB_FIELD, JOB_ROLE, INDUSTRY):
             if name not in taxonomy_choices:
                 kept[name] = ""
                 continue

@@ -60,10 +60,13 @@ def test_위_네비게이션은_다섯이다() -> None:
     assert [label for _, label in NAV] == ["대시보드", "수집", "정규화", "데이터 확인", "운영 설정"]
 
 
-def test_묶음_안의_화면을_전부_합치면_열이다() -> None:
-    """줄어든 것은 위 줄뿐이다. 화면 자체는 열 + 운영 설정이다(직무 분류와 AI 규칙이 더해졌다)."""
+def test_묶음_안의_화면을_전부_합치면_열하나다() -> None:
+    """줄어든 것은 위 줄뿐이다. 화면 자체는 열하나 + 운영 설정이다.
+
+    직무 분류·산업 분류·AI 규칙이 더해졌다.
+    """
     grouped = sum(len(members) for _, _, members in NAV_GROUPS)
-    assert grouped == 10
+    assert grouped == 11
 
 
 def test_부가_워크플로우는_수집이_아니라_정규화_묶음에_있다() -> None:
@@ -85,6 +88,7 @@ def test_부가_워크플로우는_수집이_아니라_정규화_묶음에_있�
         ("/side", "/rules"),
         ("/taxonomy", "/rules"),
         ("/prompt-rules", "/rules"),
+        ("/industries", "/rules"),
         ("/review", "/review"),
         ("/companies", "/review"),
     ],
@@ -108,6 +112,7 @@ def test_묶인_화면은_위에서_자기_묶음이_켜진다(
         ("/side", "부가 워크플로우"),
         ("/taxonomy", "직무 분류"),
         ("/prompt-rules", "AI 규칙"),
+        ("/industries", "산업 분류"),
         ("/review", "데이터 확인"),
         ("/companies", "회사 로고"),
     ],

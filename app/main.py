@@ -24,6 +24,7 @@ from app.api import (
     ui_crawlers,
     ui_dashboard,
     ui_deliver,
+    ui_industries,
     ui_llm,
     ui_notify,
     ui_prompt_rules,
@@ -124,6 +125,7 @@ app.include_router(ui_notify.router)
 app.include_router(ui_storage.router)
 app.include_router(ui_llm.router)
 app.include_router(ui_taxonomy.router)
+app.include_router(ui_industries.router)
 app.include_router(ui_prompt_rules.router)
 # 조각 요청의 실패는 200 과 오류 조각으로 나간다. HTMX 가 4xx·5xx 를 갈아 끼우지 않아
 # 그대로 두면 화면이 조용해진다. `/api/...` 의 상태 코드는 건드리지 않는다

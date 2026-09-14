@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from app import taxonomy
+from app import industries, taxonomy
 from app.classify import prompt_rules
 from app.classify.classifier import ClassifyError, chosen, classify_body
 from app.classify.schema import build_classification_model
@@ -225,6 +225,7 @@ async def classify_ids(
     # 직무 분류 표는 배치 시작 전에 한 번만 읽는다. 공고 640건을 돈다고 표를 640번 읽을
     # 이유가 없다 — 표는 이 실행 도중에는 바뀌지 않는다고 본다
     taxonomy_tree = taxonomy.enabled_tree(conn)
+    industry_names = industries.enabled_names(conn)
     response_model = build_classification_model(conn)
 
     for raw_job_id in raw_job_ids:
@@ -253,6 +254,7 @@ async def classify_ids(
                 title=title,
                 current_values=current_values,
                 taxonomy_tree=taxonomy_tree,
+                industries=industry_names,
                 response_model=response_model,
                 known_parts=[(part.role, part.lines) for part in known],
                 settings=resolved,

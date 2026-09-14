@@ -31,12 +31,19 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from app.classify.schema import EXTRACT_FIELDS, JUDGE_FIELDS, NUMBER_FIELDS, TAXONOMY_FIELDS
+from app.classify.schema import (
+    EXTRACT_FIELDS,
+    INDUSTRY,
+    JUDGE_FIELDS,
+    NUMBER_FIELDS,
+    TAXONOMY_FIELDS,
+)
 
 # 칸의 종류. 화면이 카드에 적고, 프롬프트는 종류마다 다른 구역에 넣는다
 EXTRACT = "뽑는 칸"
 JUDGE = "판정 칸"
 TAXONOMY = "직무 분류"
+INDUSTRIES = "산업 분류"
 
 # 칸 이름, 화면 이름, 종류. 순서가 화면과 프롬프트의 순서다
 RULE_FIELDS: tuple[tuple[str, str, str], ...] = (
@@ -59,6 +66,7 @@ RULE_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("application_method", "지원 방법", JUDGE),
     ("job_field", "직군", TAXONOMY),
     ("job_role", "직무", TAXONOMY),
+    ("industry", "산업", INDUSTRIES),
 )
 FIELD_LABELS: dict[str, str] = {name: label for name, label, _ in RULE_FIELDS}
 
@@ -72,6 +80,7 @@ def names_of(kind: str) -> tuple[str, ...]:
 assert set(names_of(EXTRACT)) == set(EXTRACT_FIELDS)
 assert set(names_of(JUDGE)) == {*JUDGE_FIELDS, *NUMBER_FIELDS}
 assert set(names_of(TAXONOMY)) == set(TAXONOMY_FIELDS)
+assert names_of(INDUSTRIES) == (INDUSTRY,)
 
 # 적을 수 있는 길이. 규칙은 공고마다 프롬프트에 실려 토큰이 되고, 긴 프롬프트는 모델이 뒤를 흘린다
 MAX_COMMON_CHARS = 4000
@@ -228,6 +237,14 @@ DEFAULT_RULES = RuleSet(
         "job_role": FieldRule(
             "대분류는 골랐는데 그 밑의 소분류 중 맞는 것이 없으면, 그 대분류 목록의 마지막에 "
             "있는 `기타`로 시작하는 소분류(예: 기타IT·개발)를 고른다 — 비워 두지 않는다."
+        ),
+        "industry": FieldRule(
+            "산업. 이 공고를 낸 회사가 속한 산업을 고른다. 회사 소개와 하는 일을 보고 가장 가까운 "
+            "산업을 고르고, 계열사 공고는 그 계열사의 산업이다. 비워 두지 않는다.",
+            (
+                Example("반도체 메모리를 설계하고 생산합니다", "제조·생산·화학업"),
+                Example("모바일 뱅킹 서비스를 운영합니다", "금융·은행업"),
+            ),
         ),
     },
 )

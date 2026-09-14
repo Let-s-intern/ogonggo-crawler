@@ -23,7 +23,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 
-from app import taxonomy
+from app import industries, taxonomy
 from app.api.settings import get_connection
 from app.api.ui import render
 from app.classify import prompt_rules
@@ -237,6 +237,7 @@ async def try_prompt_rules_fragment(
             title=title,
             current_values=read_current_values(conn, raw_job_id),
             taxonomy_tree=taxonomy.enabled_tree(conn),
+            industries=industries.enabled_names(conn),
             response_model=build_classification_model(conn),
             known_parts=[(part.role, part.lines) for part in known],
             settings=llm_settings.settings_for(conn, CLASSIFY, base_settings),

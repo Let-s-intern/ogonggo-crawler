@@ -60,6 +60,7 @@ from app.classify.pieces import (
 from app.classify.prompt_rules import (
     DEFAULT_RULES,
     EXTRACT,
+    INDUSTRIES,
     JUDGE,
     TAXONOMY,
     RuleSet,
@@ -72,6 +73,7 @@ from app.classify.schema import (
     COLLECTED_REVIEW_FIELDS,
     COLLECTED_REVIEW_LABELS,
     EXTRACT_FIELDS,
+    INDUSTRY,
     JOB_FIELD,
     JOB_ROLE,
     JUDGE_CHOICES,
@@ -181,7 +183,7 @@ _PROMPT = """아래는 채용공고의 제목과 본문이다. 줄마다 앞에 
   적는다. 근거 문장이 없는 값은 버려진다.
 - 회사명·모집 시작일·마감일은 위 칸 어디에도 넣지 않는다. 그 셋을 원문과 견주는 자리는
   값이 이미 있을 때만 아래에 따로 나온다. 제목도 `position_name` 말고는 어느 칸에도 넣지 않는다.
-{taxonomy_block}{current_values_block}
+{taxonomy_block}{industry_block}{current_values_block}
 [제목]
 {title}
 
@@ -397,6 +399,26 @@ def _taxonomy_block(
     )
 
 
+def _industry_block(industries: Sequence[str], rules: RuleSet = DEFAULT_RULES) -> str:
+    """산업 구역. 표가 비어 있으면(씨앗 전이거나 전부 껐으면) 빈 문자열이다 (2026-09-14 결정).
+
+    공고마다 고른다. 같은 회사의 공고는 대개 같은 산업이지만 회사 단위로 묻지 않는다 — 오공고가
+    공고마다 산업을 받는다 (`app/industries.py`).
+    """
+    if not industries:
+        return ""
+    names = "\n".join(f"- {name}" for name in industries)
+    return (
+        "\n# 산업 — 아래 목록에서만 고른다\n\n"
+        "industry 는 이 공고를 낸 회사가 속한 산업이다. posting 마다 고른다. 목록에 없는 이름을\n"
+        "새로 만들지 않고, 비워 두지 않는다.\n\n"
+        f"{render_fields(rules, names_of(INDUSTRIES))}\n\n"
+        "industry_evidence 에 그렇게 판단한 원문 문장을 그대로 옮겨 적는다. 그런 문장이 없으면\n"
+        "비워 두고 값은 고른다.\n\n"
+        f"{names}\n"
+    )
+
+
 def build_prompt(
     body: str,
     title: str = "",
@@ -405,6 +427,7 @@ def build_prompt(
     *,
     known_roles: Sequence[str] = (),
     rules: RuleSet | None = None,
+    industries: Sequence[str] = (),
 ) -> tuple[str, list[str]]:
     """보낼 프롬프트와 남길 메모. 상한을 넘긴 글은 자르고 그 사실을 적는다.
 
@@ -444,6 +467,7 @@ def build_prompt(
             taxonomy_tree=taxonomy_tree,
             part_block=_known_roles_block(known_roles),
             rules=rules or DEFAULT_RULES,
+            industries=industries,
         ),
         notes,
     )
@@ -454,6 +478,7 @@ def build_part_prompt(
     numbers: Sequence[int],
     taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]] = (),
     rules: RuleSet | None = None,
+    industries: Sequence[str] = (),
 ) -> str:
     """긴 공고에서 직무 하나를 나눌 프롬프트. 제목과 고른 줄만 원래 번호로 보낸다.
 
@@ -466,6 +491,7 @@ def build_part_prompt(
         taxonomy_tree=taxonomy_tree,
         part_block=_PART_BLOCK,
         rules=rules or DEFAULT_RULES,
+        industries=industries,
     )
 
 
@@ -495,6 +521,7 @@ def _classification_prompt(
     taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]],
     part_block: str = "",
     rules: RuleSet = DEFAULT_RULES,
+    industries: Sequence[str] = (),
 ) -> str:
     """칸별·공통 규칙은 `rules` 에서, 나머지 골격은 이 파일에서 온다.
 
@@ -510,6 +537,7 @@ def _classification_prompt(
         title=title,
         current_values_block=current_values_block,
         taxonomy_block=_taxonomy_block(taxonomy_tree, rules),
+        industry_block=_industry_block(industries, rules),
         part_block=part_block,
         extract_rules=render_fields(rules, names_of(EXTRACT)),
         common_rules=render_common(rules),
@@ -574,6 +602,7 @@ async def classify_body(
     client: Any | None = None,
     on_call: Callable[[Usage], None] | None = None,
     rules: RuleSet | None = None,
+    industries: Sequence[str] = (),
 ) -> ClassificationResult:
     """공고 하나를 나눈다. 받은 값은 원문에 있는지 확인한 뒤에만 남는다.
 
@@ -600,6 +629,8 @@ async def classify_body(
     배치 시작 전에 `app.taxonomy.enabled_tree()` 와 `build_classification_model()` 로 한 번만
     만들어 공고마다 그대로 넘긴다. 공고마다 표를 다시 읽을 이유가 없다. 빈 트리(기본값)는
     "표가 비었다" 는 뜻이고, 그때 `response_model` 은 `Classification` 그대로다.
+    `industries` 는 같은 방법으로 `app.industries.enabled_names()` 가 만든 켜진 산업 이름이다
+    (2026-09-14 결정).
 
     `on_call` 은 모델을 부를 때마다 그 호출의 비용으로 불린다. 깨진 응답으로 한 번 더 물으면
     두 번 불린다 — 부르는 쪽이 그것을 `llm_calls` 에 그대로 남겨야 토큰 합이 실제와 맞는다
@@ -611,7 +642,7 @@ async def classify_body(
     resolved = settings or get_settings()
     provider, model = chosen(resolved)
     asker = _Asker(client or build_client(resolved), model, provider, on_call)
-    taxonomy_choices = _taxonomy_choices(taxonomy_tree)
+    taxonomy_choices = _taxonomy_choices(taxonomy_tree, industries)
     rule_set = rules or DEFAULT_RULES
 
     if known_parts and all(part_lines for _, part_lines in known_parts):
@@ -627,6 +658,7 @@ async def classify_body(
             taxonomy_choices,
             [list(part_lines) for _, part_lines in known_parts],
             rule_set,
+            industries,
         )
         return ClassificationResult(
             postings=results, usage=_total(usages), attempts=attempts, notes=notes
@@ -642,6 +674,7 @@ async def classify_body(
             response_model,
             taxonomy_choices,
             rule_set,
+            industries,
         )
 
     prompt, notes = build_prompt(
@@ -651,6 +684,7 @@ async def classify_body(
         taxonomy_tree,
         known_roles=[role for role, _ in known_parts],
         rules=rule_set,
+        industries=industries,
     )
     parsed, usage, attempts = await asker.ask(
         prompt,
@@ -687,6 +721,7 @@ async def _classify_long(
     response_model: type[Classification],
     taxonomy_choices: Mapping[str, tuple[str, ...]] | None,
     rules: RuleSet = DEFAULT_RULES,
+    industries: Sequence[str] = (),
 ) -> ClassificationResult:
     """긴 공고. 짜임을 먼저 묻고, 직무마다 공통 줄과 그 직무의 줄만 보내 나눈다 (2026-09-11 결정).
 
@@ -710,7 +745,9 @@ async def _classify_long(
     total_attempts = attempts
 
     if not outline.roles:
-        prompt, cut = build_prompt(body, title, current_values, taxonomy_tree, rules=rules)
+        prompt, cut = build_prompt(
+            body, title, current_values, taxonomy_tree, rules=rules, industries=industries
+        )
         parsed, usage, attempts = await asker.ask(
             prompt,
             schema=response_model,
@@ -740,6 +777,7 @@ async def _classify_long(
         taxonomy_choices,
         [sorted({*outline.common, *role}) for role in outline.roles],
         rules,
+        industries,
     )
     suggestions, suggestion_reasons = _suggestions_of(outline.fields, current_values, body, title)
     return ClassificationResult(
@@ -762,6 +800,7 @@ async def _classify_parts(
     taxonomy_choices: Mapping[str, tuple[str, ...]] | None,
     parts: Sequence[Sequence[int]],
     rules: RuleSet = DEFAULT_RULES,
+    industries: Sequence[str] = (),
 ) -> tuple[list[PostingResult], list[str], list[Usage], int]:
     """직무마다 제목과 고른 줄만 보내 나눈다. 짜임이 정했거나 전에 보냈던 줄이다.
 
@@ -774,7 +813,7 @@ async def _classify_parts(
     total_attempts = 0
     for number, numbers in enumerate(parts, start=1):
         parsed, usage, attempts = await asker.ask(
-            build_part_prompt(lines, numbers, taxonomy_tree, rules),
+            build_part_prompt(lines, numbers, taxonomy_tree, rules, industries),
             schema=response_model,
             instruction=_SYSTEM_INSTRUCTION,
             kind=CLASSIFY_KIND,
@@ -855,15 +894,18 @@ class _Asker:
 
 def _taxonomy_choices(
     taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]],
+    industries: Sequence[str] = (),
 ) -> dict[str, tuple[str, ...]] | None:
-    """근거 검사가 직무 분류를 볼 목록. 표가 비었으면 None 이라 그 두 칸을 보지 않는다."""
-    if not taxonomy_tree:
-        return None
-    choices = {JOB_FIELD: tuple(major for major, _ in taxonomy_tree)}
-    minors = tuple(minor for _, minor_list in taxonomy_tree for minor in minor_list)
-    if minors:
-        choices[JOB_ROLE] = minors
-    return choices
+    """근거 검사가 직무 분류와 산업을 볼 목록. 두 표가 다 비었으면 None 이라 보지 않는다."""
+    choices: dict[str, tuple[str, ...]] = {}
+    if taxonomy_tree:
+        choices[JOB_FIELD] = tuple(major for major, _ in taxonomy_tree)
+        minors = tuple(minor for _, minor_list in taxonomy_tree for minor in minor_list)
+        if minors:
+            choices[JOB_ROLE] = minors
+    if industries:
+        choices[INDUSTRY] = tuple(industries)
+    return choices or None
 
 
 def _result_of(

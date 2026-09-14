@@ -253,7 +253,7 @@ def test_down_restores_the_old_values_and_rules(conn: sqlite3.Connection) -> Non
         " VALUES (1, 'application_method', 'EMAIL')"
     )
 
-    db.migrate_down(conn, steps=1)
+    _down_to_0032(conn)
 
     assert _jobs(conn) == [
         ("정규직", "경력", "학사", "2026-09-30", "2026-09-01"),
@@ -283,7 +283,7 @@ def test_down_folds_the_values_the_old_list_did_not_have(conn: sqlite3.Connectio
         " WHERE raw_job_id = 1"
     )
 
-    db.migrate_down(conn, steps=1)
+    _down_to_0032(conn)
 
     row = conn.execute(
         "SELECT employment_type, experience_type FROM normalized_jobs WHERE raw_job_id = 1"

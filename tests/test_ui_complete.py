@@ -53,9 +53,9 @@ def insert_job(
     values["job_field"] = job_field
     values["title"] = f"공고 {raw_job_id}"
     values["company_name"] = "엘지전자"
-    # title/company/job_role/job_major 는 카드 확인에 쓰므로 비우지 않는다. 0033 으로 칸이
-    # 스물셋이 되어 60% 는 13.8 -> 14칸 이상이 있어야 완성이다. 열 칸을 비우면 열세
-    # 칸(56.5%)만 남아 미완성이 된다
+    # title/company/job_role/job_major 는 카드 확인에 쓰므로 비우지 않는다. 0034 로 칸이
+    # 스물넷이 되어 60% 는 14.4 -> 15칸 이상이 있어야 완성이다. 열 칸을 비우면 열네
+    # 칸(58.3%)만 남아 미완성이 된다
     blankable = [
         "recruitment_end_at",
         "body",
@@ -141,7 +141,7 @@ def test_완성된_건만_나온다(client: TestClient, conn: sqlite3.Connection
 def test_마흔프로_안쪽으로_비어도_완성으로_본다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
-    """스물세 칸 중 여덟만 비면(15/23 = 65.2%) 여전히 완성이다."""
+    """스물네 칸 중 여덟만 비면(16/24 = 66.7%) 여전히 완성이다."""
     insert_job(conn, 1, complete=True, blank_count=8)
 
     body = client.get("/ui/complete").text
@@ -150,7 +150,7 @@ def test_마흔프로_안쪽으로_비어도_완성으로_본다(
 
 
 def test_비율이_기준_밑이면_빠진다(client: TestClient, conn: sqlite3.Connection) -> None:
-    """열이 비면(13/23 = 56.5%) 60% 기준에 못 미쳐 빠진다."""
+    """열이 비면(14/24 = 58.3%) 60% 기준에 못 미쳐 빠진다."""
     insert_job(conn, 1, complete=False)
 
     body = client.get("/ui/complete").text

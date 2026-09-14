@@ -80,6 +80,7 @@ NAV_GROUPS: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
             ("/rules", "정규화 규칙"),
             ("/side", "부가 워크플로우"),
             ("/taxonomy", "직무 분류"),
+            ("/industries", "산업 분류"),
             ("/prompt-rules", "AI 규칙"),
         ),
     ),
@@ -508,6 +509,12 @@ def taxonomy_page(request: Request) -> HTMLResponse:
     """직무 분류 체계 화면. `/rules` 와 같은 묶음이다 — 분류 체계는 정규화 파이프라인의
     입력이지 수집이 아니다."""
     return render_page(request, "pages/taxonomy.html")
+
+
+@router.get("/industries", response_class=HTMLResponse)
+def industries_page(request: Request) -> HTMLResponse:
+    """산업 분류표 화면. 직무 분류와 같은 묶음이다 — 둘 다 분류가 고르는 목록이다."""
+    return render_page(request, "pages/industries.html")
 
 
 @router.get("/prompt-rules", response_class=HTMLResponse)
