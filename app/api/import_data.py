@@ -509,19 +509,17 @@ def _merge_llm_settings(conn: sqlite3.Connection, source: sqlite3.Connection) ->
         # 이 표가 없는 옛 파일도 나머지는 다 가져올 수 있다
         return 0, 0
 
+    # 화면에서 추가한 회사의 정의와 키는 이름이 정해져 있지 않아 행 목록으로 고를 수 없다.
+    # 전부 읽고 이 저장소의 행만 남긴다 (`app/llm/settings.py` 의 `is_llm_row`)
     known = {
         str(row["key"])
-        for row in conn.execute(
-            f"SELECT key FROM app_settings WHERE key IN ({','.join('?' * len(llm_settings.ROWS))})",
-            llm_settings.ROWS,
-        )
+        for row in conn.execute("SELECT key FROM app_settings")
+        if llm_settings.is_llm_row(str(row["key"]))
     }
     added = skipped = 0
-    for row in source.execute(
-        f"SELECT key, value FROM app_settings "
-        f"WHERE key IN ({','.join('?' * len(llm_settings.ROWS))}) ORDER BY key",
-        llm_settings.ROWS,
-    ):
+    for row in source.execute("SELECT key, value FROM app_settings ORDER BY key"):
+        if not llm_settings.is_llm_row(str(row["key"])):
+            continue
         if str(row["key"]) in known:
             skipped += 1
             continue

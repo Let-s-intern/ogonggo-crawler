@@ -1,8 +1,64 @@
 {# AI 제공자 설정. 키 저장도 기능 저장도 이 조각 하나로 돌아온다.
    저장된 키는 다시 그리지 않는다 — 입력 칸은 언제나 비어 있고 상태만 낱말로 적는다 #}
 {% from "macros.html" import failure, notice_box, state, wait %}
+
+{# 화면에서 추가한 회사 하나의 정의 폼. `item` 이 없으면 새로 추가하는 폼이다.
+   이름은 고칠 수 없다 — 이름이 키 행과 기능 선택에 붙어 있어 바꾸려면 지우고 다시 추가한다 #}
+{% macro custom_form(item, labels, opened=False, editing=False) %}
+<details class="mt-2" {% if opened %}open{% endif %}>
+  <summary>
+    {% if editing %}고치기: <code>{{ item.name }}</code>{% else %}새 회사 추가{% endif %}
+  </summary>
+  <form hx-put="/ui/llm/custom" hx-target="#llm-form" hx-swap="innerHTML"
+        hx-disabled-elt="find button" class="mt-2 grid gap-2 md:grid-cols-2">
+    <label class="flex flex-col gap-1">이름 (영문 소문자·숫자·-·_)
+      <input name="name" type="text" value="{{ item.name if item else '' }}"
+             {% if editing %}readonly{% endif %} placeholder="deepseek">
+    </label>
+    <label class="flex flex-col gap-1">보이는 이름
+      <input name="label" type="text" value="{{ item.label if item else '' }}" placeholder="DeepSeek">
+    </label>
+    <label class="flex flex-col gap-1 md:col-span-2">주소 (base_url)
+      <input name="base_url" type="text" value="{{ item.base_url if item else '' }}"
+             placeholder="https://api.deepseek.com/beta">
+    </label>
+    <label class="flex flex-col gap-1">답 형식 강제 방식
+      <select name="schema_mode">
+        {% for value, text in labels.items() %}
+        <option value="{{ value }}" {% if item and item.schema_mode == value %}selected{% endif %}>{{ text }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="flex flex-col gap-1">온도 (비우면 보내지 않는다)
+      <input name="temperature" type="text" value="{{ item.temperature if item else '' }}" placeholder="예: 0">
+    </label>
+    <label class="flex flex-col gap-1">응답 길이 상한 (비우면 보내지 않는다)
+      <input name="max_tokens" type="text" value="{{ item.max_tokens if item else '' }}" placeholder="예: 32768">
+    </label>
+    <div class="flex flex-col gap-1">
+      <label><input name="images" type="checkbox" {% if item and item.images %}checked{% endif %}> 이미지를 받는다</label>
+      <label><input name="list_models" type="checkbox" {% if not item or item.list_models %}checked{% endif %}> 모델 목록을 받아 온다 (/models)</label>
+    </div>
+    <label class="flex flex-col gap-1">모델 목록 주소 (비우면 호출 주소)
+      <input name="models_url" type="text" value="{{ item.models_url if item else '' }}"
+             placeholder="https://api.deepseek.com">
+    </label>
+    <label class="flex flex-col gap-1 md:col-span-2">요청에 더할 값 (JSON 객체, 비우면 없음)
+      <textarea name="extra_body" rows="3" placeholder='{"thinking": {"type": "disabled"}}'>{{ item.extra_body if item else '' }}</textarea>
+    </label>
+    <label class="flex flex-col gap-1 md:col-span-2">모델별 단가 (JSON 객체, 100만 토큰당 달러, 비우면 없음)
+      <textarea name="prices" rows="3" placeholder='{"deepseek-flash": {"input": 0.15, "output": 0.60}}'>{{ item.prices if item else '' }}</textarea>
+    </label>
+    <div class="flex items-center gap-2 md:col-span-2">
+      <button type="submit">저장</button>
+      {{ wait("저장하는 중") }}
+    </div>
+  </form>
+</details>
+{% endmacro %}
+
 {% if error %}
-{{ failure(error.reason, error.message, title="저장하지 못했다") }}
+{{ failure(error.reason, error.message, title="저장하지 못했다" if error.reason != "connection_failed" else "연결 테스트 실패") }}
 {% endif %}
 {% if message %}
 {{ notice_box(message) }}
@@ -63,6 +119,81 @@
 {% for key in config.keys %}
 <form id="llm-key-{{ key.provider }}" hx-put="/ui/llm/key/{{ key.provider }}"
       hx-target="#llm-form" hx-swap="innerHTML" hx-disabled-elt="find button"></form>
+{% endfor %}
+
+<fieldset>
+    <legend>직접 추가한 회사</legend>
+    <p class="text-sm text-slate-600">
+      OpenAI 와 같은 방식(Chat Completions)으로 부르는 회사를 코드 없이 붙인다. 회사마다 다른 점은
+      아래 값으로 적는다. 추가하면 위 키 표와 아래 기능별 제공자 목록에 나온다.
+      gemini·claude·gpt·qwen·ollama 는 코드에 들어 있어 여기서 고치지 않는다.
+    </p>
+    {% if config.customs %}
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>이름</th>
+            <th>주소</th>
+            <th>답 형식 강제</th>
+            <th>이미지</th>
+            <th>쓰는 기능</th>
+            <th>연결 테스트</th>
+            <th>삭제</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in config.customs %}
+          <tr>
+            <td>
+              <code>{{ item.name }}</code>
+              {% if item.label %}<div class="text-slate-600">{{ item.label }}</div>{% endif %}
+              {% if item.problem %}<div>{{ state("정의 오류", "bad") }} <span class="text-slate-600">{{ item.problem }}</span></div>{% endif %}
+            </td>
+            <td class="text-slate-600">{{ item.base_url or "—" }}</td>
+            <td class="whitespace-nowrap">{{ schema_mode_labels.get(item.schema_mode, item.schema_mode or "—") }}</td>
+            <td class="whitespace-nowrap">{% if item.images %}받음{% else %}안 받음{% endif %}</td>
+            <td class="whitespace-nowrap">
+              {% if item.used_by %}{{ item.used_by | join(", ") }}{% else %}<span class="text-slate-500">없음</span>{% endif %}
+            </td>
+            <td>
+              <div class="flex items-center gap-2">
+                <input name="model" type="text" class="min-w-[12rem]" placeholder="모델 이름"
+                       value="{{ item.test_model }}" form="llm-custom-check-{{ item.name }}">
+                <button type="submit" form="llm-custom-check-{{ item.name }}">테스트</button>
+              </div>
+            </td>
+            <td><button type="submit" form="llm-custom-delete-{{ item.name }}">삭제</button></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-sm text-slate-600">
+      연결 테스트는 작은 답을 한 번 실제로 받는다. 토큰이 조금 나가고 호출 기록에 남는다.
+    </p>
+    {% else %}
+    <p class="text-sm text-slate-600">아직 추가한 회사가 없다.</p>
+    {% endif %}
+    {{ wait("처리하는 중") }}
+
+    {% if draft %}
+    {{ custom_form(draft, schema_mode_labels, opened=True, editing=draft.name in custom_names) }}
+    {% endif %}
+    {% for item in config.customs %}
+    {{ custom_form(item, schema_mode_labels, opened=item.problem != "", editing=True) }}
+    {% endfor %}
+    {% if not draft or draft.name in custom_names %}
+    {{ custom_form(none, schema_mode_labels) }}
+    {% endif %}
+</fieldset>
+
+{% for item in config.customs %}
+<form id="llm-custom-check-{{ item.name }}" hx-post="/ui/llm/custom/{{ item.name }}/check"
+      hx-target="#llm-form" hx-swap="innerHTML" hx-disabled-elt="find button"></form>
+<form id="llm-custom-delete-{{ item.name }}" hx-delete="/ui/llm/custom/{{ item.name }}"
+      hx-confirm="{{ item.name }} 의 정의와 키를 지운다. 계속할까?"
+      hx-target="#llm-form" hx-swap="innerHTML"></form>
 {% endfor %}
 
 {% for feature in config.features %}

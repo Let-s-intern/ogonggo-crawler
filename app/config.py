@@ -85,6 +85,13 @@ class Settings(BaseSettings):
     # 따로 둘 수 있게 기능을 나눈다 (`app/crawler/images.py`)
     image_read_provider: str = "gemini"
 
+    # 화면에서 추가한 OpenAI 호환 회사. 이름 → 정의 JSON, 이름 → 키, 이름 → 모델이다.
+    # 배포가 넣는 값이 아니다 — `app/llm/settings.py` 의 `settings_for` 가 기능마다 설정 사본을
+    # 만들 때 DB 에서 채운다. 회사 이름이 정해져 있지 않아 칸 대신 사전이다 (`app/llm/custom.py`)
+    llm_custom_providers: dict[str, str] = Field(default_factory=dict)
+    llm_custom_keys: dict[str, str] = Field(default_factory=dict)
+    llm_custom_models: dict[str, str] = Field(default_factory=dict)
+
     # 저장
     database_path: str = "./data/jobs.db"
 
