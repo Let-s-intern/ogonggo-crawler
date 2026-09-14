@@ -85,6 +85,9 @@ PREVIEW = "preview"
 SCHEDULE = "schedule"
 MANUAL = "manual"
 TEST = "test"
+# 이미 담은 공고의 원문을 다시 가져온 실행 (`app/crawler/recollect.py`). 자동 중지의 연속 실패에
+# 세지 않는다 — 다시 수집이 실패했다고 주기 수집이 멈추면 안 된다
+RECOLLECT = "recollect"
 
 
 @dataclass(frozen=True)
@@ -351,12 +354,14 @@ def consecutive_failures(conn: sqlite3.Connection, workflow_id: int, limit: int)
     자동 중지 판정과 화면의 임계치 표시가 같은 값을 봐야 해서 공개해 둔다. 세는 곳이 둘이면
     화면이 말하는 연속 실패와 실제로 중지되는 시점이 어긋난다.
 
-    아직 끝나지 않은 실행(`status` 가 NULL)은 성공도 실패도 아니라 세지 않는다.
+    아직 끝나지 않은 실행(`status` 가 NULL)은 성공도 실패도 아니라 세지 않는다. 원문 다시 수집
+    (`recollect`)도 세지 않는다 — 주기 수집이 도는지와 상관없는 실행이다.
     """
     rows = conn.execute(
         """
         SELECT status FROM crawl_runs
          WHERE workflow_id = ? AND status IS NOT NULL
+           AND (trigger IS NULL OR trigger <> 'recollect')
          ORDER BY id DESC LIMIT ?
         """,
         (workflow_id, limit),

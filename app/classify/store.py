@@ -171,6 +171,24 @@ def scope_count(conn: sqlite3.Connection, scope: str, *, days: int | None = None
     return int(row["n"])
 
 
+def workflow_ids(conn: sqlite3.Connection, workflow_id: int) -> list[int]:
+    """그 워크플로우에서 보낼 글이 있는 공고 전부. **최근 수집한 것부터다.** 읽기 전용이다.
+
+    분류 여부를 보지 않는다. 원문 다시 수집이 그 워크플로우의 공고를 전부 다시 분류할 때 쓴다
+    (`app/crawler/recollect.py`).
+    """
+    rows = conn.execute(
+        f"""
+        SELECT r.id AS id
+          FROM raw_jobs r
+         WHERE r.workflow_id = ? AND {_CLASSIFY_TEXT} <> ''
+         ORDER BY r.id DESC
+        """,
+        (workflow_id,),
+    ).fetchall()
+    return [int(row["id"]) for row in rows]
+
+
 def pending_ids(conn: sqlite3.Connection, limit: int | None = None) -> list[int]:
     """보낼 글이 있고 아직 분류되지 않은 공고. **최근 수집한 것부터다.** 읽기 전용이다.
 

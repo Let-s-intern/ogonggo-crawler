@@ -862,6 +862,8 @@ def _delete_rows(conn: sqlite3.Connection, raw_job_ids: Sequence[int]) -> tuple[
             normalized += conn.execute(
                 f"DELETE FROM normalized_jobs WHERE raw_job_id IN ({marks})", part
             ).rowcount
+            # 원문 다시 수집이 남긴 이전 값. 공고를 지우면 그 이력도 가리킬 곳이 없다
+            conn.execute(f"DELETE FROM raw_job_history WHERE raw_job_id IN ({marks})", part)
             raw += conn.execute(f"DELETE FROM raw_jobs WHERE id IN ({marks})", part).rowcount
         conn.execute("COMMIT")
     except BaseException:

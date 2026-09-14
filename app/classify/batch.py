@@ -129,6 +129,26 @@ class ClassifyRun:
         thread.join(timeout)
         return not thread.is_alive()
 
+    def claim(self) -> ClassifyProgress:
+        """분류 자리만 잡는다. 이미 돌고 있으면 `ClassifyRunningError`.
+
+        원문 다시 수집이 워크플로우 공고를 다시 분류할 때 쓴다 (`app/crawler/recollect.py`).
+        잡는 동안 `POST /api/classify` 와 부가 워크플로우의 분류가 물러난다 — 같은 공고에 두 번
+        돈을 쓰지 않는다. 돌려주는 진행 상황을 `classify_ids` 에 그대로 넘기고, 끝나면
+        `release()` 를 부른다.
+        """
+        with self._lock:
+            if self._progress.running:
+                raise ClassifyRunningError("분류가 이미 돌고 있다")
+            self._progress = ClassifyProgress(running=True, started_at=_now())
+            return self._progress
+
+    def release(self) -> None:
+        """`claim()` 으로 잡은 자리를 놓는다."""
+        with self._lock:
+            self._progress.running = False
+            self._progress.finished_at = _now()
+
     def _work(self, connect: ConnectFactory, limit: int) -> None:
         conn = connect()
         try:

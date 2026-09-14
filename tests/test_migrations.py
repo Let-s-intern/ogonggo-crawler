@@ -61,6 +61,16 @@ EXPECTED_COLUMNS = {
         "content_hash",
         "crawled_at",
     },
+    # 0030 이 만든 이력. 원문 다시 수집이 갈아 끼우기 전 raw_jobs 값을 그대로 남긴다
+    "raw_job_history": {
+        "id",
+        "raw_job_id",
+        "run_id",
+        "raw_data_json",
+        "content_hash",
+        "crawled_at",
+        "replaced_at",
+    },
     "normalized_jobs": {
         "id",
         "raw_job_id",
@@ -229,6 +239,7 @@ ALL_VERSIONS = [
     "0027",
     "0028",
     "0029",
+    "0030",
 ]
 
 
@@ -1786,7 +1797,8 @@ def test_the_split_down_keeps_only_the_first_posting(conn: sqlite3.Connection) -
     db.migrate_up(conn)
     _seed_postings(conn, (1, 2))
 
-    db.migrate_down(conn, steps=1)
+    # 0030 이 뒤에 붙어 둘을 되돌려야 0029 앞이다
+    db.migrate_down(conn, steps=2)
 
     for table in SPLIT_TABLES:
         assert "part" not in _columns(conn, table), table
