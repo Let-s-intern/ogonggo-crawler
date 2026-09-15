@@ -7,13 +7,8 @@
 {% block heading %}산업 분류{% endblock %}
 {% block content %}
 <section>
-  <p>
-    모델이 공고를 나눌 때 여기서 그 공고의 산업을 고른다. 표에 없는 값은 저장되지 않는다. 끄면 새
-    분류에서 빠지지만, 이미 그 산업으로 분류된 공고는 그대로 남는다 — 지우는 단추는 없다.
-  </p>
   <p class="text-sm text-slate-600">
-    이름을 고치면 그 이름으로 이미 분류된 공고 수를 함께 보여준다. 고치는 순간 그 건들의 값과 아래
-    목록의 이름이 어긋난다.
+    AI 가 공고마다 여기서 산업을 고른다. 끄면 새 분류에서 빠지고, 이미 분류된 공고는 그대로다.
   </p>
   <div id="industry-list" hx-get="/ui/industries" hx-trigger="load" hx-swap="innerHTML">
     {{ empty("산업 분류를 불러오는 중") }}

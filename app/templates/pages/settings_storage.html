@@ -3,14 +3,9 @@
 {% block section %}
 <section>
   <h3>파일 저장소</h3>
-  <p>
-    회사 로고를 올려 두는 곳이다. S3 호환 주소 하나를 부르므로
-    <span class="font-semibold text-slate-900">엔드포인트를 바꾸는 것이 곧 저장소를 바꾸는 것</span>이다.
-    지금은 MinIO 를 보고 있고, 실제 S3 로 옮길 때는 엔드포인트를 비우고 지역을 실제 값으로 둔다.
-  </p>
   <p class="text-sm text-slate-600">
-    바꿔도 이미 올린 파일은 따라가지 않는다. 다음 업로드부터 새 저장소로 가고, 회사에 적혀
-    있는 옛 주소는 그대로 남는다.
+    회사 로고를 올려 두는 S3 호환 저장소다. 바꿔도 이미 올린 파일은 따라가지 않고, 다음 업로드부터 새
+    저장소로 간다.
   </p>
   <div id="storage-form" hx-get="/ui/storage" hx-trigger="load" hx-swap="innerHTML">
     {{ empty("저장소 설정을 불러오는 중") }}

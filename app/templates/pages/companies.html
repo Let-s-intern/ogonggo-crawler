@@ -4,73 +4,48 @@
 {% block heading %}회사 로고{% endblock %}
 {% block content %}
 <section>
-  <h3>회사 목록</h3>
   <p>
-    로고는 회사 단위 값이다. 공고와 이어 주는 값은
-    <span class="font-semibold text-slate-900">회사명</span>이라, 여기서 한 번 등록하면 그
-    이름을 가진 공고 전부에 붙는다. 공고마다 따로 넣는 자리는 없다.
+    회사명마다 로고를 한 번 넣으면 그 이름의 공고 전부에 붙고, 오공고로 보내는 대표 이미지가 된다.
+    파일은 <span class="font-semibold text-slate-900">{{ accepted }}</span>,
+    <span class="font-semibold text-slate-900">{{ max_label }}</span>까지 받는다.
   </p>
-  <p class="text-sm text-slate-600">
-    회사 행은 정규화가 만든다. 처음 보는 회사명이 들어오면 로고가 빈 행이 생기고, 채우는 것만
-    여기서 한다. 공고가 다 사라진 회사의 행도 남는다.
-  </p>
-  <p class="text-sm text-slate-600">
-    파일을 골라 올리면 저장소에 넣고 그 공개 주소를 회사에 적는다. 받는 것은
-    <span class="font-semibold text-slate-900">{{ accepted }}</span>이고 상한은
-    <span class="font-semibold text-slate-900">{{ max_label }}</span>이다. 어느 형식인지는
-    파일 이름이 아니라 내용으로 정하므로 확장자만 바꾼 파일은 거절된다. SVG 는 받지 않는다.
-    이미 어딘가에 올려 둔 주소가 있으면 그것을 그대로 붙여넣어도 된다.
-  </p>
-  <p class="text-sm text-slate-600">
-    <span class="font-semibold text-slate-900">옛 저장소</span>가 붙은 행은 로고 주소가 지금
-    운영 설정의 공개 주소로 시작하지 않는다는 뜻이다. 저장소를 바꿨다면 그 파일은 따라가지
-    않았으니 다시 올린다. 밖에 올려 둔 주소를 붙여넣은 것이면 그대로 두어도 된다 — 주소가
-    어디서 왔는지는 저장하지 않아 둘을 화면에서 가리지 못한다.
-  </p>
-  <p class="text-sm text-slate-600">
-    자회사가 있는 사이트는 모회사도 자기 행을 따로 갖는다. 자회사에 로고가 없을 때 미리보기는
-    모회사 로고로 대신 채운다 — 그 모회사 로고는 자회사 목록이 아니라
-    <span class="font-semibold text-slate-900">모회사 로고</span> 탭에서 넣는다.
-  </p>
-  {# 조회 조건. 표 영역만 갈아 끼운다.
-
-     조건 둘을 함께 걸면 "로고가 없으면서 공고가 여러 개인 회사" 만 남는다 — 그것이 등록할
-     목록이다. 조건을 아는 쪽이 표를 불러야 저장 뒤에도 걸어 둔 조건이 유지된다 #}
+  <details>
+    <summary>도움말</summary>
+    <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
+      <li>회사 행은 정규화가 만든다. 처음 보는 회사명이 들어오면 로고가 빈 행이 생긴다.</li>
+      <li>형식은 파일 이름이 아니라 내용으로 정해 확장자만 바꾼 파일은 거절된다. SVG 는 받지 않는다. 이미 올려 둔 주소를 붙여넣어도 된다.</li>
+      <li><span class="font-semibold text-slate-900">옛 저장소</span>가 붙은 행은 로고 주소가 지금 저장소의 공개 주소로 시작하지 않는다. 저장소를 바꿨다면 다시 올린다. 밖에 올려 둔 주소를 붙여넣은 것이면 그대로 두어도 된다.</li>
+      <li>자회사에 로고가 없으면 모회사 로고로 대신한다. 모회사 로고는 <span class="font-semibold text-slate-900">모회사 로고</span> 탭에서 넣는다.</li>
+    </ul>
+  </details>
+  {# 조회 조건. 표 영역만 갈아 끼운다. 조건을 아는 쪽이 표를 불러야 저장 뒤에도 조건이 유지된다 #}
   <form id="company-filter-form"
         hx-get="/ui/companies" hx-target="#company-list" hx-swap="innerHTML"
         hx-trigger="submit, change, company-saved from:body"
-        hx-disabled-elt="find button[type=submit]">
-    <fieldset>
-      <legend>조회 조건</legend>
-      <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
-        <label for="company-group-subsidiary">
-          <input id="company-group-subsidiary" name="group" type="radio" value="subsidiary" checked>
-          자회사 로고
-        </label>
-        <label for="company-group-parent">
-          <input id="company-group-parent" name="group" type="radio" value="parent">
-          모회사 로고
-        </label>
-      </p>
-      <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
-        <label for="company-no-logo">
-          <input id="company-no-logo" name="no_logo" type="checkbox" value="on">
-          로고 없음
-        </label>
-
-        <label for="company-min-jobs">공고</label>
-        <input id="company-min-jobs" name="min_jobs" type="number" min="0" step="1"
-               size="6" class="w-24">
-        <span class="text-sm text-slate-600">건 이상</span>
-
-        <button type="submit">조회</button>
-        {{ wait("조회하는 중") }}
-      </p>
-      <p class="text-sm text-slate-600">
-        둘을 함께 걸면 로고가 없으면서 공고가 여러 개인 회사만 남는다. 공고 한 건짜리 회사를
-        먼저 등록하느라 백 건짜리가 뒤에 서면 안 된다.
-      </p>
-    </fieldset>
+        hx-disabled-elt="find button[type=submit]"
+        class="my-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+    <label for="company-group-subsidiary" class="inline-flex items-center gap-1.5">
+      <input id="company-group-subsidiary" name="group" type="radio" value="subsidiary" checked>
+      자회사 로고
+    </label>
+    <label for="company-group-parent" class="inline-flex items-center gap-1.5">
+      <input id="company-group-parent" name="group" type="radio" value="parent">
+      모회사 로고
+    </label>
+    <span class="h-4 w-px bg-slate-200"></span>
+    <label for="company-no-logo" class="inline-flex items-center gap-1.5">
+      <input id="company-no-logo" name="no_logo" type="checkbox" value="on">
+      로고 없음
+    </label>
+    <span class="inline-flex items-center gap-1.5 text-sm text-slate-600">
+      <label for="company-min-jobs">공고</label>
+      <input id="company-min-jobs" name="min_jobs" type="number" min="0" step="1" class="mt-0 w-20">
+      건 이상
+    </span>
+    <span class="ml-auto flex items-center gap-2">
+      {{ wait("조회하는 중") }}
+      <button type="submit" class="mt-0">조회</button>
+    </span>
   </form>
   <div id="company-list" hx-get="/ui/companies" hx-trigger="load" hx-swap="innerHTML">
     {{ empty("회사 목록을 불러오는 중") }}

@@ -1,10 +1,10 @@
 {# 오공고(Spring) 전송 설정. 저장과 `지금 보내기` 의 결과가 이 조각 하나로 돌아온다
    (`app/api/ui_deliver.py`, `app/deliver/spring.py`) #}
 {% from "macros.html" import failure, notice_box, state, wait %}
-<div class="notice notice-idle">
-  분류가 끝날 때마다 아직 보내지 않은 공고를 오공고에 등록한다. 오공고에서는 초안·검수 대기로
-  들어간다. 보낸 뒤 바뀐 값은 다시 보내지 않고, 크롤러에서 지운 공고도 오공고에서 지우지 않는다.
-</div>
+<p class="text-sm text-slate-600">
+  분류가 끝날 때마다 아직 보내지 않은 공고를 오공고에 등록한다. 보낸 뒤 바뀐 값은 다시 보내지 않고,
+  크롤러에서 지운 공고도 오공고에서 지우지 않는다.
+</p>
 {% if error %}
 {{ failure(error.reason, error.message, title="처리하지 못했다") }}
 {% endif %}
@@ -12,72 +12,63 @@
 {{ notice_box(message) }}
 {% endif %}
 
-<form hx-put="/ui/deliver" hx-target="#deliver-form" hx-swap="innerHTML"
-      hx-disabled-elt="find button">
-  <fieldset>
-    <legend>오공고 전송 설정</legend>
-    <p>
-      <label for="deliver-enabled" class="inline-flex items-center gap-2">
-        <input id="deliver-enabled" name="enabled" type="checkbox" value="1"
-               {% if config.enabled %}checked{% endif %}>
-        분류가 끝나면 보낸다
-      </label>
-      <br>
-      <span class="text-sm text-slate-600">
-        지금은 {{ state("켜짐") if config.enabled else state("꺼짐") }} 이다
-      </span>
-    </p>
-    <p>
-      <label for="deliver-url">오공고 관리자 API 주소</label>
-      <br>
-      <input id="deliver-url" name="url" type="url" size="50" value="{{ config.url }}"
-             placeholder="예: https://admin-api.example.com">
-      <br>
-      <span class="text-sm text-slate-600">
-        http:// 나 https:// 로 시작한다. 뒤에 <code>/api/v1/internal/jobs</code> 를 붙여 부른다
-      </span>
-    </p>
-    <p>
-      내부 API 키:
-      {{ state("설정됨", "ok") if key_configured else state("없음", "bad") }}
-      <br>
-      <span class="text-sm text-slate-600">
-        크롤러 <code>.env</code> 의 <code>OGONGGO_INTERNAL_API_KEY</code> 에서 읽는다. 화면에서는 넣지 않는다
-      </span>
-    </p>
-    <p>
-      <label for="deliver-batch">한 번에 보내는 건수</label>
-      <br>
-      <input id="deliver-batch" name="batch_size" type="number" min="1"
-             value="{{ config.batch_size }}" class="w-24">
-    </p>
-    <p>
-      <button type="submit">저장</button>
-      {{ wait("저장하는 중") }}
-    </p>
-  </fieldset>
-</form>
+<div class="mt-3 grid gap-4 lg:grid-cols-2">
+  <form hx-put="/ui/deliver" hx-target="#deliver-form" hx-swap="innerHTML"
+        hx-disabled-elt="find button">
+    <fieldset class="h-full">
+      <legend>설정</legend>
+      <p>
+        <label for="deliver-enabled" class="inline-flex items-center gap-2">
+          <input id="deliver-enabled" name="enabled" type="checkbox" value="1"
+                 {% if config.enabled %}checked{% endif %}>
+          분류가 끝나면 보낸다
+        </label>
+        <span class="ml-2 text-sm">{{ state("켜짐") if config.enabled else state("꺼짐") }}</span>
+      </p>
+      <p>
+        <label for="deliver-url" class="block">오공고 관리자 API 주소</label>
+        <input id="deliver-url" name="url" type="url" value="{{ config.url }}"
+               placeholder="https://admin-api.example.com" class="w-full">
+        <span class="text-xs text-slate-500">뒤에 <code>/api/v1/internal/jobs</code> 를 붙여 부른다</span>
+      </p>
+      <p class="text-sm">
+        내부 API 키 {{ state("설정됨", "ok") if key_configured else state("없음", "bad") }}
+        <span class="block text-xs text-slate-500">크롤러 <code>.env</code> 의 <code>OGONGGO_INTERNAL_API_KEY</code> 에서 읽는다</span>
+      </p>
+      <p>
+        <label for="deliver-batch" class="block">한 번에 보내는 건수</label>
+        <input id="deliver-batch" name="batch_size" type="number" min="1"
+               value="{{ config.batch_size }}" class="w-24">
+      </p>
+      <p class="flex items-center gap-2">
+        <button type="submit">저장</button>
+        {{ wait("저장하는 중") }}
+      </p>
+    </fieldset>
+  </form>
 
-<form hx-post="/ui/deliver/send" hx-target="#deliver-form" hx-swap="innerHTML"
-      hx-disabled-elt="find button">
-  <fieldset>
-    <legend>지금 보내기</legend>
-    <p>
-      저장된 설정으로 아직 보내지 않은 공고와 실패한 공고를 한 번 보낸다. 켜기·끄기와 상관없이 보낸다.
-    </p>
-    <p class="text-sm text-slate-600">
-      지금까지 등록 {{ overview.sent }}건, 실패 {{ overview.failed }}건.
-      {{ max_attempts }}번 실패한 공고는 더 보내지 않는다.
-    </p>
-    <p>
-      <button type="submit">지금 보내기</button>
-      {{ wait("보내는 중") }}
-    </p>
-  </fieldset>
-</form>
+  <form hx-post="/ui/deliver/send" hx-target="#deliver-form" hx-swap="innerHTML"
+        hx-disabled-elt="find button">
+    <fieldset class="h-full">
+      <legend>지금 보내기</legend>
+      <p class="text-sm text-slate-600">
+        아직 보내지 않은 공고와 실패한 공고를 한 번 보낸다. 켜기·끄기와 상관없이 보낸다.
+      </p>
+      <p class="flex gap-6">
+        <span><span class="block text-xs text-slate-500">전송함</span><span class="text-2xl font-bold tabular-nums text-emerald-700">{{ overview.sent }}</span></span>
+        <span><span class="block text-xs text-slate-500">실패</span><span class="text-2xl font-bold tabular-nums text-slate-900">{{ overview.failed }}</span></span>
+      </p>
+      <p class="text-xs text-slate-500">{{ max_attempts }}번 실패한 공고는 더 보내지 않는다.</p>
+      <p class="flex items-center gap-2">
+        <button type="submit">지금 보내기</button>
+        {{ wait("보내는 중") }}
+      </p>
+    </fieldset>
+  </form>
+</div>
 
 {% if overview.failures %}
-<div class="table-scroll">
+<div class="table-scroll bg-white">
 <table class="data-table">
   <caption>최근 실패. 사유는 오공고가 돌려준 그대로다</caption>
   <thead>

@@ -3,19 +3,21 @@
 {% block section %}
 <section>
   <h3>데이터 파일 가져오기</h3>
-  <p>
+  <p class="text-sm text-slate-600">
     다른 서버에서 쓰던 SQLite 파일을 올려 지금 데이터에 <span class="font-semibold text-slate-900">더한다</span>.
     덮어쓰지 않는다. 기존 행은 그대로 두고 없는 것만 넣는다.
   </p>
-  <p>올리기 전에 무엇이 일어나는지:</p>
-  <ul class="my-2 list-disc pl-5 text-sm text-slate-600">
-    <li>크롤러와 워크플로우는 이름이 같으면 이미 있는 것으로 보고 건너뛴다. 셀렉터와 렌더 방식은 그대로 따라온다</li>
-    <li>정규화 규칙은 없는 것만 더한다. 이 서버에 이미 있는 규칙은 바뀌지 않는다</li>
-    <li>공고는 내용 해시가 같으면 중복으로 보고 건너뛴다</li>
-    <li>가져온 공고는 저쪽 값이 아니라 <span class="font-semibold text-slate-900">이 서버의 규칙</span>으로 다시 정규화한다</li>
-    <li>전달 표시와 저쪽 서버의 실행 기록은 가져오지 않는다</li>
-    <li>중간에 틀어지면 아무것도 들어가지 않는다</li>
-  </ul>
+  <details>
+    <summary>올리면 무엇이 일어나나</summary>
+    <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
+      <li>크롤러와 워크플로우는 이름이 같으면 이미 있는 것으로 보고 건너뛴다. 셀렉터와 렌더 방식은 그대로 따라온다</li>
+      <li>정규화 규칙은 없는 것만 더한다. 이 서버에 이미 있는 규칙은 바뀌지 않는다</li>
+      <li>공고는 내용 해시가 같으면 중복으로 보고 건너뛴다</li>
+      <li>가져온 공고는 저쪽 값이 아니라 <span class="font-semibold text-slate-900">이 서버의 규칙</span>으로 다시 정규화한다</li>
+      <li>전달 표시와 저쪽 서버의 실행 기록은 가져오지 않는다</li>
+      <li>중간에 틀어지면 아무것도 들어가지 않는다</li>
+    </ul>
+  </details>
   <form hx-post="/ui/settings/import" hx-encoding="multipart/form-data"
         hx-target="#import-result" hx-swap="innerHTML"
         hx-disabled-elt="find button, find input[type='file']">
