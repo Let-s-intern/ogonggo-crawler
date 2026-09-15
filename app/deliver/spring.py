@@ -160,6 +160,19 @@ def missing(body: Mapping[str, Any]) -> list[str]:
     return [name for name in REQUIRED if not body.get(name)]
 
 
+# 아직 보내지 않았거나, 실패했지만 다시 보낼 차례가 남은 공고
+_UNSENT = "(d.source_url IS NULL OR (d.status = 'failed' AND d.attempts < ?))"
+# 마감 일시가 아직 지나지 않은 공고
+_OPEN = "(n.recruitment_end_at IS NULL OR n.recruitment_end_at >= ?)"
+# 오공고가 반드시 받는 칸이 SQL 로 보기에 차 있다. 목록 밖 값은 보내기 직전에 `missing` 이 거른다
+_READY = """(trim(coalesce(n.title, '')) != ''
+           AND trim(coalesce(n.company_name, '') || coalesce(n.parent_company_name, '')) != ''
+           AND n.employment_type IS NOT NULL
+           AND n.experience_type IS NOT NULL
+           AND n.education_level IS NOT NULL
+           AND n.recruitment_type IS NOT NULL)"""
+
+
 def pending(conn: sqlite3.Connection, limit: int, now: str) -> list[sqlite3.Row]:
     """보낼 공고. 아직 보내지 않은 것이 먼저이고, 실패한 것은 `MAX_ATTEMPTS` 전까지 다시 고른다.
 
@@ -168,22 +181,45 @@ def pending(conn: sqlite3.Connection, limit: int, now: str) -> list[sqlite3.Row]
     적는다.
     """
     return conn.execute(
-        """
+        f"""
         SELECT n.* FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
-         WHERE (d.source_url IS NULL OR (d.status = 'failed' AND d.attempts < ?))
-           AND (n.recruitment_end_at IS NULL OR n.recruitment_end_at >= ?)
-           AND trim(coalesce(n.title, '')) != ''
-           AND trim(coalesce(n.company_name, '') || coalesce(n.parent_company_name, '')) != ''
-           AND n.employment_type IS NOT NULL
-           AND n.experience_type IS NOT NULL
-           AND n.education_level IS NOT NULL
-           AND n.recruitment_type IS NOT NULL
+         WHERE {_UNSENT} AND {_OPEN} AND {_READY}
          ORDER BY d.source_url IS NOT NULL, n.id
          LIMIT ?
         """,
         (MAX_ATTEMPTS, now, limit),
     ).fetchall()
+
+
+def pending_count(conn: sqlite3.Connection, now: str) -> int:
+    """보낼 차례를 기다리는 공고 수. `pending` 과 같은 조건이다. 대시보드가 읽는다."""
+    row = conn.execute(
+        f"""
+        SELECT count(*) AS n FROM normalized_jobs n
+          LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
+         WHERE {_UNSENT} AND {_OPEN} AND {_READY}
+        """,
+        (MAX_ATTEMPTS, now),
+    ).fetchone()
+    return int(row["n"])
+
+
+def unready_count(conn: sqlite3.Connection, now: str) -> int:
+    """분류는 끝났는데 필수 칸이 비어 보내지 못하는 공고 수. 대시보드가 확인할 것으로 알린다.
+
+    아직 분류하지 않은 공고는 세지 않는다 — 그 공고는 분류 대기이지 칸이 빈 것이 아니다.
+    """
+    row = conn.execute(
+        f"""
+        SELECT count(*) AS n FROM normalized_jobs n
+          LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
+         WHERE d.source_url IS NULL AND {_OPEN} AND NOT {_READY}
+           AND EXISTS (SELECT 1 FROM job_classifications c WHERE c.raw_job_id = n.raw_job_id)
+        """,
+        (now,),
+    ).fetchone()
+    return int(row["n"])
 
 
 async def deliver_pending(
