@@ -109,10 +109,10 @@ def test_제공_API_의_normalized_at_은_UTC_다(client: TestClient) -> None:
 def test_같은_행이_화면에서는_9시간_뒤로_보인다(client: TestClient) -> None:
     """화면 값과 API 값이 다른 것은 정상이다. 다른 이유가 문서에 적혀 있어야 한다."""
     api_value = client.get("/api/jobs").json()["items"][0]["normalized_at"]
-    html = client.get("/ui/review").text
+    html = client.get("/ui/review/jobs/1/panel").text
 
     found = SHOWN.search(html)
-    assert found is not None, "데이터 검수 화면에 시각이 없다"
+    assert found is not None, "공고 상세 패널에 수집 시각이 없다"
     screen_value = found.group()
     assert screen_value == "2026-08-21 19:00:00 KST"
 

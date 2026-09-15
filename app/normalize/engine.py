@@ -331,8 +331,8 @@ def cover_image(
 ) -> str | None:
     """공고의 대표 이미지. 회사 로고가 먼저이고, 없으면 수집한 `og:image` 다 (2026-09-15 결정).
 
-    로고는 자회사 로고를 먼저 보고 없으면 모회사 로고를 본다 — 완성 공고 화면이 로고를 고르는 순서와
-    같다 (`app/api/ui_complete.py`). 둘 다 없고 og:image 도 없으면 None 이다. 읽기 전용이다.
+    로고는 자회사 로고를 먼저 보고 없으면 모회사 로고를 본다 — 공고 상세 패널이 로고를 고르는 순서와
+    같다 (`app/api/review.py`). 둘 다 없고 og:image 도 없으면 None 이다. 읽기 전용이다.
     """
     for name in (fields.get("company_name"), fields.get(PARENT_COMPANY)):
         if not name or not name.strip():

@@ -1,62 +1,26 @@
 {% extends "base.html" %}
-{% block title %}데이터 확인{% endblock %}
-{% block heading %}데이터 확인{% endblock %}
+{% block title %}공고 목록{% endblock %}
+{% block heading %}공고 목록{% endblock %}
 {% block content %}
-<section>
-  {# 닫힌 채로 시작한다. 조회 조건 일곱 줄이 열려 있으면 공고 목록을 보려고 매번 그만큼
-     내려야 한다 — 이 화면에 오는 대부분의 이유는 조건을 바꾸는 것이 아니라 방금 들어온
-     공고를 보는 것이다. 접혀 있어도 안의 `hx-trigger="load"` 는 그대로 도는데, `details` 가
-     닫혀 있을 뿐 DOM 에서 빠지는 것은 아니기 때문이다 #}
-  <details>
-    <summary class="cursor-pointer text-sm font-medium text-slate-700">조회 조건 (열기)</summary>
-    <div id="review-filters" hx-get="/ui/review/filters" hx-trigger="load" hx-swap="innerHTML">
-      <p>조회 조건을 불러오는 중</p>
-    </div>
-  </details>
-</section>
-
-<section>
-  <h3>공고 목록</h3>
-  <p>
-    수집된 공고를 보고, 고치고, 지우는 한 화면이다. 고르지 않으면 미전달 건이 먼저 나온다 —
-    이미 전달된 행을 고쳐도 소비 측이 가진 값은 그대로다. 수동 수정은 전달 표시를 되돌리지
-    않으므로 검수는 전달 전에 하는 것이 정상 경로다.
-  </p>
-  <p>
-    고친 값은 보정으로 쌓이고 규칙이 만든 값을 지우지 않는다. 확정 값에는 다음 정규화부터
-    반영되므로, 지금 반영하려면 <a class="font-medium underline" href="/rules">정규화 규칙</a>
-    화면에서 재정규화를 돌린다.
-  </p>
-  <p>
-    행의 <span class="font-medium">수정</span> 을 누르면 그 공고가 통째로 모달에 열린다. 여섯
-    필드를 한자리에서 보고 여러 개를 고친 뒤 한 번에 저장한다 — 고친 필드만 보정으로 쌓이고,
-    손대지 않은 칸에는 보정이 생기지 않는다. 저장하면 모달이 닫히고 표의 그 행만 갈린다.
-  </p>
-  <p>
-    표의 왼쪽 칸으로 지울 공고를 고른다. 머리칸의 체크박스는 <span class="font-medium">이
-    페이지에 보이는 것만</span> 고르고, 표 위의 체크박스는 <span class="font-medium">조건에
-    걸린 전부</span>를 고른다 — 한 페이지에 보이는 수와 걸린 수는 같지 않다. 지금 고른 수는
-    단추 왼쪽에 숫자로 늘 적힌다.
-  </p>
-  {# 첫 조회만 여기서 한다. 지운 뒤 다시 부르는 것은 조회 조건 폼이 맡는다 — 조건을 아는
-     쪽이 부르지 않으면 지우고 나서 화면이 전체 목록으로 되돌아간다
-     (`fragments/review_filters.html`) #}
-  <div id="review-table" hx-get="/ui/review" hx-trigger="load" hx-swap="innerHTML">
-    <p>목록을 불러오는 중</p>
+<div class="card px-4 py-3">
+  <div id="review-filters" hx-get="/ui/review/filters" hx-trigger="load" hx-swap="innerHTML">
+    <p class="text-sm text-slate-500">조회 조건을 불러오는 중</p>
   </div>
-</section>
+</div>
+
+{# 첫 조회만 여기서 한다. 지운 뒤 다시 부르는 것은 조회 조건 폼이 맡는다 — 조건을 아는 쪽이
+   부르지 않으면 지우고 나서 화면이 전체 목록으로 되돌아간다 #}
+<div id="review-table" class="mt-3" hx-get="/ui/review" hx-trigger="load" hx-swap="innerHTML">
+  <p class="text-sm text-slate-500">목록을 불러오는 중</p>
+</div>
 
 {# 고르기 상태를 맞추는 최소한의 스크립트. 표 조각이 갈려 들어와도 살아 있어야 해서 조각이
-   아니라 이 페이지에 둔다 — 조각 안의 스크립트는 갈릴 때마다 리스너를 하나씩 더 붙인다.
-   서버로 왕복하지 않는다. 체크박스 하나를 누를 때마다 요청이 나가면 스무 건을 고르는 데
-   요청이 스무 번 나간다.
+   아니라 이 페이지에 둔다.
 
    - 머리칸 체크박스: 이 페이지에 보이는 행만 켜고 끈다
    - `조건 전체` 체크박스: 켜면 행 체크박스를 잠근다. 두 범위가 동시에 켜져 있으면 지워지는
      것이 무엇인지 화면에서 알 수 없다
-   - 고른 수는 늘 숫자로 적고, 0이면 지우기 단추가 눌리지 않는다
-   - 빈 값 건수 표의 `이것만 보기`: 조회 조건 폼의 그 칸을 맞추고 폼을 그대로 보낸다.
-     주소를 따로 만들지 않아 화면에 보이는 조건과 걸린 조건이 어긋나지 않는다 #}
+   - 고른 수는 늘 숫자로 적고, 0이면 지우기 단추가 눌리지 않는다 #}
 <script>
   (function () {
     var host = document.getElementById('review-table');
@@ -101,16 +65,6 @@
         Array.prototype.forEach.call(rows(), function (box) { box.checked = target.checked; });
       }
       sync();
-    });
-
-    document.body.addEventListener('click', function (evt) {
-      var pick = evt.target.closest ? evt.target.closest('[data-empty-pick]') : null;
-      if (!pick) { return; }
-      var field = document.getElementById('review-empty');
-      if (!field) { return; }
-      field.value = pick.getAttribute('data-empty-pick');
-      // 조회 조건 폼이 `change` 를 듣고 있다. 조건 칸이 바뀐 것과 같은 경로로 조회된다
-      field.dispatchEvent(new Event('change', { bubbles: true }));
     });
 
     // 표가 갈려 들어오면 체크는 전부 풀린 상태다. 숫자와 단추를 그 상태에 맞춘다

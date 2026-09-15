@@ -63,9 +63,10 @@ def test_위_네비게이션은_흐름_순서다() -> None:
 
 
 def test_묶음마다_들어_있는_화면() -> None:
+    """완성 공고는 공고 목록으로 합쳤다 (2026-09-15)."""
     members = {name: [label for _, label in items] for _, name, items in NAV_GROUPS}
 
-    assert members["공고"] == ["공고 목록", "완성 공고", "회사 로고"]
+    assert members["공고"] == ["공고 목록", "회사 로고"]
     assert members["수집"] == ["워크플로우", "크롤러 등록", "테스트 실행"]
     assert members["AI 분류"] == ["분류 실행", "AI 규칙", "직무 분류", "산업 분류"]
     assert "정규화 규칙" in members["설정"]
@@ -75,7 +76,6 @@ def test_묶음마다_들어_있는_화면() -> None:
     ("path_", "group_path"),
     [
         ("/review", "/review"),
-        ("/complete", "/review"),
         ("/companies", "/review"),
         ("/workflows", "/workflows"),
         ("/crawlers", "/workflows"),

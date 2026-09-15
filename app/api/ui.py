@@ -70,7 +70,6 @@ NAV_GROUPS: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
         "공고",
         (
             ("/review", "공고 목록"),
-            ("/complete", "완성 공고"),
             ("/companies", "회사 로고"),
         ),
     ),
@@ -254,7 +253,7 @@ def collapse_blank_lines(value: Any) -> str:
     분류가 낸 값(주요 업무·자격요건 등)에는 규칙(`app/normalize/rules.py`)을 태우지
     않는다 — "있는 글자를 그대로 옮긴다" 는 분류의 원칙이라, 원문의 빈 줄이 여러 줄이면
     그대로 옮겨 적힌다. 그 값 자체를 고치면 원문과 달라지므로, 여기서는 **읽기 전용
-    미리보기 화면에서 보여줄 때만** 접는다(`app/templates/fragments/complete_preview.html`).
+    화면에서 보여줄 때만** 접는다(`app/templates/fragments/job_panel.html`).
     """
     if not value:
         return ""
