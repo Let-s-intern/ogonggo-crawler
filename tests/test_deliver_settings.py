@@ -1,7 +1,13 @@
-"""전달 설정 저장소 (7.1.V, 7.2.V).
+"""오공고(Spring) 전송 설정 저장소.
 
-`app/notify/settings.py` 와 같은 자리다. 다른 점은 이 값을 실제로 쓰는 전송 경로가 아직
-없다는 것뿐이다.
+`app/notify/settings.py` 와 같은 자리다. 키는 여기 없다 — 크롤러 `.env` 에서 읽는다
+(2026-09-15 결정).
+
+| 확인 | 깨지면 |
+|---|---|
+| 값이 없으면 꺼져 있고 주소가 비어 있다 | 설치하자마자 어디론가 보낸다 |
+| 저장한 값이 그대로 읽힌다 | 화면에서 켠 전송이 돌지 않는다 |
+| 틀린 주소·건수, 주소 없이 켜기는 거절하고 아무것도 저장하지 않는다 | 반쯤 저장된 설정으로 보낸다 |
 """
 
 from __future__ import annotations
@@ -26,39 +32,26 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         connection.close()
 
 
-def test_값이_없으면_기본값이다(conn: sqlite3.Connection) -> None:
+def test_값이_없으면_꺼져_있다(conn: sqlite3.Connection) -> None:
     config = read_config(conn)
 
-    assert config.url == ""
-    assert config.method == "POST"
-    assert config.batch_size == 100
+    assert (config.url, config.enabled, config.batch_size) == ("", False, 100)
     assert config.configured is False
 
 
 def test_저장하고_다시_읽으면_그대로다(conn: sqlite3.Connection) -> None:
     write_config(
-        conn,
-        DeliverConfig(
-            url="https://board.example.com/ingest",
-            method="PUT",
-            auth_header="X-Api-Key: secret",
-            batch_size=50,
-        ),
+        conn, DeliverConfig(url="https://admin-api.example.com", enabled=True, batch_size=50)
     )
 
     config = read_config(conn)
 
-    assert config.url == "https://board.example.com/ingest"
-    assert config.method == "PUT"
-    assert config.auth_header == "X-Api-Key: secret"
-    assert config.batch_size == 50
+    assert (config.url, config.enabled, config.batch_size) == (
+        "https://admin-api.example.com",
+        True,
+        50,
+    )
     assert config.configured is True
-
-
-def test_주소를_채우면_configured가_참이다(conn: sqlite3.Connection) -> None:
-    write_config(conn, DeliverConfig(url="https://x.example.com"))
-
-    assert read_config(conn).configured is True
 
 
 def test_http로_시작하지_않는_주소는_거절된다(conn: sqlite3.Connection) -> None:
@@ -68,31 +61,13 @@ def test_http로_시작하지_않는_주소는_거절된다(conn: sqlite3.Connec
     assert read_config(conn).url == ""
 
 
-def test_get은_전달_방식이_아니다(conn: sqlite3.Connection) -> None:
-    with pytest.raises(DeliverSettingError, match="전달 방식"):
-        write_config(conn, DeliverConfig(url="https://x.example.com", method="GET"))
+def test_주소_없이는_켤_수_없다(conn: sqlite3.Connection) -> None:
+    with pytest.raises(DeliverSettingError, match="켤 수 없다"):
+        write_config(conn, DeliverConfig(enabled=True))
+
+    assert read_config(conn).enabled is False
 
 
-def test_1회_건수는_1_이상이어야_한다(conn: sqlite3.Connection) -> None:
+def test_한_번에_보내는_건수는_1_이상이어야_한다(conn: sqlite3.Connection) -> None:
     with pytest.raises(DeliverSettingError, match="1 이상"):
         write_config(conn, DeliverConfig(url="https://x.example.com", batch_size=0))
-
-
-def test_거절되면_아무것도_저장되지_않는다(conn: sqlite3.Connection) -> None:
-    write_config(conn, DeliverConfig(url="https://x.example.com", batch_size=10))
-
-    with pytest.raises(DeliverSettingError):
-        write_config(conn, DeliverConfig(url="ftp://bad.example.com", batch_size=10))
-
-    # 앞서 저장된 값이 그대로다 — 거절된 시도가 절반만 반영되지 않는다
-    assert read_config(conn).url == "https://x.example.com"
-
-
-def test_읽지_못하는_저장값은_기본값으로_떨어진다(conn: sqlite3.Connection) -> None:
-    conn.execute("INSERT INTO app_settings (key, value) VALUES ('deliver_batch_size', '이상한값')")
-    conn.execute("INSERT INTO app_settings (key, value) VALUES ('deliver_method', 'DELETE')")
-
-    config = read_config(conn)
-
-    assert config.batch_size == 100
-    assert config.method == "POST"

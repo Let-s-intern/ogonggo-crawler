@@ -134,12 +134,11 @@
             hx-disabled-elt="this" hx-indicator="closest div"
             {% if card.running %}disabled{% endif %}>켜기</button>
     {% endif %}
-    {# 전달 종류는 아직 아무것도 보내지 않는다 (PRD 3절). 눌러도 실패로 닫히기만 하는
-       단추를 활성으로 두면 운영자는 뭔가 보내졌다고 오해한다 — 아예 잠그고 옆에 이유를
-       적는다 #}
+    {# 전달 종류 워크플로우는 쓰지 않는다. 오공고 전송은 분류 끝과 전달 설정의 지금 보내기로 한다
+       (2026-09-15 결정). 눌러도 실패로 닫히기만 하는 단추를 활성으로 두지 않는다 #}
     {% if card.workflow.kind == "deliver" %}
-    <span class="text-sm text-slate-500" title="전달은 설정과 화면까지가 이번 범위다. 실제로 보내는 코드가 아직 없다">
-      지금 실행 (아직 보낼 수 없음)
+    <span class="text-sm text-slate-500" title="오공고 전송은 이 워크플로우가 아니라 분류 끝과 전달 설정의 지금 보내기로 한다">
+      지금 실행 (쓰지 않음)
     </span>
     {% else %}
     <button type="button" hx-post="/ui/side/{{ card.workflow.id }}/run"

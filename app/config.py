@@ -116,6 +116,9 @@ class Settings(BaseSettings):
 
     # 빌드가 심는 커밋 SHA. 이미지 태그를 고정하지 않으므로 떠 있는 코드를 아는 길이
     # 이 값뿐이다. 로컬에서 띄우면 비어 있다
+    # 오공고(Spring) 관리자 API 의 내부 키. 오공고 `ogonggo.admin.internal.api-key` 와 같은 값이다.
+    # 비어 있으면 전송하지 않는다 (`app/deliver/spring.py`)
+    ogonggo_internal_api_key: str = ""
     build_sha: str = "unknown"
 
     # 실행

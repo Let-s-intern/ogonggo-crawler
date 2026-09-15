@@ -1,14 +1,12 @@
-{# 전달 설정. 저장 결과만 이 조각으로 돌아온다 — 테스트 전송 단추는 두지 않는다.
-   없는 기능을 있는 것처럼 보이게 하는 단추가 가장 나쁘다 (PRD 3절) #}
-{% from "macros.html" import failure, notice_box %}
+{# 오공고(Spring) 전송 설정. 저장과 `지금 보내기` 의 결과가 이 조각 하나로 돌아온다
+   (`app/api/ui_deliver.py`, `app/deliver/spring.py`) #}
+{% from "macros.html" import failure, notice_box, state, wait %}
 <div class="notice notice-idle">
-  <span class="font-semibold">아직 아무것도 보내지 않는다.</span>
-  아래 값은 저장만 되고, 실제로 스프링에 데이터를 보내는 동작은 이번 범위가 아니다. 언제
-  보낼지는 이 화면 아래의 <span class="font-semibold text-slate-900">전달</span> 종류
-  워크플로우에서 정하지만, 그 워크플로우의 지금 실행도 아직 아무 일도 하지 않는다.
+  분류가 끝날 때마다 아직 보내지 않은 공고를 오공고에 등록한다. 오공고에서는 초안·검수 대기로
+  들어간다. 보낸 뒤 바뀐 값은 다시 보내지 않고, 크롤러에서 지운 공고도 오공고에서 지우지 않는다.
 </div>
 {% if error %}
-{{ failure(error.reason, error.message, title="저장하지 못했다") }}
+{{ failure(error.reason, error.message, title="처리하지 못했다") }}
 {% endif %}
 {% if message %}
 {{ notice_box(message) }}
@@ -17,41 +15,89 @@
 <form hx-put="/ui/deliver" hx-target="#deliver-form" hx-swap="innerHTML"
       hx-disabled-elt="find button">
   <fieldset>
-    <legend>스프링 전달 설정</legend>
+    <legend>오공고 전송 설정</legend>
     <p>
-      <label for="deliver-url">받는 주소</label>
-      <br>
-      <input id="deliver-url" name="url" type="url" size="50" value="{{ config.url }}">
-      <br>
-      <span class="text-sm text-slate-600">http:// 나 https:// 로 시작한다. 비워 두면 설정되지 않은 것이다</span>
-    </p>
-    <p>
-      <label for="deliver-method">방식</label>
-      <br>
-      <select id="deliver-method" name="method">
-        {% for value in methods %}
-        <option value="{{ value }}" {% if value == config.method %}selected{% endif %}>{{ value }}</option>
-        {% endfor %}
-      </select>
-    </p>
-    <p>
-      <label for="deliver-auth">인증 헤더</label>
-      <br>
-      <input id="deliver-auth" name="auth_header" type="text" size="50" value="{{ config.auth_header }}"
-             placeholder="예: X-Api-Key: secret">
+      <label for="deliver-enabled" class="inline-flex items-center gap-2">
+        <input id="deliver-enabled" name="enabled" type="checkbox" value="1"
+               {% if config.enabled %}checked{% endif %}>
+        분류가 끝나면 보낸다
+      </label>
       <br>
       <span class="text-sm text-slate-600">
-        "이름: 값" 한 줄이다. 비워 두면 인증 없이 부른다. 자격증명을 어떻게 줄지는 아직
-        정하지 않았다 — 정해지면 이 칸의 뜻도 함께 바뀔 수 있다
+        지금은 {{ state("켜짐") if config.enabled else state("꺼짐") }} 이다
       </span>
     </p>
     <p>
-      <label for="deliver-batch">1회 전달 건수</label>
+      <label for="deliver-url">오공고 관리자 API 주소</label>
       <br>
-      <input id="deliver-batch" name="batch_size" type="number" min="1" value="{{ config.batch_size }}" class="w-24">
+      <input id="deliver-url" name="url" type="url" size="50" value="{{ config.url }}"
+             placeholder="예: https://admin-api.example.com">
+      <br>
+      <span class="text-sm text-slate-600">
+        http:// 나 https:// 로 시작한다. 뒤에 <code>/api/v1/internal/jobs</code> 를 붙여 부른다
+      </span>
+    </p>
+    <p>
+      내부 API 키:
+      {{ state("설정됨", "ok") if key_configured else state("없음", "bad") }}
+      <br>
+      <span class="text-sm text-slate-600">
+        크롤러 <code>.env</code> 의 <code>OGONGGO_INTERNAL_API_KEY</code> 에서 읽는다. 화면에서는 넣지 않는다
+      </span>
+    </p>
+    <p>
+      <label for="deliver-batch">한 번에 보내는 건수</label>
+      <br>
+      <input id="deliver-batch" name="batch_size" type="number" min="1"
+             value="{{ config.batch_size }}" class="w-24">
     </p>
     <p>
       <button type="submit">저장</button>
+      {{ wait("저장하는 중") }}
     </p>
   </fieldset>
 </form>
+
+<form hx-post="/ui/deliver/send" hx-target="#deliver-form" hx-swap="innerHTML"
+      hx-disabled-elt="find button">
+  <fieldset>
+    <legend>지금 보내기</legend>
+    <p>
+      저장된 설정으로 아직 보내지 않은 공고와 실패한 공고를 한 번 보낸다. 켜기·끄기와 상관없이 보낸다.
+    </p>
+    <p class="text-sm text-slate-600">
+      지금까지 등록 {{ overview.sent }}건, 실패 {{ overview.failed }}건.
+      {{ max_attempts }}번 실패한 공고는 더 보내지 않는다.
+    </p>
+    <p>
+      <button type="submit">지금 보내기</button>
+      {{ wait("보내는 중") }}
+    </p>
+  </fieldset>
+</form>
+
+{% if overview.failures %}
+<div class="table-scroll">
+<table class="data-table">
+  <caption>최근 실패. 사유는 오공고가 돌려준 그대로다</caption>
+  <thead>
+    <tr>
+      <th scope="col">원문 주소</th>
+      <th scope="col" class="num">시도</th>
+      <th scope="col">사유</th>
+      <th scope="col">마지막 시도</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in overview.failures %}
+    <tr>
+      <td class="cell-url"><span class="cell-url-value" title="{{ item.source_url }}">{{ item.source_url }}</span></td>
+      <td class="num">{{ item.attempts }}</td>
+      <td class="cell-text">{{ item.last_error }}</td>
+      <td>{{ item.updated_at | as_time }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}

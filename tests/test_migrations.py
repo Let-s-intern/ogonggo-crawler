@@ -213,6 +213,17 @@ EXPECTED_COLUMNS = {
         "note",
         "created_at",
     },
+    # 0036 이 만든 오공고 전송 기록. 원문 주소마다 한 행이다
+    "spring_deliveries": {
+        "source_url",
+        "spring_job_id",
+        "status",
+        "attempts",
+        "last_error",
+        "sent_at",
+        "created_at",
+        "updated_at",
+    },
     # 0034 가 만든 산업 분류표. 한 단계이고 지우지 않고 끈다
     "industries": {
         "id",
@@ -278,6 +289,7 @@ ALL_VERSIONS = [
     "0033",
     "0034",
     "0035",
+    "0036",
 ]
 
 

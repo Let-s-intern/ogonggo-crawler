@@ -40,6 +40,7 @@ from app.classify.store import (
     save_suggestions,
 )
 from app.config import Settings
+from app.deliver.spring import deliver_after_classify
 from app.llm import settings as llm_settings
 from app.llm.base import Usage
 from app.llm.log import CLASSIFY, record_call
@@ -313,6 +314,9 @@ async def classify_ids(
         progress.calls,
         progress.total_tokens,
     )
+    if progress.processed:
+        # 분류가 끝난 공고를 오공고로 보낸다 (2026-09-15 결정). 전송이 실패해도 분류는 성공이다
+        await deliver_after_classify(conn, settings)
     return progress
 
 

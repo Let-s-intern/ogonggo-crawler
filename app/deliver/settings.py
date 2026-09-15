@@ -1,16 +1,12 @@
-"""전달 설정. 값은 `app_settings` 표에 들어간다 — 새 표를 만들지 않는다.
+"""오공고(Spring) 전송 설정. 값은 `app_settings` 표에 들어간다 — 새 표를 만들지 않는다.
 
-`app/notify/settings.py` 와 같은 자리의 모듈이다. 다른 점은 이 값을 실제로 쓰는 코드가 아직
-없다는 것뿐이다 — 이 Push 는 자리를 만드는 데까지고, 실제 전송은 다음 일이다
-(`.claude/tasks/todo/prd-side-workflows.md` 3절).
+`app/notify/settings.py` 와 같은 자리의 모듈이다. 읽기는 예외를 던지지 않는다. 손으로 넣은 깨진 값
+하나가 화면을 죽이면 안 된다. 읽지 못한 값은 기본값으로 떨어지고 로그에 남는다. 쓰기는 반대로
+깐깐하다 — 저장되는 값은 전부 검증을 지난다.
 
-읽기는 예외를 던지지 않는다. 손으로 넣은 깨진 값 하나가 화면을 죽이면 안 된다. 읽지 못한
-값은 기본값으로 떨어지고 로그에 남는다. 쓰기는 반대로 깐깐하다 — 저장되는 값은 전부 검증을
-지난다.
-
-**자격증명을 어떻게 줄지는 아직 정하지 않았다** (`.claude/docs/api-contract.md`). 여기 있는
-`auth_header` 는 그 값을 넣어 둘 자리일 뿐이고, 계약이 정해지면 이 파일과 그 문서를 같은
-커밋에서 고친다.
+**키는 여기 두지 않는다** (2026-09-15 결정). 오공고 내부 API 키는 크롤러 `.env` 의
+`OGONGGO_INTERNAL_API_KEY` 에서만 읽는다 (`app/config.py`). DB 에 두면 내보내기 파일과 화면으로
+새어 나간다. 0036 전에 쓰던 `deliver_method`·`deliver_auth_header` 행은 더 읽지 않는다.
 """
 
 from __future__ import annotations
@@ -22,15 +18,10 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 URL = "deliver_url"
-METHOD = "deliver_method"
-AUTH_HEADER = "deliver_auth_header"
+ENABLED = "deliver_enabled"
 BATCH_SIZE = "deliver_batch_size"
 
-KEYS: tuple[str, ...] = (URL, METHOD, AUTH_HEADER, BATCH_SIZE)
-
-# 받는 메서드 둘뿐이다. 조회가 아니라 보내는 동작이라 GET 은 없다
-METHODS: tuple[str, ...] = ("POST", "PUT")
-DEFAULT_METHOD = "POST"
+KEYS: tuple[str, ...] = (URL, ENABLED, BATCH_SIZE)
 
 DEFAULT_BATCH_SIZE = 100
 
@@ -41,16 +32,15 @@ class DeliverSettingError(ValueError):
 
 @dataclass(frozen=True)
 class DeliverConfig:
-    """전달 설정 한 벌. 저장된 값이 없으면 이 기본값이 그대로 쓰인다.
+    """전송 설정 한 벌. 저장된 값이 없으면 이 기본값이 그대로 쓰인다.
 
-    `configured` 가 참이어야 화면이 "보낼 준비가 됐다" 로 읽는다. 지금은 이 값을 실제로
-    쓰는 전송 경로가 없으므로, 참이어도 아무 일도 일어나지 않는다.
+    `enabled` 는 분류가 끝날 때 자동으로 보낼지다. 전달 화면의 `지금 보내기` 는 이 값과 상관없이
+    보낸다 (`app/deliver/spring.py`).
     """
 
+    # 오공고 관리자 API 의 주소. 뒤에 `/api/v1/internal/jobs` 를 붙여 부른다
     url: str = ""
-    method: str = DEFAULT_METHOD
-    # "이름: 값" 한 줄. 비워 두면 인증 없이 부르는 것이다
-    auth_header: str = ""
+    enabled: bool = False
     batch_size: int = DEFAULT_BATCH_SIZE
 
     @property
@@ -62,14 +52,12 @@ class DeliverConfig:
         cleaned = self.url.strip()
         if cleaned and not cleaned.startswith(("http://", "https://")):
             raise DeliverSettingError(
-                f"전달 주소는 http:// 나 https:// 로 시작해야 한다: {self.url!r}"
+                f"오공고 주소는 http:// 나 https:// 로 시작해야 한다: {self.url!r}"
             )
-        if self.method not in METHODS:
-            raise DeliverSettingError(
-                f"전달 방식이 아니다: {self.method!r}. {' 또는 '.join(METHODS)} 다"
-            )
+        if self.enabled and not cleaned:
+            raise DeliverSettingError("주소가 비어 있으면 켤 수 없다")
         if self.batch_size < 1:
-            raise DeliverSettingError(f"1회 전달 건수는 1 이상이어야 한다: {self.batch_size}")
+            raise DeliverSettingError(f"한 번에 보내는 건수는 1 이상이어야 한다: {self.batch_size}")
 
 
 def read_config(conn: sqlite3.Connection) -> DeliverConfig:
@@ -84,8 +72,7 @@ def read_config(conn: sqlite3.Connection) -> DeliverConfig:
     default = DeliverConfig()
     return DeliverConfig(
         url=stored.get(URL, default.url),
-        method=_as_method(stored.get(METHOD), default.method),
-        auth_header=stored.get(AUTH_HEADER, default.auth_header),
+        enabled=stored.get(ENABLED, "0") == "1",
         batch_size=_as_int(stored.get(BATCH_SIZE), default.batch_size),
     )
 
@@ -95,8 +82,7 @@ def write_config(conn: sqlite3.Connection, config: DeliverConfig) -> DeliverConf
     config.validate()
     values = {
         URL: config.url.strip(),
-        METHOD: config.method,
-        AUTH_HEADER: config.auth_header.strip(),
+        ENABLED: "1" if config.enabled else "0",
         BATCH_SIZE: str(config.batch_size),
     }
     conn.executemany(
@@ -107,15 +93,6 @@ def write_config(conn: sqlite3.Connection, config: DeliverConfig) -> DeliverConf
         list(values.items()),
     )
     return read_config(conn)
-
-
-def _as_method(raw: str | None, fallback: str) -> str:
-    if raw is None:
-        return fallback
-    if raw in METHODS:
-        return raw
-    logger.warning("%s 에 저장된 값이 전달 방식이 아니다: %r. 기본값을 쓴다", METHOD, raw)
-    return fallback
 
 
 def _as_int(raw: str | None, fallback: int) -> int:

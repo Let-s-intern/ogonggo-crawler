@@ -101,9 +101,12 @@ def test_부가_워크플로우_화면이_열리고_네비게이션이_켜진다
     assert '<a href="/side" aria-current="page"' in response.text
 
 
-def test_전달이_아무것도_보내지_않는다는_사실을_낱말로_적는다(client: TestClient) -> None:
-    """PRD 3절. 실행 단추가 있는데 아무 일도 안 일어나는 화면을 만들지 않는다."""
-    assert "아직 아무것도 보내지 않는다" in client.get("/side").text
+def test_전달_종류_워크플로우는_쓰지_않는다고_적는다(client: TestClient) -> None:
+    """오공고 전송은 분류 끝과 지금 보내기로 한다 (2026-09-15 결정).
+
+    실행해도 아무 일도 없는 종류임을 적는다.
+    """
+    assert "전달 종류 부가 워크플로우는 쓰지 않는다" in client.get("/side").text
 
 
 # ---------------------------------------------------------------------------
@@ -344,7 +347,7 @@ def test_전달_카드는_지금_실행_단추_대신_이유를_보여준다(
 
     body = client.get("/ui/side").text
 
-    assert "지금 실행 (아직 보낼 수 없음)" in body
+    assert "지금 실행 (쓰지 않음)" in body
     assert f'hx-post="/ui/side/{workflow.id}/run"' not in body
 
 
