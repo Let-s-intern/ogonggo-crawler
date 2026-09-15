@@ -99,6 +99,25 @@ NORMALIZED_FIELDS: tuple[str, ...] = (
 # 유형과 자동 종료는 마감일에서 정한다 (`app/normalize/engine.py` 의 `settle_fields`, 0033)
 DERIVED_FIELDS: tuple[str, ...] = ("recruitment_type", "auto_close_enabled")
 
+# 규칙 화면이 고르게 두는 칸. 수집이 주고 AI 분류가 덮지 않는 칸만이다 (2026-09-15 결정).
+# 판정 칸·본문 칸·직군·직무·산업은 분류가 규칙이 만든 값 위에 덮어쓰고
+# (`app/normalize/engine.py` 의 `apply_classification`), 대표 이미지는 정규화가 로고로 정한다 — 그
+# 칸에 건 규칙은 아무 일도 하지 않는다. 검증(`build_rule`)은 가져오기와 옛 규칙 때문에 넓게 둔다
+RULE_FIELDS: tuple[str, ...] = (
+    "company_name",
+    "title",
+    "body",
+    "recruitment_end_at",
+    "recruitment_start_at",
+)
+RULE_FIELD_LABELS: dict[str, str] = {
+    "company_name": "회사명",
+    "title": "제목",
+    "body": "본문",
+    "recruitment_end_at": "모집 마감",
+    "recruitment_start_at": "모집 시작",
+}
+
 # `normalization_rules.rule_type` 의 CHECK 제약과 같은 값이어야 한다.
 RULE_TYPES: tuple[str, ...] = ("mapping", "regex", "trim", "date_parse", "html_text")
 

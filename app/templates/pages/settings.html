@@ -1,23 +1,8 @@
-{# 운영 설정의 껍데기. 하위 메뉴와 제목만 여기 있고 내용은 자식이 채운다.
-   한 화면에 다섯 구역을 늘어놓으면 찾지 못한다 — 자리만 나눴고 동작은 그대로다 #}
+{# 설정의 껍데기. 하위 메뉴는 다른 묶음처럼 헤더 두 번째 줄이 그린다 (`app/api/ui.py` 의
+   `SETTINGS_NAV`). 내용은 자식이 채운다 #}
 {% extends "base.html" %}
-{% block title %}운영 설정{% endblock %}
-{% block heading %}운영 설정{% endblock %}
+{% block title %}설정{% endblock %}
+{% block heading %}설정{% endblock %}
 {% block content %}
-<nav class="mb-4">
-  <ul class="flex flex-wrap gap-1">
-    {% for path, label in settings_nav %}
-    <li>
-      {% if path == settings_active %}
-      <a href="{{ path }}" aria-current="page"
-         class="block rounded-md bg-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-900">{{ label }}</a>
-      {% else %}
-      <a href="{{ path }}"
-         class="block rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900">{{ label }}</a>
-      {% endif %}
-    </li>
-    {% endfor %}
-  </ul>
-</nav>
 {% block section %}{% endblock %}
 {% endblock %}

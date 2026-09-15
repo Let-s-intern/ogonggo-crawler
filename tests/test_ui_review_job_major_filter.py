@@ -1,4 +1,4 @@
-"""검수 화면 조회 조건의 직군 (5.2).
+"""공고 목록 조회 조건의 직군 (5.2).
 
 실사이트에 나가지 않는다. 저장된 행을 넣고 화면 경로로만 연다. 소분류(직무)는 대분류(직군)에
 종속되므로 이 조건은 대분류 하나만 둔다.
@@ -60,27 +60,14 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
             """,
             (raw_job_id, f"{LIST_URL}{raw_job_id}/", f"hash-{raw_job_id}"),
         )
-    connection.execute(
-        """
-        INSERT INTO normalized_jobs (raw_job_id, company_name, title, source_url, job_field)
-        VALUES (1, '예시회사', ?, ?, ?)
-        """,
-        (TITLES[1], f"{LIST_URL}1/", MAJOR),
-    )
-    connection.execute(
-        """
-        INSERT INTO normalized_jobs (raw_job_id, company_name, title, source_url)
-        VALUES (2, '예시회사', ?, ?)
-        """,
-        (TITLES[2], f"{LIST_URL}2/"),
-    )
-    connection.execute(
-        """
-        INSERT INTO normalized_jobs (raw_job_id, company_name, title, source_url, job_field)
-        VALUES (3, '예시회사', ?, ?, ?)
-        """,
-        (TITLES[3], f"{LIST_URL}3/", DISABLED_MAJOR),
-    )
+    for raw_job_id, job_field in ((1, MAJOR), (2, None), (3, DISABLED_MAJOR)):
+        connection.execute(
+            """
+            INSERT INTO normalized_jobs (raw_job_id, company_name, title, source_url, job_field)
+            VALUES (?, '예시회사', ?, ?, ?)
+            """,
+            (raw_job_id, TITLES[raw_job_id], f"{LIST_URL}{raw_job_id}/", job_field),
+        )
     try:
         yield connection
     finally:
@@ -105,8 +92,7 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
 
 def _titles(client: TestClient, **params: str) -> set[str]:
     html = client.get("/ui/review", params=params).text
-    cells = re.findall(r'id="review-cell-\d+-title".*?<span[^>]*>([^<]+)</span>', html, re.DOTALL)
-    return set(cells)
+    return set(re.findall(r'class="job-title[^"]*">([^<]+)</span>', html))
 
 
 def test_조회_조건에_켜진_대분류만_담긴_select가_있다(client: TestClient) -> None:

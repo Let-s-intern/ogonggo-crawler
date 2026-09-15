@@ -1,91 +1,55 @@
-{# 검수 표 한 페이지. 조회 조건과 페이지 이동이 이 조각만 갈아 끼운다.
-   페이지 버튼은 서버가 지금 조건을 달아 만든 주소를 그대로 쓴다.
+{# 공고 목록 한 페이지. 조회 조건과 페이지 이동이 이 조각만 갈아 끼운다.
 
-   값 칸은 읽기만 한다. 행의 `수정` 버튼이 그 공고를 통째로 모달에 열고, 모달에서 저장하면
-   그 행의 값 칸과 보정 개수·전달 칸만 갈린다. 이 조각은 다시 만들어지지 않는다.
-
-   Push 30 에서 조회 화면의 고르기·지우기가 여기로 들어왔다. 표를 지우기 폼이 감싼다 —
-   체크박스와 지금 걸린 조회 조건이 같은 폼으로 확인 창에 실려 간다. 조건을 숨은 칸으로 함께
-   보내는 이유는 `필터에 걸린 전체` 가 지금 화면에 보이는 것과 정확히 같은 조건이어야 하기
-   때문이다.
-
+   표를 지우기 폼이 감싼다 — 체크박스와 지금 걸린 조회 조건이 같은 폼으로 확인 창에 실려 간다.
    이 페이지에 보이는 수와 조건에 걸린 수를 따로 적는다. 한 페이지가 20건이라 148건이 걸려도
-   보이는 것은 20건이고, 그 차이를 뭉뚱그리면 20건인 줄 알고 148건을 지운다 #}
-{% from "fragments/review_cell_macro.html" import review_cell, review_open_button, review_override_count, review_delivery %}
-{% from "macros.html" import empty, empty_row, notice_box, wait %}
-<p>
-  전체 {{ total }}건 중
-  {% if total %}{{ first_index }}-{{ last_index }}번째{% else %}0건{% endif %}.
-  {{ page }} / {{ total_pages }} 페이지 (한 페이지 {{ page_size }}건)
-</p>
+   보이는 것은 20건이고, 그 차이를 뭉뚱그리면 20건인 줄 알고 148건을 지운다.
 
-{# 값이 빈 공고가 어느 필드에 몇 건인지. 조건을 걸기 전에 어디가 문제인지 보이지 않으면,
-   한 필드만 놓친 셀렉터를 찾는 방법이 전체를 눈으로 훑는 것밖에 없다.
+   제목을 누르면 오른쪽 패널이 그 공고를 연다(`fragments/job_panel.html`) #}
+{% from "macros.html" import notice_box, wait %}
+{% set dash = '<span class="text-slate-300">—</span>' | safe %}
 
-   건수는 빈 값 조건을 뺀 나머지 조건에서 센다. 걸린 조건 안에서 세면 `마감이 빈 것` 을 고른
-   순간 마감만 남고 나머지가 0이 되어 아무것도 말하지 않는다 (`app/api/review_filter.py`).
-
-   빈 값이 정상일 수 있는 필드는 그 사실을 낱말과 문장으로 적는다. 마감이 빈 것은 상시채용일
-   수 있고, 그것을 셀렉터가 놓친 것으로 읽으면 멀쩡한 셀렉터를 고치게 된다 #}
-<div class="table-scroll">
-<table class="data-table">
-  <caption>필드별 빈 값 건수 (빈 값 조건을 뺀 지금 조건에서 센다)</caption>
-  <thead>
-    <tr>
-      <th scope="col">필드</th>
-      <th scope="col" class="num">빈 건수</th>
-      <th scope="col">비어 있는 것이 정상일 수 있나</th>
-      <th scope="col">메모</th>
-      <th scope="col">거르기</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for item in empties %}
-    <tr>
-      <td>{{ item.label }}</td>
-      <td class="num">{{ item.count }}건</td>
-      <td>{% if item.normal %}{{ item.normal }}{% else %}—{% endif %}</td>
-      <td class="cell-text">{{ item.note or "비어 있으면 셀렉터가 놓친 것이다" }}</td>
-      <td>
-        {% if empty_picked == item.field %}
-        <span class="badge badge-ok">걸린 조건</span>
-        {% elif item.count %}
-        {# 조건 칸을 이 필드로 맞추고 바로 조회한다. 폼을 그대로 쓰기 때문에 화면에 보이는
-           조건과 걸린 조건이 어긋나지 않는다 (`pages/review.html`) #}
-        <button type="button" class="btn-quiet" data-empty-pick="{{ item.field }}"
-                title="빈 값인 필드를 {{ item.label }} 로 맞추고 조회한다">이것만 보기</button>
-        {% else %}
-        <span class="text-slate-500">없음</span>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="flex flex-wrap items-center justify-between gap-2">
+  <p class="text-sm text-slate-600">
+    전체 {{ total }}건 중 {% if total %}{{ first_index }}-{{ last_index }}번째{% else %}0건{% endif %}
+    · {{ page }} / {{ total_pages }} 페이지
+  </p>
 </div>
 
-{# 중복 조건이 걸렸을 때만 나오는 묶음 목록. 여분만 세어 적으면 어느 것과 어느 것이 짝인지
-   알 수 없다. 묶음마다 번호와 건수를 적고, 표의 행에도 같은 번호가 붙는다.
+<details class="card my-3 px-4 py-3">
+  <summary>AI 채움률 <span class="font-normal text-slate-400">· 지금 조건의 {{ total }}건 기준</span></summary>
+  <p class="mt-2 text-xs text-slate-400">회색 막대는 원문이 말하지 않으면 비는 것이 정상인 칸이다</p>
+  <div class="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
+    {% for fill in fills %}
+    <div class="flex items-center gap-2 text-xs">
+      <span class="w-24 shrink-0 text-slate-600">{{ fill.label }}</span>
+      <span class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-100">
+        <span class="block h-full rounded-full {% if fill.soft %}bg-slate-300{% elif fill.pct < 80 %}bg-amber-400{% else %}bg-emerald-500{% endif %}"
+              style="width: {{ fill.pct }}%"></span>
+      </span>
+      <span class="w-10 text-right tabular-nums text-slate-500" title="{{ fill.filled }}건">{{ fill.pct }}%</span>
+    </div>
+    {% endfor %}
+  </div>
+</details>
 
-   여분은 묶음마다 한 건씩 남겼을 때 남는 수다. 지울 수 있는 최대치일 뿐 지울 건수가 아니다 —
-   계열사가 각각 올린 공고는 제목이 같아도 다른 공고라, 지울지는 사람이 묶음을 보고 정한다 #}
+{# 중복 조건이 걸렸을 때만 나오는 묶음 목록. 묶음마다 번호와 건수를 적고, 표의 행에도 같은
+   번호가 붙는다 #}
 {% if dup_picked %}
-<section>
-  <h4>중복 묶음 ({{ dup_label }} 기준)</h4>
-  <p>
+<div class="card my-3 px-4 py-3">
+  <p class="text-sm font-semibold text-slate-900">중복 묶음 ({{ dup_label }} 기준)</p>
+  <p class="mt-1 text-sm text-slate-600">
     {{ dup_group_count }}묶음 {{ total }}건. 묶음마다 한 건씩 남기면 {{ dup_extra }}건이
     여분이다. {{ dup_note }}
   </p>
   {% if dup_group_count %}
   <div class="table-scroll">
   <table class="data-table">
-    <caption>걸린 묶음{% if dup_group_count > dup_groups | length %} (큰 것부터 {{ dup_groups | length }}묶음만 적는다. 나머지 {{ dup_group_count - dup_groups | length }}묶음은 표에서 본다){% endif %}</caption>
+    <caption>걸린 묶음{% if dup_group_count > dup_groups | length %} (큰 것부터 {{ dup_groups | length }}묶음만 적는다){% endif %}</caption>
     <thead>
       <tr>
         <th scope="col" class="num">묶음</th>
         <th scope="col">같은 값</th>
         <th scope="col" class="num">건수</th>
-        <th scope="col" class="num">여분</th>
       </tr>
     </thead>
     <tbody>
@@ -98,16 +62,15 @@
           {% endfor %}
         </td>
         <td class="num">{{ group.count }}건</td>
-        <td class="num">{{ group.count - 1 }}건</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
   </div>
   {% else %}
-  {{ empty("이 조건에서는 " ~ dup_label ~ " 기준으로 겹치는 공고가 없다. 기준을 넓히거나(제목만) 조회 조건을 넓혀 다시 본다") }}
+  <p class="mt-2 text-sm text-slate-500">이 조건에서는 {{ dup_label }} 기준으로 겹치는 공고가 없다. 기준을 넓히거나(제목만) 조회 조건을 넓혀 다시 본다</p>
   {% endif %}
-</section>
+</div>
 {% endif %}
 
 <form id="review-select-form" data-total="{{ total }}"
@@ -115,120 +78,101 @@
   {% for name, value in delete_criteria.items() %}
   <input type="hidden" name="{{ name }}" value="{{ value }}">
   {% endfor %}
-  {# 닫힌 채로 시작한다. 고르기·지우기는 가끔 하는 일이고, 접혀 있어도 체크박스 변화를 듣는
-     `review.html` 의 스크립트는 `document.body` 에 걸려 있어 그대로 동작한다 #}
-  <details>
-    <summary class="cursor-pointer text-sm font-medium text-slate-700">고른 공고 지우기 (열기)</summary>
-  <fieldset>
-    <p>
-      <label for="review-select-filtered" class="inline-flex items-center gap-2">
-        <input id="review-select-filtered" type="checkbox" name="all_filtered" value="1">
-        조건에 걸린 {{ total }}건 전체 고르기 (이 페이지에 보이지 않는 건도 포함한다)
-      </label>
-    </p>
-    {% if dup_picked %}
-    {# 중복 조건에 걸린 것은 묶음 전체다. 여분만 걸린 줄 알고 이 체크박스를 켜면 짝까지
-       사라진다 — 한 건도 남지 않는다 #}
-    <p>{{ notice_box("중복 조건에 걸린 " ~ total ~ "건은 묶음 전체다. 여분 " ~ dup_extra ~ "건이 아니라 짝까지 전부 지워진다. 남길 것을 정하려면 표에서 골라 지운다") }}</p>
-    {% endif %}
-    <p class="flex flex-wrap items-center gap-3">
-      <span id="review-select-count" class="text-sm font-semibold text-slate-900"
-            role="status">이 페이지의 {{ jobs | length }}건 중 0건을 골랐다</span>
-      <button type="submit" id="review-delete-open" data-modal-open disabled
-              class="border-red-300 bg-white text-red-700 hover:bg-red-50"
-              title="지우기 전에 몇 건이 사라지는지 확인 창에서 보여준다">고른 공고 지우기</button>
-      {{ wait("확인 창을 여는 중") }}
-    </p>
-    {% if workflow %}
-    {# 한 사이트의 수집분을 통째로 비우는 길. 백여 건을 페이지 단위로 고르게 하지 않는다.
-       체크박스와 나머지 조회 조건을 보지 않고 그 워크플로우가 모은 전부를 고른다 —
-       자기 값을 따로 실어 보내야 해서 폼의 제출이 아니라 자기 요청으로 간다 #}
-    <p class="flex flex-wrap items-center gap-3">
-      <button type="button" id="review-delete-workflow" data-modal-open
-              hx-post="/ui/review/delete/confirm" hx-include="#review-select-form"
-              hx-vals='{"scope": "workflow"}'
-              hx-target="#app-modal-body" hx-swap="innerHTML"
-              hx-indicator="#review-delete-workflow-wait"
-              class="border-red-300 bg-white text-red-700 hover:bg-red-50"
-              title="이 워크플로우가 모은 것만 지운다. 워크플로우 자체는 남는다">워크플로우 {{ workflow }} 의 수집분 전부 지우기</button>
-      {{ wait("확인 창을 여는 중", id="review-delete-workflow-wait") }}
-    </p>
-    {% endif %}
-  </fieldset>
-  </details>
-<div class="table-scroll">
-<table class="data-table">
-  <caption>검수 대상 공고</caption>
-  <thead>
-    <tr>
-      <th scope="col">
-        <input type="checkbox" data-select-page
-               aria-label="이 페이지의 {{ jobs | length }}건 모두 고르기"
-               title="이 페이지의 {{ jobs | length }}건만 고른다. 조건에 걸린 {{ total }}건 전체가 아니다">
-      </th>
-      {% if dup_picked %}<th scope="col">묶음</th>{% endif %}
-      <th scope="col" class="num">번호</th>
-      <th scope="col">고치기</th>
-      <th scope="col">전달</th>
-      <th scope="col">보정</th>
-      {# 모회사는 값 칸이 아니라 읽기 전용 열이다. 규칙도 보정도 걸리지 않는 칸이라
-         `fields` 에 들어 있지 않다 (`migrations/0018_parent_company.sql`).
 
-         머리글이 어디서 온 값인지까지 적는다. 회사 화면에도 `모회사` 칸이 있는데 그쪽은
-         사람이 적는 `companies.parent_name` 이고 이쪽은 크롤러가 정한
-         `normalized_jobs.parent_company_name` 다. 같은 회사인데 두 화면이 다른 이름을 보이는
-         것이 정상이고, 이름표가 같으면 그것이 고장으로 읽힌다 (`.claude/docs/data-model.md`) #}
-      <th scope="col" title="크롤러에 적어 둔 회사명이거나 크롤러 이름이다. 회사 화면에서 사람이 적는 모회사와 다른 값이다">모회사 (크롤러가 정함)</th>
-      {% for field in fields %}<th scope="col">{{ labels[field] }}</th>{% endfor %}
-      <th scope="col">워크플로우</th>
-      <th scope="col">수집 시각</th>
-      <th scope="col">원문</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for item in jobs %}
-    {% set job = item.job %}
-    <tr>
-      <td>
-        <input type="checkbox" name="raw_job_id" value="{{ job.raw_job_id }}" data-select-row
-               aria-label="수집 건 {{ job.raw_job_id }} 고르기">
-      </td>
-      {% if dup_picked %}
-      {# 묶음 번호와 그 묶음의 건수. 건수는 조건에 걸린 전체에서 센 것이라, 한 페이지에 세
-         건만 보여도 다섯 건짜리 묶음이면 다섯이라고 적힌다 #}
-      <td>{{ item.dup_group }}번 묶음 · {{ item.dup_size }}건</td>
-      {% endif %}
-      <td class="num">{{ job.id }}</td>
-      <td>{{ review_open_button(job) }}</td>
-      <td>{{ review_delivery(job.id, job.delivered_at, item.override_count) }}</td>
-      <td class="num">{{ review_override_count(job.id, item.override_count) }}</td>
-      <td>{{ job.parent_company_name or "값 없음" }}</td>
-      {% for cell in item.cells %}{{ review_cell(cell) }}{% endfor %}
-      <td>{{ job.workflow_id }} - {{ job.workflow_name }}</td>
-      <td>{{ job.crawled_at | as_time }}</td>
-      <td class="cell-url">
-        <a class="cell-url-value" href="{{ job.source_url }}" target="_blank" rel="noreferrer"
-           title="{{ job.source_url }}">{{ job.source_url }}</a>
-      </td>
-    </tr>
-    {% else %}
-    {# 머리글의 열 수와 같아야 한다. 작으면 안내 문구가 왼쪽 몇 칸에 갇히고 오른쪽에 빈 칸이
-       줄줄이 남아, 조건에 맞는 것이 없다는 말이 표가 깨진 것처럼 보인다. 스물다섯은
-       고르기·번호·고치기·전달·보정·모회사 여섯에 값 칸 열여섯(`OVERRIDABLE_FIELDS`, 0025 가
-       `job_field`·`job_role` 를 더해 열넷에서 늘었다)과 워크플로우·수집 시각·원문 셋을
-       더한 수다. 중복 조건이 걸리면 묶음 열이 하나 는다.
-       `tests/test_ui_review_columns.py` 가 이 수를 머리글에서 세어 맞춘다 #}
-    {{ empty_row(fields|length + (10 if dup_picked else 9), "조건에 맞는 공고가 없다. 조회 조건을 넓히거나, 워크플로우가 한 번이라도 실행됐는지 워크플로우 화면에서 확인한다") }}
-    {% endfor %}
-  </tbody>
-</table>
-</div>
+  <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+    <span id="review-select-count" class="font-medium text-slate-700"
+          role="status">이 페이지의 {{ jobs | length }}건 중 0건을 골랐다</span>
+    <label for="review-select-filtered" class="inline-flex items-center gap-2 font-normal text-slate-600">
+      <input id="review-select-filtered" type="checkbox" name="all_filtered" value="1">
+      조건에 걸린 {{ total }}건 전체 고르기
+    </label>
+    <button type="submit" id="review-delete-open" data-modal-open disabled
+            class="mt-0 border-red-300 bg-white text-red-700 hover:bg-red-50"
+            title="지우기 전에 몇 건이 사라지는지 확인 창에서 보여준다">고른 공고 지우기</button>
+    {{ wait("확인 창을 여는 중") }}
+    {% if workflow %}
+    {# 한 사이트의 수집분을 통째로 비우는 길. 체크박스와 나머지 조회 조건을 보지 않는다 #}
+    <button type="button" id="review-delete-workflow" data-modal-open
+            hx-post="/ui/review/delete/confirm" hx-include="#review-select-form"
+            hx-vals='{"scope": "workflow"}'
+            hx-target="#app-modal-body" hx-swap="innerHTML"
+            class="mt-0 border-red-300 bg-white text-red-700 hover:bg-red-50"
+            title="이 워크플로우가 모은 것만 지운다. 워크플로우 자체는 남는다">워크플로우 {{ workflow }} 의 수집분 전부 지우기</button>
+    {% endif %}
+  </div>
+  {% if dup_picked %}
+  {# 중복 조건에 걸린 것은 묶음 전체다. 여분만 걸린 줄 알고 전체를 고르면 짝까지 사라진다 #}
+  {{ notice_box("중복 조건에 걸린 " ~ total ~ "건은 묶음 전체다. 여분 " ~ dup_extra ~ "건이 아니라 짝까지 전부 지워진다. 남길 것을 정하려면 표에서 골라 지운다") }}
+  {% endif %}
+
+  <div class="table-scroll bg-white">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th scope="col" class="w-8">
+          <input type="checkbox" data-select-page
+                 aria-label="이 페이지의 {{ jobs | length }}건 모두 고르기"
+                 title="이 페이지의 {{ jobs | length }}건만 고른다. 조건에 걸린 {{ total }}건 전체가 아니다">
+        </th>
+        {% if dup_picked %}<th scope="col">묶음</th>{% endif %}
+        <th scope="col">공고</th>
+        <th scope="col">직군 · 직무</th>
+        <th scope="col">조건</th>
+        <th scope="col">마감</th>
+        <th scope="col">오공고</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in jobs %}
+      {% set job = item.job %}
+      <tr>
+        <td>
+          <input type="checkbox" name="raw_job_id" value="{{ job.raw_job_id }}" data-select-row
+                 aria-label="수집 건 {{ job.raw_job_id }} 고르기">
+        </td>
+        {% if dup_picked %}
+        <td>{{ item.dup_group }}번 묶음 · {{ item.dup_size }}건</td>
+        {% endif %}
+        <td class="cell-text">
+          <button type="button" data-panel-open
+                  hx-get="/ui/review/jobs/{{ job.id }}/panel" hx-target="#app-panel-body" hx-swap="innerHTML"
+                  class="m-0 block whitespace-normal border-0 bg-transparent p-0 text-left shadow-none hover:bg-transparent">
+            <span class="job-title block font-medium text-slate-900 hover:underline">{{ job.title or "제목 없음" }}</span>
+            <span class="block text-xs text-slate-500">
+              {{ job.company_name or job.parent_company_name or "회사 없음" }}{% if job.parent_company_name and job.company_name and job.company_name != job.parent_company_name %} · {{ job.parent_company_name }}{% endif %} · {{ job.workflow_name }}
+            </span>
+          </button>
+        </td>
+        <td>
+          {% if job.job_field %}{{ job.job_field }}{% if job.job_role %} · {{ job.job_role }}{% endif %}{% else %}{{ dash }}{% endif %}
+        </td>
+        <td>
+          {% if job.employment_type or job.experience_type %}
+          {{ job.employment_type | value_label("employment_type") }}{% if job.employment_type and job.experience_type %} · {% endif %}{{ job.experience_type | value_label("experience_type") }}{% if job.experience_min_years %} {{ job.experience_min_years }}년+{% endif %}
+          {% else %}{{ dash }}{% endif %}
+        </td>
+        <td>
+          {% if job.recruitment_end_at %}<span class="tabular-nums">{{ job.recruitment_end_at[:10] }}</span>{% else %}{{ dash }}{% endif %}
+          {% if item.d_day %}<span class="chip {% if item.d_day == '마감' %}chip-idle{% else %}chip-warn{% endif %}">{{ item.d_day }}</span>{% endif %}
+        </td>
+        <td>
+          {% if job.sent %}<span class="chip chip-ok">전송함</span>{% else %}<span class="chip chip-idle">전송 안 함</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="{{ 7 if dup_picked else 6 }}" class="cell-text py-6 text-slate-500">
+          조건에 맞는 공고가 없다. 조회 조건을 넓히거나, 워크플로우가 한 번이라도 실행됐는지 확인한다
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
 </form>
 
 {% if total_pages > 1 %}
-<nav aria-label="페이지 이동" class="flex flex-wrap items-center gap-1">
-  <button type="button" hx-get="{{ page_url(1) }}" hx-target="#review-table" hx-swap="innerHTML"
-          hx-indicator="closest nav" {% if page == 1 %}disabled{% endif %}>처음</button>
+<nav aria-label="페이지 이동" class="mt-3 flex flex-wrap items-center gap-1">
   <button type="button" hx-get="{{ page_url(page - 1) }}" hx-target="#review-table"
           hx-swap="innerHTML" hx-indicator="closest nav"
           {% if page == 1 %}disabled{% endif %}>이전</button>
@@ -244,9 +188,6 @@
   <button type="button" hx-get="{{ page_url(page + 1) }}" hx-target="#review-table"
           hx-swap="innerHTML" hx-indicator="closest nav"
           {% if page == total_pages %}disabled{% endif %}>다음</button>
-  <button type="button" hx-get="{{ page_url(total_pages) }}" hx-target="#review-table"
-          hx-swap="innerHTML" hx-indicator="closest nav"
-          {% if page == total_pages %}disabled{% endif %}>마지막</button>
   {{ wait("페이지를 여는 중") }}
 </nav>
 {% endif %}

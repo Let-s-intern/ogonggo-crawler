@@ -1,4 +1,4 @@
-"""데이터 검수 화면에서 공고를 골라 지우기 (27.6 ~ 27.8, 30.2).
+"""공고 목록에서 공고를 골라 지우기 (27.6 ~ 27.8, 30.2).
 
 실사이트에 나가지 않는다. 저장된 행을 넣고 화면 경로로만 고르고 지운다.
 
@@ -11,9 +11,9 @@
 | 머리칸 체크박스는 이 페이지에 보이는 것만 고른다 | 20건인 줄 알고 148건을 지운다 |
 | `조건 전체` 는 조건에 걸린 수를 글자와 숫자로 밝힌다 | 무엇을 고른 것인지 화면에서 알 수 없다 |
 | 아무것도 고르지 않으면 지우기 단추가 눌리지 않는다 | 빈 요청이 확인 창을 연다 |
-| 확인 창이 세 표에서 사라질 행 수를 각각 보여준다 | 보정과 정규화 행이 조용히 함께 사라진다 |
-| 전달된 행이 섞여 있으면 그 수를 따로 알린다 | 소비 측이 이미 받아 간 것을 모르고 지운다 |
-| 세 표가 함께 비고 고르지 않은 행은 남는다 | 가리키는 곳 없는 보정이 남거나 남길 것이 사라진다 |
+| 확인 창이 표마다 사라질 행 수를 보여준다 | 정규화 행이 조용히 함께 사라진다 |
+| 오공고로 보낸 공고가 섞여 있으면 그 수를 따로 알린다 | 오공고에는 남는다는 것을 모르고 지운다 |
+| 고른 것만 사라지고 고르지 않은 행은 남는다 | 남길 것이 사라진다 |
 | 브라우저 confirm() 을 쓰지 않는다 | 자동화 세션이 멈춘다 |
 | 다시 수집된다는 것을 확인 창이 적는다 | 왜 되살아나는지 알 수 없다 |
 """
@@ -36,7 +36,7 @@ LIST_URL = "https://www.python.org/jobs/"
 
 @pytest.fixture
 def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
-    """워크플로우 둘에 공고 다섯. 하나는 이미 전달됐고 하나는 사람 보정이 둘 붙어 있다."""
+    """워크플로우 둘에 공고 다섯. 하나는 오공고로 보냈고 하나는 예전 사람 보정이 둘 붙어 있다."""
     connection = db.connect(tmp_path / "jobs.db")
     db.migrate_up(connection)
     connection.execute(
@@ -71,7 +71,9 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
             (raw_job_id, company_name, title, f"{LIST_URL}{raw_job_id}/"),
         )
     connection.execute(
-        "UPDATE normalized_jobs SET delivered_at = datetime('now') WHERE raw_job_id = 2"
+        "INSERT INTO spring_deliveries (source_url, status, sent_at)"
+        " VALUES (?, 'sent', datetime('now'))",
+        (f"{LIST_URL}2/",),
     )
     connection.execute(
         "INSERT INTO job_field_overrides (raw_job_id, field_name, value)"
@@ -122,19 +124,10 @@ def test_행마다_체크박스가_있고_지우기_폼이_표를_감싼다(clie
         assert f'name="raw_job_id" value="{raw_job_id}"' in html
 
 
-def test_고른_공고_지우기는_접혀서_시작한다(client: TestClient) -> None:
-    """2026-08-29 결정. 고르기·지우기는 가끔 하는 일이라 공고 목록보다 먼저 보일 이유가 없다."""
+def test_지우기_도구는_표_위에_있다(client: TestClient) -> None:
     html = client.get("/ui/review").text
 
-    assert "<details>" in html
-    assert "고른 공고 지우기 (열기)" in html
-    details_start = html.index("<details>")
-    select_form_field = html.index('id="review-select-filtered"')
-    table_start = html.index("<caption>검수 대상 공고</caption>")
-    summary_end = html.index("</summary>", details_start)
-    # summary 뒤에 체크박스가 있고, 체크박스는 표(공고 목록)보다 앞에 있다 — details 가
-    # 지우기 도구를 감싸되 표 자체는 감싸지 않는다
-    assert details_start < summary_end < select_form_field < table_start
+    assert html.index('id="review-select-filtered"') < html.index("data-select-page")
 
 
 def test_지금_걸린_조건이_지우기_폼과_함께_간다(client: TestClient) -> None:
@@ -162,11 +155,12 @@ def test_아무것도_고르지_않으면_지우기_단추가_눌리지_않는�
     assert "disabled" in html[start : start + 400]
 
 
-def test_확인_창이_세_표에서_사라질_행_수를_각각_보여준다(client: TestClient) -> None:
+def test_확인_창이_표마다_사라질_행_수를_보여준다(client: TestClient) -> None:
     html = client.post("/ui/review/delete/confirm", data={"raw_job_id": ["1", "3"]}).text
 
     assert "raw_jobs" in html
     assert "normalized_jobs" in html
+    # 예전 보정이 붙어 있으면 그 줄도 나온다
     assert "job_field_overrides" in html
     # 수집 2건, 정규화 2건, 보정 2건(모두 1번 것)
     assert html.count("2건</td>") == 3
@@ -175,10 +169,17 @@ def test_확인_창이_세_표에서_사라질_행_수를_각각_보여준다(cl
     assert "hx-confirm" not in html
 
 
-def test_확인_창이_전달된_행의_수를_따로_알린다(client: TestClient) -> None:
+def test_보정이_없으면_보정_줄을_적지_않는다(client: TestClient) -> None:
+    html = client.post("/ui/review/delete/confirm", data={"raw_job_id": ["4"]}).text
+
+    assert "job_field_overrides" not in html
+
+
+def test_확인_창이_오공고로_보낸_공고의_수를_따로_알린다(client: TestClient) -> None:
     html = client.post("/ui/review/delete/confirm", data={"raw_job_id": ["1", "2"]}).text
 
-    assert "이 중 1건은 이미 소비 측에 전달된 행이다" in html
+    assert "이 중 1건은 이미 오공고로 보낸 공고다" in html
+    assert "오공고에서는 지워지지 않는다" in html
 
 
 def test_확인_창이_고른_범위와_조건을_글자로_적는다(client: TestClient) -> None:
@@ -205,24 +206,12 @@ def test_고른_것만_세_표에서_사라지고_나머지는_남는다(
     assert "수집 건 3건" in response.text
     assert counts(conn) == (2, 2, 0)
     assert raw_ids(conn) == [2, 4]
-    assert (
-        int(
-            conn.execute(
-                "SELECT count(*) FROM normalized_jobs WHERE raw_job_id IN (1,3,5)"
-            ).fetchone()[0]
-        )
-        == 0
-    )
 
 
 def test_분류가_붙은_건도_외래키_없이_지워진다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
-    """`job_classifications` 도 `raw_job_id` 를 참조한다 (`migrations/0014`).
-
-    지우기 전에 이 표를 비우지 않으면 `sqlite3.IntegrityError: FOREIGN KEY constraint failed`
-    로 죽는다 — 분류가 붙은 공고를 지우려던 실제 운영 중 실패를 그대로 재현한다.
-    """
+    """`job_classifications` 도 `raw_job_id` 를 참조한다 (`migrations/0014`)."""
     conn.execute(
         "INSERT INTO job_classifications (raw_job_id, model) VALUES (1, 'gemini-3.7-flash')"
     )
@@ -238,11 +227,7 @@ def test_분류가_붙은_건도_외래키_없이_지워진다(
 def test_제안이_붙은_건도_외래키_없이_지워진다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
-    """`job_field_suggestions` 도 `raw_job_id` 를 참조한다 (`migrations/0023`).
-
-    이 표를 비우지 않으면 `job_classifications` 때와 같은 이유로 `FOREIGN KEY constraint
-    failed` 로 죽는다 — 실제 운영 중 재현된 두 번째 사례다.
-    """
+    """`job_field_suggestions` 도 `raw_job_id` 를 참조한다 (`migrations/0023`)."""
     conn.execute(
         "INSERT INTO job_field_suggestions (raw_job_id, field_name, value)"
         " VALUES (1, 'company_name', '엘지전자(주)')"
@@ -302,7 +287,7 @@ def test_지운_건수와_요청자를_로그에_남긴다(
         client.post("/ui/review/delete", data={"raw_job_id": ["1"]})
 
     logged = "\n".join(record.getMessage() for record in caplog.records)
-    assert "검수 화면에서 공고를 지웠다" in logged
+    assert "공고 목록에서 공고를 지웠다" in logged
     assert "raw_jobs=1" in logged
     assert "job_field_overrides=2" in logged
     assert "요청=" in logged
@@ -320,16 +305,16 @@ def test_워크플로우를_고르면_그_수집분을_통째로_비우는_길�
 
 
 def test_워크플로우_범위는_나머지_조건을_보지_않는다(client: TestClient) -> None:
-    """회사를 좁혀 놨어도 그 워크플로우가 모은 전부가 대상이다. 그 사실을 확인 창이 적는다."""
+    """검색어로 좁혀 놨어도 그 워크플로우가 모은 전부가 대상이다. 그 사실을 확인 창이 적는다."""
     html = client.post(
         "/ui/review/delete/confirm",
-        data={"scope": "workflow", "workflow_id": "1", "company_name": "엘지화학"},
+        data={"scope": "workflow", "workflow_id": "1", "q": "엘지화학"},
     ).text
 
     assert "워크플로우 1 - LG 가 모은 공고 전부" in html
-    assert "나머지 조회 조건은 걸리지 않는다" in html
+    assert "나머지 조건은 걸리지 않는다" in html
     assert "워크플로우 자체는 지우지 않는다" in html
-    # 회사로 좁히면 1건이지만 워크플로우 전부는 3건이다
+    # 검색어로 좁히면 1건이지만 워크플로우 전부는 3건이다
     assert "3건</td>" in html
 
 
@@ -382,18 +367,18 @@ def test_워크플로우를_고르지_않고_그_범위로_보내면_지우지_�
 
 
 def test_워크플로우_범위는_걸리지_않는_조건을_적지_않는다(client: TestClient) -> None:
-    """걸리지도 않는 회사 이름이 건수 옆에 있으면 그 회사 것만 지워지는 줄로 읽힌다."""
+    """걸리지도 않는 검색어가 건수 옆에 있으면 그것만 지워지는 줄로 읽힌다."""
     html = client.post(
         "/ui/review/delete/confirm",
-        data={"scope": "workflow", "workflow_id": "1", "company_name": "엘지화학"},
+        data={"scope": "workflow", "workflow_id": "1", "q": "엘지화학"},
     ).text
 
     assert "워크플로우 1 - LG · 나머지 조건은 걸리지 않는다" in html
-    assert "회사 엘지화학" not in html
+    assert "검색어 엘지화학" not in html
 
 
 def test_확인_창이_다시_수집된다는_것을_적는다(client: TestClient) -> None:
-    """진행중인 공고를 지우면 다음 실행에서 다시 들어온다. 모르면 왜 되살아나는지 알 수 없다."""
+    """모집 중인 공고를 지우면 다음 실행에서 다시 들어온다. 모르면 왜 되살아나는지 알 수 없다."""
     html = client.post("/ui/review/delete/confirm", data={"raw_job_id": ["1"]}).text
 
     assert "아직 게시 중인 공고는 다음 실행에서 다시 들어온다" in html

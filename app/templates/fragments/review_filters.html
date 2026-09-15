@@ -1,152 +1,64 @@
-{# 데이터 검수 화면의 조회 조건. 어떤 조작이든 표 영역(#review-table)만 갈아 끼운다.
-
-   Push 30 에서 조회 화면의 조건(진행 여부·전달 여부·시각 범위·정렬)이 여기로 들어왔다.
-   조건이 상세한 이유는 지우기가 "지금 걸린 조건에 걸린 것" 을 대상으로 하기 때문이다.
-   좁힐 방법이 성기면 운영자는 지울 것보다 넓은 범위를 지우게 된다.
-
+{# 공고 목록의 조회 조건. 어떤 조작이든 표 영역(#review-table)만 갈아 끼운다.
    `page` 를 폼에 두지 않는다 — 조건을 바꾸면 언제나 1페이지로 돌아가야 한다.
-
-   시각 범위는 날짜 하나로 받는다. 저장된 값은 UTC 지만 화면이 표시 시간대로 그리므로,
-   서버가 고른 날짜를 표시 시간대의 하루로 읽어 바꾼다 (`app/api/review_filter.py`).
-
-   지운 뒤 표를 다시 부르는 것도 이 폼이 한다. 조건을 아는 쪽이 불러야 지우고 나서 화면이
-   전체 목록으로 되돌아가지 않는다. 표가 `hx-include` 로 이 폼을 끌어오게 두면, 표가 처음
-   뜨는 순간에는 이 조각이 아직 들어오지 않아 가리킬 것이 없다 #}
+   지운 뒤 표를 다시 부르는 것도 이 폼이 한다 (`jobs-deleted`) #}
 {% from "macros.html" import wait %}
-<form id="review-filter-form"
+<form id="review-filter-form" class="flex flex-wrap items-center gap-2"
       hx-get="/ui/review" hx-target="#review-table" hx-swap="innerHTML"
       hx-trigger="submit, change, jobs-deleted from:body"
       hx-disabled-elt="find button[type=submit]">
-  <fieldset>
-    <legend>조회 조건</legend>
-    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
-      <label for="review-workflow">워크플로우</label>
-      <select id="review-workflow" name="workflow_id">
-        <option value="">전체</option>
-        {% for workflow in workflows %}
-        <option value="{{ workflow.id }}">{{ workflow.id }} - {{ workflow.name }}</option>
-        {% endfor %}
-      </select>
+  <label for="review-q" class="sr-only">검색 (제목·회사)</label>
+  <input id="review-q" name="q" type="search" placeholder="회사명, 제목 검색" class="mt-0 w-64">
 
-      {# 한 사이트에 계열사가 여럿이라 워크플로우와 따로 걸린다 #}
-      <label for="review-company">회사</label>
-      <select id="review-company" name="company_name">
-        <option value="">전체</option>
-        {% for name in companies %}
-        <option value="{{ name }}">{{ name }}</option>
-        {% endfor %}
-      </select>
+  <label for="review-workflow" class="sr-only">사이트</label>
+  <select id="review-workflow" name="workflow_id" class="mt-0">
+    <option value="">사이트 전체</option>
+    {% for workflow in workflows %}
+    <option value="{{ workflow.id }}">{{ workflow.name }}</option>
+    {% endfor %}
+  </select>
 
-      {# 대분류만 먼저 둔다. 소분류는 대분류에 종속되므로 대분류를 고르지 않고는 좁힐 수
-         없다(5.2, PRD 5절). 둘 다 닫힌 목록에서 고르는 값이다 #}
-      <label for="review-job-major">직군</label>
-      <select id="review-job-major" name="job_field">
-        <option value="">전체</option>
-        {% for name in job_majors %}
-        <option value="{{ name }}">{{ name }}</option>
-        {% endfor %}
-      </select>
+  <label for="review-delivered" class="sr-only">오공고 전송</label>
+  <select id="review-delivered" name="delivered" class="mt-0">
+    <option value="">오공고 전체</option>
+    {% for value, label in delivery_states.items() %}
+    <option value="{{ value }}">{{ label }}</option>
+    {% endfor %}
+  </select>
 
-      <label for="review-status">진행 여부</label>
-      <select id="review-status" name="status">
-        <option value="">전체</option>
-        {% for value, label in deadline_states.items() %}
-        <option value="{{ value }}">{{ label }}</option>
-        {% endfor %}
-      </select>
+  <label for="review-status" class="sr-only">모집 여부</label>
+  <select id="review-status" name="status" class="mt-0">
+    <option value="">모집 전체</option>
+    {% for value, label in deadline_states.items() %}
+    <option value="{{ value }}">{{ label }}</option>
+    {% endfor %}
+  </select>
 
-      <label for="review-delivered">전달 여부</label>
-      <select id="review-delivered" name="delivered">
-        <option value="">전체</option>
-        {% for value, label in delivery_states.items() %}
-        <option value="{{ value }}">{{ label }}</option>
-        {% endfor %}
-      </select>
+  <label for="review-job-major" class="sr-only">직군</label>
+  <select id="review-job-major" name="job_field" class="mt-0">
+    <option value="">직군 전체</option>
+    {% for name in job_majors %}
+    <option value="{{ name }}">{{ name }}</option>
+    {% endfor %}
+  </select>
 
-      {# 원문을 다시 읽어 값이 있는 칸과 다르게 낸 것이 붙었는지. 어느 칸인지는 이 조건이
-         가르지 않는다 — 모달을 열어야 그 칸을 본다 (11.6, 11.7) #}
-      <label for="review-has-suggestion">제안 여부</label>
-      <select id="review-has-suggestion" name="has_suggestion">
-        <option value="">전체</option>
-        {% for value, label in has_suggestion_states.items() %}
-        <option value="{{ value }}">{{ label }}</option>
-        {% endfor %}
-      </select>
-    </p>
-    {# 값이 빈 공고를 찾는 자리. 어느 필드가 몇 건 비었는지는 표 위에 숫자로 나온다.
-       거기서 필드를 누르면 이 칸이 그 필드로 맞춰지고 바로 조회된다 (`pages/review.html`) #}
-    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
-      <label for="review-empty">빈 값인 필드</label>
-      <select id="review-empty" name="empty">
-        <option value="">안 걸림</option>
-        {% for value in empty_choices %}
-        <option value="{{ value }}">{{ empty_labels[value] }}</option>
-        {% endfor %}
-      </select>
-      <span class="text-sm text-slate-600">
-        보정까지 얹은 값이 비었거나 공백뿐인 공고를 고른다. 필드별 건수는 표 위에 있다
-      </span>
-    </p>
-    {# 같은 공고가 두 번 들어왔는지 보는 자리. 무엇을 중복으로 볼지가 상황마다 달라 기준을
-       고르게 둔다. 걸린 묶음과 건수는 표 위에 나온다.
-
-       자동으로 지우는 길은 두지 않는다 — 삼성전자 DX부문과 삼성SDI가 각각 올린 같은 제목의
-       공고는 다른 공고고, 그것을 중복으로 지우면 진짜 공고가 사라진다 #}
-    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
+  {# 잘못 수집된 중복을 지울 때만 쓴다. 자동으로 지우는 길은 두지 않는다 — 계열사가 각각 올린
+     같은 제목의 공고는 다른 공고다 #}
+  <details class="my-0 border-0 p-0">
+    <summary class="px-1 text-sm text-slate-500">더 보기</summary>
+    <div class="mt-2 flex flex-wrap items-center gap-2">
       <label for="review-dup">중복</label>
-      <select id="review-dup" name="dup">
+      <select id="review-dup" name="dup" class="mt-0">
         <option value="">안 걸림</option>
         {% for value in dup_criteria %}
         <option value="{{ value }}">{{ dup_labels[value] }}</option>
         {% endfor %}
       </select>
-      <span class="text-sm text-slate-600">
-        같은 값이 두 번 이상 나온 공고를 묶음째 고른다. 여분만이 아니라 짝도 함께 나온다 —
-        어느 쪽을 남길지는 표에서 골라 정한다
-      </span>
-    </p>
-    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
-      <label for="review-crawled-from">수집 시각</label>
-      <input id="review-crawled-from" name="crawled_from" type="date">
-      <span class="text-sm text-slate-600">부터</span>
-      <input id="review-crawled-to" name="crawled_to" type="date"
-             aria-label="수집 시각 끝나는 날">
-      <span class="text-sm text-slate-600">까지 (그날 포함)</span>
-    </p>
-    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
-      <label for="review-normalized-from">정규화 시각</label>
-      <input id="review-normalized-from" name="normalized_from" type="date">
-      <span class="text-sm text-slate-600">부터</span>
-      <input id="review-normalized-to" name="normalized_to" type="date"
-             aria-label="정규화 시각 끝나는 날">
-      <span class="text-sm text-slate-600">까지 (그날 포함)</span>
-    </p>
-    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
-      <label for="review-q">검색 (제목·회사)</label>
-      <input id="review-q" name="q" type="search" size="40">
+      <span class="text-xs text-slate-500">같은 값이 두 번 이상 나온 공고를 묶음째 고른다</span>
+    </div>
+  </details>
 
-      <label for="review-sort">정렬</label>
-      <select id="review-sort" name="sort">
-        {% for key, label in sort_labels.items() %}
-        <option value="{{ key }}"{% if key == default_sort %} selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-
-      <label for="review-order">방향</label>
-      <select id="review-order" name="order">
-        <option value="desc">내림차순</option>
-        <option value="asc">오름차순</option>
-      </select>
-
-      <label for="review-page-size">페이지 크기</label>
-      <select id="review-page-size" name="page_size">
-        {% for size in page_sizes %}
-        <option value="{{ size }}"{% if size == default_page_size %} selected{% endif %}>{{ size }}건</option>
-        {% endfor %}
-      </select>
-
-      <button type="submit">조회</button>
-      {{ wait("조회하는 중") }}
-    </p>
-  </fieldset>
+  <span class="ml-auto flex items-center gap-2">
+    {{ wait("조회하는 중") }}
+    <button type="submit" class="mt-0">조회</button>
+  </span>
 </form>

@@ -4,10 +4,10 @@
       class="space-y-3">
   <div class="flex flex-wrap items-end gap-3">
     <label class="text-sm">
-      <span class="block font-medium text-slate-700">필드</span>
+      <span class="block font-medium text-slate-700">칸</span>
       <select name="field_name">
         {% for name in fields %}
-        <option value="{{ name }}" {% if name == field_name %}selected{% endif %}>{{ name }}</option>
+        <option value="{{ name }}" {% if name == field_name %}selected{% endif %}>{{ labels[name] }}</option>
         {% endfor %}
       </select>
     </label>
@@ -52,7 +52,7 @@
 {% elif steps %}
 <div class="table-scroll mt-3">
 <table class="data-table">
-  <caption>{{ field_name }} 에 걸린 규칙 {{ rule_count }}개를 순서대로 지난 결과</caption>
+  <caption>{{ field_label }} 에 걸린 규칙 {{ rule_count }}개를 순서대로 지난 결과</caption>
   <thead>
     <tr>
       <th scope="col">거친 규칙</th>
@@ -84,10 +84,10 @@
 <p class="mt-2 text-sm">
   최종 값:
   {% if result %}<span class="font-mono font-semibold">{{ result }}</span>
-  {% else %}<span class="font-semibold">없음</span> — 이 필드는 NULL 로 저장된다{% endif %}
+  {% else %}<span class="font-semibold">없음</span> — 이 칸은 NULL 로 저장된다{% endif %}
 </p>
 {% elif sample %}
-{{ empty(field_name ~ " 에 걸린 규칙이 없다. 위 규칙 표에서 이 필드에 규칙을 추가하면 여기에 단계가 나온다. 지금은 값이 그대로 저장된다") }}
+{{ empty(field_label ~ " 에 걸린 규칙이 없다. 위 규칙 표에서 이 칸에 규칙을 추가하면 여기에 단계가 나온다. 지금은 값이 그대로 저장된다") }}
 {% else %}
 {{ empty("시험할 값을 넣고 미리보기를 누르면 규칙이 무엇을 하는지 단계별로 보인다. 아무것도 저장되지 않는다") }}
 {% endif %}

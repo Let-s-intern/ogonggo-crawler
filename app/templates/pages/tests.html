@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% from "macros.html" import empty, wait %}
 {% block title %}테스트 실행{% endblock %}
-{% block heading %}테스트 실행 결과{% endblock %}
+{% block heading %}테스트 실행{% endblock %}
 {% block content %}
 <section>
   <h3>실행</h3>
-  <p>저장된 셀렉터로 1회 크롤링한다. 상세는 지정한 건수까지만 따라간다.</p>
+  <p class="text-sm text-slate-600">저장된 셀렉터로 한 번 수집해 본다. 상세는 지정한 건수까지만 따라간다.</p>
   <div id="test-targets" hx-get="/ui/test-targets" hx-trigger="load" hx-swap="innerHTML">
     {{ empty("대상을 불러오는 중") }}
   </div>
@@ -14,9 +14,9 @@
 <section>
   <h3>결과</h3>
   {# 대기 문구는 결과 영역 바로 앞이다. 이 자리여야 다음 형제인 결과가 흐려진다 #}
-  {{ wait("사이트를 가져와 셀렉터를 적용하는 중. 지정한 건수만큼 상세도 따라간다. 아래는 이전 실행 결과다", "test-result-wait") }}
+  {{ wait("사이트를 가져와 셀렉터를 적용하는 중. 아래는 이전 실행 결과다", "test-result-wait") }}
   <div id="test-result" class="wait-dim">
-    {{ empty("아직 실행 결과가 없다. 위 표에서 테스트 실행을 누르면 여기에 필드별 판정과 미리보기가 들어온다") }}
+    {{ empty("위 표에서 테스트 실행을 누르면 여기에 칸별 판정과 미리보기가 나온다") }}
   </div>
 </section>
 {% endblock %}

@@ -1,20 +1,14 @@
-{# 직무 분류 체계 화면. 모델이 공고를 나눌 때 고르는 목록이 코드가 아니라 이 표에 있다
-   (`.claude/tasks/todo/prd-job-taxonomy.md`). 대분류가 `job_field`(직군), 소분류가 `job_role`(직무)로
-   간다. 지우지 않고 끈다 — 지우면 그 이름으로 이미 분류된 공고가 목록 밖의 값을 갖게 된다. #}
+{# 직무 분류 체계 화면. AI 가 공고를 나눌 때 고르는 목록이 코드가 아니라 이 표에 있다. 대분류가
+   `job_field`(직군), 소분류가 `job_role`(직무)로 간다. 지우지 않고 끈다 — 지우면 그 이름으로 이미
+   분류된 공고가 목록 밖의 값을 갖게 된다. #}
 {% extends "base.html" %}
 {% from "macros.html" import empty %}
 {% block title %}직무 분류{% endblock %}
 {% block heading %}직무 분류{% endblock %}
 {% block content %}
 <section>
-  <p>
-    모델이 공고를 나눌 때 여기서 대분류·소분류를 고른다. 표에 없는 값은 저장되지 않는다.
-    끄면 새 분류에서 빠지지만, 이미 그 값으로 분류된 공고는 그대로 남는다 — 지우는 단추는
-    없다.
-  </p>
   <p class="text-sm text-slate-600">
-    이름을 고치면 그 이름으로 이미 분류된 공고 수를 함께 보여준다. 고치는 순간 그 건들의
-    값과 아래 목록의 이름이 어긋난다.
+    AI 가 공고마다 여기서 직군·직무를 고른다. 끄면 새 분류에서 빠지고, 이미 분류된 공고는 그대로다.
   </p>
   <div id="taxonomy-tree" hx-get="/ui/taxonomy" hx-trigger="load" hx-swap="innerHTML">
     {{ empty("직무 분류를 불러오는 중") }}

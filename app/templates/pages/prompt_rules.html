@@ -7,13 +7,9 @@
 {% block heading %}AI 규칙{% endblock %}
 {% block content %}
 <section>
-  <p>
-    분류 모델이 공고를 칸으로 나눌 때 따르는 규칙이다. 칸마다 규칙 글과 '원문 → 넣을 값' 예시를 적고,
-    모든 칸에 걸리는 규칙은 공통 규칙에 적는다.
-  </p>
   <p class="text-sm text-slate-600">
-    저장할 때마다 새 판이 생기고, 분류 결과와 모델 호출 기록에 그 판 번호가 남는다. 이미 분류된 공고는
-    다시 분류할 때만 새 규칙을 쓴다. 저장하기 전에 아래 시험 분류로 공고 하나에서 무엇이 달라지는지 본다.
+    AI 가 공고를 칸으로 나눌 때 따르는 규칙이다. 저장할 때마다 새 판이 생기고, 이미 분류된 공고는 다시
+    분류할 때 새 규칙을 쓴다. 저장 전에 아래 시험 분류로 무엇이 달라지는지 본다.
   </p>
   <div id="prompt-rules" hx-get="/ui/prompt-rules" hx-trigger="load" hx-swap="innerHTML">
     {{ empty("AI 규칙을 불러오는 중") }}

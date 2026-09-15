@@ -2,16 +2,17 @@
 
 규칙 CRUD 는 `app/api/rules.py` 를, 재정규화는 같은 파일의 renormalize 라우트를 그대로 부른다.
 
+## 고를 수 있는 칸은 수집 칸 다섯이다
+
+AI 분류가 덮어쓰는 칸에 건 규칙은 아무 일도 하지 않는다 (`app/normalize/rules.py` 의
+`RULE_FIELDS`). 그런 칸에 이미 걸려 있던 규칙은 0037 이 껐고, 목록에서는 `효과 없음` 으로 보이며
+지우기만 할 수 있다.
+
 ## 규칙 편집과 재정규화는 분리되어 있다
 
 규칙을 저장해도 기존 `normalized_jobs` 는 그대로다. 저장 경로 어디에서도 재정규화를 부르지
-않는다 (2026-08-21 결정, `app/normalize/backfill.py`). 화면도 같은 모양이어야 해서 두 영역을
-갈라 두었다 — 규칙 편집은 `#rule-list`, 재정규화는 `#renormalize-panel` 이고, 한쪽 요청이
-다른 쪽을 갱신하지 않는다.
-
-재정규화는 누르자마자 도는 것이 아니라 대상 건수를 먼저 보여준다. 만 건짜리 재처리를 실수로
-시작하는 것과 확인하고 시작하는 것의 차이가 그 화면 하나다. 실행 중에는 조각이 자기 자신을
-2초마다 다시 불러 진행 상황을 갱신하고, 끝나면 폴링 속성 없이 렌더되어 멈춘다.
+않는다 (2026-08-21 결정, `app/normalize/backfill.py`). 재정규화는 누르자마자 도는 것이 아니라
+대상 건수를 먼저 보여준다.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from app.api import rules
 from app.api.ui import render
 from app.api.ui_crawlers import error_detail
 from app.normalize.backfill import Backfill, ConnectFactory
-from app.normalize.rules import NORMALIZED_FIELDS, RULE_TYPES
+from app.normalize.rules import RULE_FIELD_LABELS, RULE_FIELDS, RULE_TYPES
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
 
@@ -53,7 +54,8 @@ def _rule_list(
         request,
         "fragments/rule_list.html",
         rules=rules.list_rules(conn),
-        fields=NORMALIZED_FIELDS,
+        fields=RULE_FIELDS,
+        labels=RULE_FIELD_LABELS,
         rule_types=RULE_TYPES,
         hints=CONFIG_HINTS,
         message=message,

@@ -1,55 +1,40 @@
 {% extends "base.html" %}
 {% from "macros.html" import empty, wait %}
 {% block title %}크롤러 등록{% endblock %}
-{% block heading %}크롤러 등록과 셀렉터 편집{% endblock %}
+{% block heading %}크롤러 등록{% endblock %}
 {% block content %}
 <section>
   <h3>새 크롤러</h3>
-  {# 등록은 셀렉터 생성(실측 5.6~10.5초)에 경로 판정이 붙어 있고, 렌더까지 가는 사이트는
-     그만큼 더 걸린다. 누른 뒤 아무 변화가 없으면 눌렸는지 알 수 없다 —
+  {# 등록은 셀렉터 생성에 경로 판정이 붙어 있고, 렌더까지 가는 사이트는 그만큼 더 걸린다.
      요청이 도는 동안 버튼을 잠그고, 버튼 옆과 결과 영역 두 곳에 무엇을 기다리는지 적는다 #}
   <form hx-post="/ui/crawlers" hx-target="#crawler-result" hx-swap="innerHTML"
         hx-disabled-elt="find button"
         hx-indicator="#generate-wait, #crawler-result-wait">
     <fieldset>
-      <legend>목록 URL 하나만 넣는다. 나머지는 등록이 알아서 정한다</legend>
-      <p class="text-sm text-slate-600">
-        가져오는 방식을 고르지 않는다. 등록이 목록 페이지를 정적으로 먼저 받아 보고, 목록이 없으면
-        브라우저로 렌더한 뒤 상세로 가는 길까지 스스로 찾는다. 목록이 JSON API 로 오는 사이트는
-        그 주소를 다시 불러 확인한 뒤 API 로 저장한다.
-        정해진 경로와 <span class="font-semibold">무엇을 보고 그렇게 정했는지</span>는 아래 결과에 나온다.
-      </p>
-      <p>
-        <label for="list-url">목록 URL</label>
-        <br>
-        <input id="list-url" name="list_url" type="url" size="80" required class="w-full">
-      </p>
-      <p>
-        <label for="detail-url">상세 URL (선택)</label>
-        <br>
-        <input id="detail-url" name="detail_url" type="url" size="80" class="w-full">
-        <br>
-        <span class="text-sm text-slate-500">비워 두는 것이 기본이다. 상세로 가는 길은 등록이 찾는다.
-        찾지 못했다고 나오면 그때 공고 하나의 주소를 여기 넣어 다시 등록한다 —
-        그러면 그 페이지를 보고 상세 셀렉터까지 만든다.</span>
-      </p>
-      <p>
-        <label for="crawler-name">이름 (비우면 도메인)</label>
-        <br>
-        <input id="crawler-name" name="name" type="text" size="40" class="w-full max-w-md">
-      </p>
-      <p>
-        <label for="crawler-company">모회사 이름 (필수)</label>
-        <br>
-        <input id="crawler-company" name="default_company" type="text" size="40" required class="w-full max-w-md">
-        <br>
-        <span class="text-sm text-slate-500">이 크롤러가 속한 모회사다. 계열사가 하나뿐인 사이트도 그 회사 이름을 그대로 적는다 —
-        비워 두면 등록이 거절된다. 공고에서 뽑히는 자회사명(있으면)과는 다른 칸이고,
-        모회사는 여기서 적은 값 그대로 쓰인다.</span>
-      </p>
-      <p>
+      <legend>목록 URL 하나만 넣는다. 가져오는 방식과 상세로 가는 길은 등록이 찾는다</legend>
+      <div class="grid gap-x-4 gap-y-3 md:grid-cols-2">
+        <p class="my-0">
+          <label for="list-url">목록 URL</label>
+          <input id="list-url" name="list_url" type="url" required class="w-full">
+        </p>
+        <p class="my-0">
+          <label for="detail-url">상세 URL (선택)</label>
+          <input id="detail-url" name="detail_url" type="url" class="w-full">
+          <span class="text-xs text-slate-500">상세로 가는 길을 못 찾았다고 나올 때만 공고 하나의 주소를 넣는다</span>
+        </p>
+        <p class="my-0">
+          <label for="crawler-name">이름 (비우면 도메인)</label>
+          <input id="crawler-name" name="name" type="text" class="w-full">
+        </p>
+        <p class="my-0">
+          <label for="crawler-company">모회사 이름 (필수)</label>
+          <input id="crawler-company" name="default_company" type="text" required class="w-full">
+          <span class="text-xs text-slate-500">계열사가 하나뿐인 사이트도 그 회사 이름을 적는다</span>
+        </p>
+      </div>
+      <p class="flex items-center gap-2">
         <button type="submit">등록</button>
-        {{ wait("페이지를 가져와 셀렉터를 만들고 상세로 가는 길을 찾는 중. 렌더까지 가면 1분쯤 걸린다", "generate-wait") }}
+        {{ wait("페이지를 가져와 셀렉터를 만드는 중. 렌더까지 가면 1분쯤 걸린다", "generate-wait") }}
       </p>
     </fieldset>
   </form>
@@ -60,7 +45,7 @@
   {# 대기 문구는 결과 영역 바로 앞에 둔다. 이 자리에 있어야 다음 형제인 결과가 흐려진다 #}
   {{ wait("응답을 기다리는 중. 아래는 이전 결과다", "crawler-result-wait") }}
   <div id="crawler-result" class="wait-dim">
-    {{ empty("아직 결과가 없다. 위에 목록 URL 을 넣어 등록하거나 아래 목록에서 셀렉터 편집을 누르면 여기에 판정과 편집기가 들어온다") }}
+    {{ empty("목록 URL 을 넣어 등록하거나 아래 목록에서 셀렉터 편집을 누르면 여기에 결과가 나온다") }}
   </div>
 </section>
 
