@@ -91,6 +91,8 @@ NORMALIZED_FIELDS: tuple[str, ...] = (
     "application_method",
     # 0034 가 더한 산업. 분류가 산업 분류표에서 고른다 (`migrations/0034_industries.sql`)
     "industry",
+    # 0035 가 더한 대표 이미지. 규칙이 아니라 정규화가 회사 로고·og:image 로 정한다
+    "cover_image_url",
 )
 
 # 규칙도 보정도 걸리지 않고 정규화가 다른 칸에서 정하는 칸. `normalized_jobs` 에만 있다 — 모집

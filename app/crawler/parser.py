@@ -123,6 +123,8 @@ class DetailParseResult:
     source_text: str = ""
     # 원문 영역 안의 이미지 주소. 적힌 그대로라 상대 주소일 수 있다 (`app/crawler/images.py`)
     images: tuple[str, ...] = ()
+    # 페이지의 대표 이미지(`og:image`). 적힌 그대로라 상대 주소일 수 있다 (`app/crawler/runner.py`)
+    cover_image: str = ""
     # 공고는 적재하지만 실행 기록에 남길 일. 이미지를 읽지 못한 것이 그렇다
     notes: tuple[str, ...] = ()
 
@@ -237,6 +239,7 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
         missing=missing,
         source_text=f"{container}\n{structured}" if structured else container,
         images=source_images(soup, selectors.body),
+        cover_image=og_image(soup),
     )
 
 
@@ -364,6 +367,24 @@ def source_images(soup: BeautifulSoup, body_selector: str) -> tuple[str, ...]:
         if source and not source.startswith("data:"):
             found[source] = None
     return tuple(found)
+
+
+def og_image(soup: BeautifulSoup) -> str:
+    """페이지의 대표 이미지 주소(`og:image`). 없으면 빈 문자열이다 (2026-09-15 결정).
+
+    회사 로고가 없는 공고의 대표 이미지로 쓴다 (`app/normalize/engine.py` 의 `cover_image`).
+    `data:` 로 박힌 값은 받을 주소가 아니라 뺀다. `property` 가 표준이지만 `name` 으로 적는 사이트도
+    받는다.
+    """
+    for attribute in ("property", "name"):
+        meta = soup.find("meta", attrs={attribute: "og:image"})
+        if not isinstance(meta, Tag):
+            continue
+        raw = meta.get("content") or ""
+        value = (" ".join(raw) if isinstance(raw, list) else str(raw)).strip()
+        if value and not value.startswith("data:"):
+            return value
+    return ""
 
 
 def _source_container(soup: BeautifulSoup, body_selector: str) -> Tag | None:

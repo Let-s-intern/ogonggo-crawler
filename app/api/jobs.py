@@ -42,7 +42,7 @@ _SELECT = """
            responsibilities, preferred_qualifications, hiring_process, recruitment_notice,
            company_and_team_introduction, compensation, benefits, education_level,
            recruitment_headcount, experience_min_years, closes_when_filled, application_method,
-           recruitment_type, auto_close_enabled, industry,
+           recruitment_type, auto_close_enabled, industry, cover_image_url,
            source_url, normalized_at
       FROM normalized_jobs
 """
@@ -105,6 +105,8 @@ class JobOut(BaseModel):
     auto_close_enabled: str | None
     # 0034. 산업 분류표에서 고른 이름이다
     industry: str | None
+    # 0035. 회사 로고, 없으면 공고 페이지의 og:image 다
+    cover_image_url: str | None
     source_url: str
     normalized_at: str
 
@@ -218,6 +220,7 @@ def _out(row: sqlite3.Row) -> JobOut:
         recruitment_type=row["recruitment_type"],
         auto_close_enabled=row["auto_close_enabled"],
         industry=row["industry"],
+        cover_image_url=row["cover_image_url"],
         source_url=str(row["source_url"]),
         normalized_at=_iso(str(row["normalized_at"])),
     )

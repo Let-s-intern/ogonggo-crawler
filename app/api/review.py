@@ -137,6 +137,7 @@ _COLUMNS = """
            n.recruitment_type AS recruitment_type,
            n.auto_close_enabled AS auto_close_enabled,
            n.industry AS industry,
+           n.cover_image_url AS cover_image_url,
            n.source_url    AS source_url,
            n.normalized_at AS normalized_at,
            n.delivered_at  AS delivered_at,

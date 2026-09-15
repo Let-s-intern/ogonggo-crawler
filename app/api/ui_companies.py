@@ -37,6 +37,8 @@ from fastapi.responses import HTMLResponse
 from app import companies
 from app.api.settings import get_connection
 from app.api.ui import render, render_error
+from app.normalize.backfill import rewrite_one
+from app.normalize.engine import NormalizeError, RawJobMissingError, load_rules
 from app.storage import s3
 from app.storage import settings as store
 
@@ -179,6 +181,45 @@ def company_list_fragment(
     )
 
 
+def refresh_postings(conn: sqlite3.Connection, name: str) -> str:
+    """그 회사가 자회사나 모회사로 적힌 공고를 다시 정규화한다. 알림 뒤에 붙일 문장을 돌려준다.
+
+    대표 이미지는 정규화 때 회사 로고로 정해 저장한다 (2026-09-15 결정). 로고만 적고 다시 정규화하지
+    않으면 이미 쌓인 공고는 옛 대표 이미지로 오공고에 간다. 모회사 로고는 자회사 로고가 없는 공고에
+    쓰이므로 모회사 칸이 같은 공고도 다시 본다.
+
+    한 건이 실패해도 나머지는 계속한다. 실패한 건은 전과 같은 값을 갖고, 문장에 건수를 남긴다.
+    """
+    raw_job_ids = [
+        int(row[0])
+        for row in conn.execute(
+            "SELECT DISTINCT raw_job_id FROM normalized_jobs"
+            " WHERE company_name = ? OR parent_company_name = ? ORDER BY raw_job_id",
+            (name, name),
+        )
+    ]
+    if not raw_job_ids:
+        return ""
+    try:
+        rules = load_rules(conn)
+    except NormalizeError as exc:
+        logger.warning("로고를 적었지만 정규화 규칙을 읽지 못했다: %s", exc)
+        return f". 정규화 규칙을 읽지 못해 공고 {len(raw_job_ids)}건의 대표 이미지는 그대로다"
+    failed = 0
+    for raw_job_id in raw_job_ids:
+        try:
+            rewrite_one(conn, raw_job_id, rules)
+        except (NormalizeError, RawJobMissingError) as exc:
+            logger.warning(
+                "대표 이미지를 바꾸려 다시 정규화하다 실패했다 raw_jobs %s: %s", raw_job_id, exc
+            )
+            failed += 1
+    note = f". 공고 {len(raw_job_ids) - failed}건을 다시 정규화해 대표 이미지를 바꿨다"
+    if failed:
+        note += f" — {failed}건은 정규화에 실패해 그대로다"
+    return note
+
+
 def attach_note(row: CompanyRow, *, cleared: bool) -> str:
     """저장 뒤에 적는 문장. 이 로고가 몇 건에 붙는지가 그 문장의 전부다.
 
@@ -250,9 +291,10 @@ def save_logo_fragment(
             ),
         )
     companies.set_logo_url(conn, row.name, cleaned)
+    refreshed = refresh_postings(conn, row.name)
     saved = read_row(conn, row.name) or row
     logger.info("회사 로고를 적었다: %s -> %r (공고 %d건)", saved.name, cleaned, saved.job_count)
-    return _row(request, conn, saved, message=attach_note(saved, cleared=not cleaned))
+    return _row(request, conn, saved, message=attach_note(saved, cleared=not cleaned) + refreshed)
 
 
 def _row(
@@ -308,9 +350,10 @@ def upload_logo_fragment(
         return _row(request, conn, row, error=Refusal(exc.reason, exc.message, "올리지 못했다"))
 
     companies.set_logo_url(conn, row.name, public_url)
+    refreshed = refresh_postings(conn, row.name)
     saved = read_row(conn, row.name) or row
     logger.info("회사 로고를 올렸다: %s -> %s (공고 %d건)", saved.name, public_url, saved.job_count)
-    return _row(request, conn, saved, message=attach_note(saved, cleared=False))
+    return _row(request, conn, saved, message=attach_note(saved, cleared=False) + refreshed)
 
 
 # 모회사를 여기서 사람이 고치는 라우트(`PUT /ui/companies/parent`)는 2026-08-29 에 뺐다.

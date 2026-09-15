@@ -113,6 +113,8 @@ EXPECTED_COLUMNS = {
         "auto_close_enabled",
         # 0034 가 더한 산업. 산업 분류표에서 고른 이름이다
         "industry",
+        # 0035 가 더한 대표 이미지. 회사 로고, 없으면 og:image 다
+        "cover_image_url",
     },
     "normalization_rules": {
         "id",
@@ -275,6 +277,7 @@ ALL_VERSIONS = [
     "0032",
     "0033",
     "0034",
+    "0035",
 ]
 
 

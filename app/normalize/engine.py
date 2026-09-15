@@ -321,6 +321,29 @@ def read_parent_company(conn: sqlite3.Connection, raw_job_id: int) -> str | None
     return value or None
 
 
+# 대표 이미지 칸과, 수집이 상세 페이지에서 읽은 `og:image` 의 원본 키 (0035)
+COVER_IMAGE = "cover_image_url"
+OG_IMAGE = "og_image_url"
+
+
+def cover_image(
+    conn: sqlite3.Connection, fields: Mapping[str, str | None], raw: Mapping[str, object]
+) -> str | None:
+    """공고의 대표 이미지. 회사 로고가 먼저이고, 없으면 수집한 `og:image` 다 (2026-09-15 결정).
+
+    로고는 자회사 로고를 먼저 보고 없으면 모회사 로고를 본다 — 완성 공고 화면이 로고를 고르는 순서와
+    같다 (`app/api/ui_complete.py`). 둘 다 없고 og:image 도 없으면 None 이다. 읽기 전용이다.
+    """
+    for name in (fields.get("company_name"), fields.get(PARENT_COMPANY)):
+        if not name or not name.strip():
+            continue
+        company = companies.read(conn, name)
+        if company is not None and company.logo_url:
+            return company.logo_url
+    og = raw.get(OG_IMAGE)
+    return og.strip() if isinstance(og, str) and og.strip() else None
+
+
 def read_raw(conn: sqlite3.Connection, raw_job_id: int) -> tuple[str, dict[str, object]]:
     """`raw_jobs` 한 행의 `source_url` 과 파싱된 원문 필드. 읽기 전용이다."""
     row = conn.execute(
@@ -459,6 +482,9 @@ def normalized_values(
         if role:
             title = fields.get("title")
             fields["title"] = f"{title} - {role}" if title else role
+    # 대표 이미지는 회사 로고가 먼저다. 로고는 공고가 아니라 회사 표에 있어 규칙이 만들 수 없다.
+    # 사람이 고친 값은 그 위에 덮인다
+    fields[COVER_IMAGE] = cover_image(conn, fields, data)
     overridden = apply_overrides(fields, read_overrides(conn, raw_job_id, part.number))
     return source_url, settle_fields(overridden)
 

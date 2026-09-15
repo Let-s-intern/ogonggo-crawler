@@ -36,6 +36,7 @@ import json
 import logging
 import sqlite3
 from dataclasses import dataclass, field
+from urllib.parse import urljoin
 
 from app.config import get_settings
 from app.crawler.collect import API, Collectors, html_collectors, open_collectors
@@ -530,7 +531,7 @@ async def _collect(
         return ItemResult(source_url=item.link, state=KNOWN, fields={})
 
     detail = await collectors.detail.collect(item)
-    record = _record(item, detail.fields, detail.source_text)
+    record = _record(item, detail.fields, detail.source_text, detail.cover_image)
     if not record["body"].strip():
         # 상세는 열렸는데 본문이 없다. 나머지 필드가 채워져 있어도 적재하지 않는다.
         raise DetailEmptyError("상세를 열었지만 본문이 비었다. 상세의 본문 셀렉터를 고친다")
@@ -606,7 +607,9 @@ def _normalize(
     )
 
 
-def _record(item: ListItem, detail: dict[str, str], source_text: str = "") -> dict[str, str]:
+def _record(
+    item: ListItem, detail: dict[str, str], source_text: str = "", cover_image: str = ""
+) -> dict[str, str]:
     """`raw_jobs.raw_data_json` 에 그대로 들어가는 값. 정제하지 않는다.
 
     `company_name` 는 상세에서 뽑은 값을 먼저 쓰고, 없으면 목록에서 뽑은 값을 쓴다. 상세가 그
@@ -631,6 +634,9 @@ def _record(item: ListItem, detail: dict[str, str], source_text: str = "") -> di
     `source_text` 는 있을 때만 넣는다. 못 뽑은 건은 이 키가 없는 채로, 원문을 뽑기 전과
     똑같은 모양으로 적재된다 — 원문이 없다고 공고를 버리지 않는다. 이 값은
     `content_hash` 에 들어가지 않는다 (`app/crawler/hashing.py`).
+
+    `og_image_url` 은 상세 페이지의 `og:image` 를 그 페이지 주소에 맞춰 절대 주소로 편 값이다. 있을
+    때만 넣고, 해시에 들어가지 않는다. 회사 로고가 없는 공고의 대표 이미지가 된다 (2026-09-15 결정).
     """
     carried = item.extra
     record = {
@@ -649,6 +655,10 @@ def _record(item: ListItem, detail: dict[str, str], source_text: str = "") -> di
     }
     if source_text.strip():
         record["source_text"] = source_text
+    if cover_image.strip():
+        cover = urljoin(item.link, cover_image.strip())
+        if cover.startswith(("http://", "https://")):
+            record["og_image_url"] = cover
     return record
 
 

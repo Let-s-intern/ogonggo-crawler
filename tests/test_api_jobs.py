@@ -201,6 +201,8 @@ def test_item_shape_matches_contract(client: TestClient, conn: sqlite3.Connectio
         "auto_close_enabled",
         # 0034 가 더한 산업
         "industry",
+        # 0035 가 더한 대표 이미지
+        "cover_image_url",
         "source_url",
         "normalized_at",
     }

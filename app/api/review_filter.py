@@ -122,6 +122,7 @@ FIELD_LABELS: dict[str, str] = {
     "closes_when_filled": "채용 시 마감",
     "application_method": "지원 방법",
     "industry": "산업",
+    "cover_image_url": "대표 이미지",
 }
 
 # `빈 값인 필드` 조건에서 "아무 필드나 하나라도 비었다" 를 가리키는 값
@@ -175,6 +176,10 @@ EMPTY_NOTES: dict[str, str] = {
     "application_method": "분류가 늘 고른다. 비어 있으면 아직 분류하지 않은 공고다",
     # 0034 가 더한 산업
     "industry": "분류가 늘 고른다. 비어 있으면 아직 분류하지 않았거나 산업 분류표가 비었다",
+    # 0035 가 더한 대표 이미지
+    "cover_image_url": (
+        "회사 로고도 og:image 도 없으면 빈다. 회사 로고 화면에서 로고를 저장하면 채워진다"
+    ),
 }
 
 # 같은 공고가 두 번 들어왔는지 보는 기준. 무엇을 중복으로 볼지가 상황마다 달라 고르게 둔다.
