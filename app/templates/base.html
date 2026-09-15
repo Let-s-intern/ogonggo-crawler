@@ -187,28 +187,30 @@
          버튼의 흰 글자가 흰 바탕에 얹혀 글자가 사라진다 — 누른 직후 포인터는 늘 그 버튼
          위에 있으므로, 방금 누른 버튼이 빈 상자가 되는 자리였다 (28.1) */
       button[disabled] { @apply cursor-not-allowed opacity-60; }
+
+      /* 카드와 상태 칩. `main section` 을 쓰지 않는 새 화면(대시보드·공고 목록)이 쓴다 */
+      .card { @apply rounded-lg border border-slate-200 bg-white; }
+      .card-head { @apply flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3; }
+      .card-title { @apply text-sm font-semibold text-slate-900; }
+      .chip { @apply inline-flex items-center whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium; }
+      .chip-ok { @apply bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200; }
+      .chip-bad { @apply bg-red-50 text-red-700 ring-1 ring-inset ring-red-200; }
+      .chip-warn { @apply bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200; }
+      .chip-idle { @apply bg-slate-100 text-slate-600; }
     }
   </style>
 </head>
 <body class="min-h-screen bg-slate-100 text-slate-800 text-[15px] leading-relaxed antialiased">
   <header class="border-b border-slate-200 bg-white">
-    <div class="mx-auto max-w-7xl px-6 py-4">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <h1 class="text-lg font-semibold tracking-tight text-slate-900">크롤링 자동화 <span class="ml-1.5 text-xs font-normal tracking-normal text-slate-400">made by seongbin</span></h1>
-        {# 잠금을 푸는 자리. 계정이 없으니 띄울 이름도 없다 (`app/api/auth.py`).
-           유틸리티 클래스가 위 @layer components 의 제출 버튼 색을 덮는다 #}
-        <form method="post" action="/logout" class="shrink-0">
-          <button type="submit"
-                  class="border-slate-300 bg-white text-slate-700 hover:bg-slate-50">로그아웃</button>
-        </form>
-      </div>
-      <nav class="mt-3">
+    <div class="mx-auto flex max-w-7xl flex-wrap items-center gap-x-8 gap-y-2 px-6 py-3">
+      <h1 class="text-base font-bold tracking-tight text-slate-900">크롤링 자동화 <span class="ml-1 text-xs font-normal tracking-normal text-slate-400">made by seongbin</span></h1>
+      <nav aria-label="메뉴" class="min-w-0 flex-1">
         <ul class="flex flex-wrap gap-1">
           {% for path, label in nav %}
           <li>
             {% if path == active %}
             <a href="{{ path }}" aria-current="page"
-               class="block rounded-md bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white">{{ label }}</a>
+               class="block rounded-md bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white">{{ label }}</a>
             {% else %}
             <a href="{{ path }}"
                class="block rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900">{{ label }}</a>
@@ -217,39 +219,43 @@
           {% endfor %}
         </ul>
       </nav>
-      {# 위 묶음 안의 실제 화면들. `group_nav` 가 없으면(묶이지 않은 화면이거나 운영 설정
-         하위처럼 자기 하위 메뉴를 따로 그리는 화면이면) 이 줄은 아예 없다 —
-         빈 줄을 두면 화면마다 높이가 들쭉날쭉해진다 (`app/api/ui.py` 의 `render_page`) #}
-      {% if group_nav %}
-      <nav class="mt-2">
-        <ul class="flex flex-wrap gap-1">
+      {# 잠금을 푸는 자리. 계정이 없으니 띄울 이름도 없다 (`app/api/auth.py`) #}
+      <form method="post" action="/logout" class="shrink-0">
+        <button type="submit"
+                class="mt-0 border-slate-300 bg-white text-slate-600 hover:bg-slate-50">로그아웃</button>
+      </form>
+    </div>
+    {# 묶음 안의 화면들. 묶이지 않은 화면(대시보드·오공고 전송)에는 이 줄이 없다 #}
+    {% if group_nav %}
+    <div class="border-t border-slate-100">
+      <nav aria-label="하위 메뉴" class="mx-auto max-w-7xl px-6">
+        <ul class="flex flex-wrap gap-x-5">
           {% for path, label in group_nav %}
           <li>
             {% if path == group_active %}
             <a href="{{ path }}" aria-current="page"
-               class="block rounded-md bg-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-900">{{ label }}</a>
+               class="-mb-px block border-b-2 border-slate-900 py-2.5 text-sm font-semibold text-slate-900">{{ label }}</a>
             {% else %}
             <a href="{{ path }}"
-               class="block rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900">{{ label }}</a>
+               class="-mb-px block border-b-2 border-transparent py-2.5 text-sm font-medium text-slate-500 hover:border-slate-300 hover:text-slate-900">{{ label }}</a>
             {% endif %}
           </li>
           {% endfor %}
         </ul>
       </nav>
-      {% endif %}
     </div>
+    {% endif %}
   </header>
 
   {# 기본 비밀번호로 떠 있는 동안 지우지 않는다. 공개 주소에서 이 상태는 잠기지 않은 것과
      같아서, 운영자가 모른 채 두는 일이 없어야 한다 (`app/api/auth.py`) #}
   {% if admin_password_is_default() %}
-  <div class="mx-auto max-w-7xl px-6 pt-4">
-    <div class="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-      <p><span class="font-semibold">주의</span> — 기본 비밀번호로 떠 있습니다.
-         공개 주소에서는 잠기지 않은 것과 같습니다.</p>
-      <p class="mt-1">환경변수 <code class="bg-amber-100 text-amber-900">ADMIN_PASSWORD</code>
-         를 설정하고 다시 띄우세요.</p>
-    </div>
+  <div class="border-b border-amber-200 bg-amber-50">
+    <p class="mx-auto max-w-7xl px-6 py-2 text-sm text-amber-900">
+      <span class="font-semibold">주의</span> — 기본 비밀번호로 떠 있습니다. 공개 주소에서는 잠기지
+      않은 것과 같습니다. 환경변수 <code class="bg-amber-100 text-amber-900">ADMIN_PASSWORD</code>
+      를 설정하고 다시 띄우세요.
+    </p>
   </div>
   {% endif %}
 

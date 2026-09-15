@@ -48,67 +48,65 @@ logger = logging.getLogger(__name__)
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-# 화면이 늘 때마다 위 줄이 한 칸씩 길어지면, 늘어난 자리를 찾는 일이 화면 하나 늘리는
-# 일보다 커진다. 그래서 위 네비게이션은 묶음 이름만 놓고, 묶음 안의 실제 화면은 그 아래
-# 두 번째 줄(`group_nav`)에서 고른다 — `SETTINGS_NAV` 가 이미 하는 일을 세 묶음에 더 쓴다.
+# 위 네비게이션은 일의 흐름 순서다 — 공고를 보고, 사이트에서 가져오고, AI 로 분류하고,
+# 오공고로 보내고, 값을 넣어 둔다 (2026-09-15 결정). 묶음 안의 화면은 두 번째 줄
+# (`group_nav`)에서 고른다. 경로와 이름은 여기 한 곳에서만 정한다.
 #
-# 묶음을 가르는 기준은 화면 개수가 아니라 파이프라인 단계다 (2026-08-29 결정,
-# `.claude/docs/architecture.md` 의 실행 흐름).
-#
-# 처음에는 "수집" 하나에 부가 워크플로우까지 넣었다. 부가 워크플로우(LLM 분류·전달)는
-# 사이트를 가져오는 일이 아니라 이미 가져온 데이터를 가공하는 일이라, 그 자리는 틀렸다 —
-# raw_jobs 를 만드는 것이 수집이고 그것을 읽어 normalized_jobs 를 채우거나 고치는 것이
-# 정규화다. 부가 워크플로우는 후자다.
-#
-# "수집" 묶음의 대표 주소는 `/` 가 아니라 `/crawlers` 다 — 루트는 대시보드가 가져갔다
-# (2026-08-29 결정, `app/api/ui_dashboard.py`). 대시보드는 화면 하나뿐이라 두 번째 줄
-# 메뉴가 필요 없어서 `NAV_GROUPS` 에 묶지 않고 `NAV` 에 직접 얹는다 — `/settings` 와 같다.
+# 설정도 다른 묶음과 같은 두 번째 줄을 쓴다. 정규화 규칙은 AI 가 덮지 않는 수집 칸만 다듬게
+# 되면서 자주 여는 화면이 아니게 돼 설정으로 옮겼다.
+SETTINGS_NAV: tuple[tuple[str, str], ...] = (
+    ("/settings", "AI 제공자"),
+    ("/rules", "정규화 규칙"),
+    ("/settings/notify", "알림"),
+    ("/settings/storage", "파일 저장소"),
+    ("/settings/runs", "동시 실행"),
+    ("/settings/export", "스냅샷 내보내기"),
+    ("/settings/import", "데이터 가져오기"),
+)
+
 NAV_GROUPS: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
     (
-        "/crawlers",
-        "수집",
-        (
-            ("/crawlers", "크롤러 등록"),
-            ("/tests", "테스트 실행"),
-            ("/workflows", "워크플로우"),
-        ),
-    ),
-    (
-        "/rules",
-        "정규화",
-        (
-            ("/rules", "정규화 규칙"),
-            ("/side", "부가 워크플로우"),
-            ("/taxonomy", "직무 분류"),
-            ("/industries", "산업 분류"),
-            ("/prompt-rules", "AI 규칙"),
-        ),
-    ),
-    (
         "/review",
-        "데이터 확인",
+        "공고",
         (
-            ("/review", "데이터 확인"),
+            ("/review", "공고 목록"),
             ("/complete", "완성 공고"),
             ("/companies", "회사 로고"),
         ),
     ),
+    (
+        "/workflows",
+        "수집",
+        (
+            ("/workflows", "워크플로우"),
+            ("/crawlers", "크롤러 등록"),
+            ("/tests", "테스트 실행"),
+        ),
+    ),
+    (
+        "/side",
+        "AI 분류",
+        (
+            ("/side", "분류 실행"),
+            ("/prompt-rules", "AI 규칙"),
+            ("/taxonomy", "직무 분류"),
+            ("/industries", "산업 분류"),
+        ),
+    ),
+    ("/settings", "설정", SETTINGS_NAV),
 )
 
-# 네비게이션. 경로와 이름은 여기 한 곳에서만 정한다. 묶음의 이름과 대표 주소는
-# `NAV_GROUPS` 에서 그대로 가져온다 — 두 곳에 따로 적으면 화면 하나가 늘 때 한쪽만 넓어진다
-#
-# 대시보드(`/`)는 `NAV_GROUPS` 어디에도 없다. `/settings` 와 같은 이유다 — 묶여야 할
-# 하위 화면이 없는 화면 하나는 두 번째 줄 메뉴를 만들 이유가 없다
+# 대시보드와 오공고 전송은 하위 화면이 없어 묶지 않고 위 줄에 바로 얹는다
 NAV: tuple[tuple[str, str], ...] = (
     ("/", "대시보드"),
-    *((path, label) for path, label, _ in NAV_GROUPS),
-    ("/settings", "운영 설정"),
+    *((path, label) for path, label, _ in NAV_GROUPS[:3]),
+    ("/deliver", "오공고 전송"),
+    *((path, label) for path, label, _ in NAV_GROUPS[3:]),
 )
 
 
 def _group_of(path: str) -> tuple[str, str, tuple[tuple[str, str], ...]] | None:
-    """이 주소가 속한 묶음. 묶음에 없는 주소(`/settings` 등)는 `None` 이다."""
+    """이 주소가 속한 묶음. 묶음에 없는 주소(`/`, `/deliver`)는 `None` 이다."""
     for group in NAV_GROUPS:
         if any(member_path == path for member_path, _ in group[2]):
             return group
@@ -547,28 +545,15 @@ def jobs_page() -> RedirectResponse:
     return RedirectResponse("/review", status_code=307)
 
 
-# 운영 설정의 하위 메뉴. 한 화면에 다섯 구역이 있으면 찾지 못한다.
-# 위쪽 네비게이션과 달리 여기는 `/settings` 하나로 묶여 있어서, 어느 하위 화면에 있든
-# 위 네비게이션은 `운영 설정` 이 켜져 있어야 한다
-SETTINGS_NAV: tuple[tuple[str, str], ...] = (
-    ("/settings", "AI 제공자"),
-    ("/settings/notify", "알림"),
-    ("/settings/storage", "파일 저장소"),
-    ("/settings/runs", "동시 실행"),
-    ("/settings/export", "스냅샷 내보내기"),
-    ("/settings/import", "데이터 가져오기"),
-)
+@router.get("/deliver", response_class=HTMLResponse)
+def deliver_page(request: Request) -> HTMLResponse:
+    """오공고 전송 화면. 분류 실행 화면 아래에 있던 전송 설정을 따로 뺐다 (2026-09-15)."""
+    return render_page(request, "pages/deliver.html")
 
 
 def render_settings(request: Request, name: str, /) -> HTMLResponse:
-    """운영 설정의 하위 화면 하나. 위 네비게이션은 `/settings` 에 머문다."""
-    return render_page(
-        request,
-        name,
-        active="/settings",
-        settings_nav=SETTINGS_NAV,
-        settings_active=request.url.path,
-    )
+    """설정의 하위 화면 하나. 하위 메뉴는 `NAV_GROUPS` 의 설정 묶음이 그린다."""
+    return render_page(request, name)
 
 
 @router.get("/settings", response_class=HTMLResponse)

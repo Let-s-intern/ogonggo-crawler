@@ -126,10 +126,10 @@ def _row(html: str, part: int, name: str) -> str:
     return found.group(1)
 
 
-def test_page_lights_up_in_the_normalize_group(client: TestClient) -> None:
+def test_page_lights_up_in_the_classify_group(client: TestClient) -> None:
     body = client.get("/prompt-rules").text
 
-    assert '<a href="/rules" aria-current="page"' in body
+    assert '<a href="/side" aria-current="page"' in body
     assert 'href="/prompt-rules" aria-current="page"' in body
     assert 'hx-get="/ui/prompt-rules"' in body
 

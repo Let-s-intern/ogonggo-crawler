@@ -117,7 +117,7 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
 
 
 def test_네비게이션에_완성_공고가_있다() -> None:
-    group = next(members for path, label, members in NAV_GROUPS if label == "데이터 확인")
+    group = next(members for path, label, members in NAV_GROUPS if label == "공고")
     assert ("/complete", "완성 공고") in group
 
 

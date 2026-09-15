@@ -80,7 +80,7 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
 
 
 def test_네비게이션에_직무_분류가_있다() -> None:
-    group = next(members for path, label, members in NAV_GROUPS if label == "정규화")
+    group = next(members for path, label, members in NAV_GROUPS if label == "AI 분류")
     assert ("/taxonomy", "직무 분류") in group
 
 

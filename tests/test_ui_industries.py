@@ -74,10 +74,10 @@ def add_classified_job(conn: sqlite3.Connection, seq: int, industry: str) -> Non
     conn.execute("UPDATE normalized_jobs SET industry = ? WHERE id = ?", (industry, normalized_id))
 
 
-def test_화면이_정규화_묶음에서_켜진다(client: TestClient) -> None:
+def test_화면이_AI_분류_묶음에서_켜진다(client: TestClient) -> None:
     body = client.get("/industries").text
 
-    assert '<a href="/rules" aria-current="page"' in body
+    assert '<a href="/side" aria-current="page"' in body
     assert 'href="/industries" aria-current="page"' in body
     assert 'hx-get="/ui/industries"' in body
 

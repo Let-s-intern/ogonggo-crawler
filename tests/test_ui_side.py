@@ -84,14 +84,10 @@ def _client_with_fake_provider(path: pathlib.Path, texts: tuple[str, ...]) -> It
         app.dependency_overrides.clear()
 
 
-def test_네비게이션에_부가_워크플로우가_있다() -> None:
-    """개별 화면이 아니라 `정규화` 묶음 안에 있다 (`app/api/ui.py` 의 `NAV_GROUPS`).
-
-    `수집` 이 아니다 — 부가 워크플로우는 사이트를 가져오지 않고 이미 가져온 것을 가공한다
-    (2026-08-29 결정).
-    """
-    normalize_group = next(members for path, label, members in NAV_GROUPS if label == "정규화")
-    assert ("/side", "부가 워크플로우") in normalize_group
+def test_네비게이션에_분류_실행이_있다() -> None:
+    """`AI 분류` 묶음 안에 있다 (`app/api/ui.py` 의 `NAV_GROUPS`, 2026-09-15 결정)."""
+    classify_group = next(members for path, label, members in NAV_GROUPS if label == "AI 분류")
+    assert ("/side", "분류 실행") in classify_group
 
 
 def test_부가_워크플로우_화면이_열리고_네비게이션이_켜진다(client: TestClient) -> None:
@@ -106,7 +102,10 @@ def test_전달_종류_워크플로우는_쓰지_않는다고_적는다(client: 
 
     실행해도 아무 일도 없는 종류임을 적는다.
     """
-    assert "전달 종류 부가 워크플로우는 쓰지 않는다" in client.get("/side").text
+    body = client.get("/side").text
+
+    assert "전달 종류는 쓰지 않는다" in body
+    assert 'href="/deliver"' in body
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,12 @@
+{# 오공고 전송 화면. 설정 저장과 지금 보내기가 조각 하나(`fragments/deliver_form.html`)로 돈다 #}
+{% extends "base.html" %}
+{% from "macros.html" import empty %}
+{% block title %}오공고 전송{% endblock %}
+{% block heading %}오공고 전송{% endblock %}
+{% block content %}
+<section>
+  <div id="deliver-form" hx-get="/ui/deliver" hx-trigger="load" hx-swap="innerHTML">
+    {{ empty("설정을 불러오는 중") }}
+  </div>
+</section>
+{% endblock %}
