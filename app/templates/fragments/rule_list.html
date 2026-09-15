@@ -1,88 +1,103 @@
 {# 규칙 목록과 편집 폼. 추가·수정·삭제·토글이 모두 이 조각으로 돌아온다.
-   이 조각의 어떤 동작도 재정규화를 부르지 않는다 — 그 버튼은 다른 영역에 있다 #}
-{% from "macros.html" import state, empty_row, wait, failure %}
+   이 조각의 어떤 동작도 재정규화를 부르지 않는다 — 그 버튼은 다른 영역에 있다.
+
+   고를 수 있는 칸(`fields`)은 AI 분류가 덮지 않는 수집 칸뿐이다. 다른 칸에 걸린 옛 규칙은
+   `효과 없음` 으로 보이고 지우기만 할 수 있다 (`migrations/0037_disable_classified_field_rules.sql`) #}
+{% from "macros.html" import state, wait, failure %}
 {% if error %}
 {{ failure(error.reason, error.message, title="저장하지 못했다") }}
 {% endif %}
 {% if message %}
-<p class="font-medium text-slate-700">{{ message }}</p>
+<p class="mb-2 text-sm font-medium text-slate-700">{{ message }}</p>
 {% endif %}
 
-<div class="table-scroll">
+<div class="table-scroll bg-white">
 <table class="data-table">
-  <caption>등록된 규칙. 같은 필드 안에서는 우선순위 순서로 적용된다</caption>
+  <caption>같은 칸 안에서는 우선순위가 낮은 것부터 적용된다</caption>
   <thead>
     <tr>
       <th scope="col" class="num">번호</th>
-      <th scope="col">필드</th>
-      <th scope="col">메모</th>
+      <th scope="col">칸</th>
       <th scope="col">타입</th>
-      <th scope="col">설정</th>
-      <th scope="col">우선순위</th>
-      <th scope="col">활성</th>
-      {# 동작은 한 열에 모은다. 열을 셋으로 나눴을 때는 1440px 에서 삭제가 가로 스크롤
-         밖으로 나가 있었다. 다른 화면의 표도 동작은 한 열이다 #}
+      <th scope="col">설정 JSON</th>
+      <th scope="col">메모</th>
+      <th scope="col">순서</th>
+      <th scope="col">켜짐</th>
       <th scope="col">동작</th>
     </tr>
   </thead>
   <tbody>
     {% for rule in rules %}
-    <tr>
+    {% set usable = rule.field_name in fields %}
+    <tr{% if not usable %} class="bg-slate-50 text-slate-500"{% endif %}>
       <td class="num">{{ rule.id }}</td>
       <td>
+        {% if usable %}
         <select name="field_name" form="rule-form-{{ rule.id }}">
           {% for field in fields %}
-          <option value="{{ field }}" {% if field == rule.field_name %}selected{% endif %}>{{ field }}</option>
+          <option value="{{ field }}" {% if field == rule.field_name %}selected{% endif %}>{{ labels[field] }}</option>
           {% endfor %}
         </select>
+        {% else %}
+        <span class="block font-mono text-xs">{{ rule.field_name }}</span>
+        <span class="chip chip-idle mt-1" title="AI 분류가 이 칸을 덮어써서 규칙이 아무 일도 하지 않는다">효과 없음</span>
+        {% endif %}
       </td>
       <td>
-        {# 한 줄 입력이면 긴 메모가 잘려 읽을 수 없다. 설정 JSON 과 같은 높이로 둔다 #}
-        <textarea name="note" form="rule-form-{{ rule.id }}" rows="4"
-                  placeholder="이 규칙이 하는 일" class="w-52"
-                  >{{ rule.note }}</textarea>
-      </td>
-      <td>
+        {% if usable %}
         <select name="rule_type" form="rule-form-{{ rule.id }}">
           {% for type_name in rule_types %}
           <option value="{{ type_name }}" {% if type_name == rule.rule_type %}selected{% endif %}>{{ type_name }}</option>
           {% endfor %}
         </select>
+        {% else %}{{ rule.rule_type }}{% endif %}
       </td>
       <td>
-        <textarea name="rule_config" form="rule-form-{{ rule.id }}" rows="4"
-                  spellcheck="false" class="code w-72"
-                  >{{ rule.rule_config | tojson }}</textarea>
+        {% if usable %}
+        <textarea name="rule_config" form="rule-form-{{ rule.id }}" rows="2"
+                  spellcheck="false" class="code w-64">{{ rule.rule_config | tojson }}</textarea>
+        {% else %}
+        <code class="block max-w-xs truncate" title="{{ rule.rule_config | tojson }}">{{ rule.rule_config | tojson }}</code>
+        {% endif %}
+      </td>
+      <td class="cell-text">
+        {% if usable %}
+        <textarea name="note" form="rule-form-{{ rule.id }}" rows="2"
+                  placeholder="이 규칙이 하는 일" class="w-44">{{ rule.note }}</textarea>
+        {% else %}{{ rule.note }}{% endif %}
       </td>
       <td>
-        <input name="priority" form="rule-form-{{ rule.id }}" type="number"
-               value="{{ rule.priority }}" size="4">
+        {% if usable %}
+        <input name="priority" form="rule-form-{{ rule.id }}" type="number" value="{{ rule.priority }}">
+        {% else %}{{ rule.priority }}{% endif %}
       </td>
-      <td>
+      <td class="whitespace-nowrap">
+        {% if usable %}
         <input name="enabled" form="rule-form-{{ rule.id }}" type="checkbox"
                {% if rule.enabled %}checked{% endif %}>
+        {% endif %}
         {% if rule.enabled %}{{ state("켜짐") }}{% else %}{{ state("꺼짐") }}{% endif %}
       </td>
       <td>
         <div class="flex flex-wrap items-center gap-1">
+          {% if usable %}
           <form id="rule-form-{{ rule.id }}"
                 hx-put="/ui/rules/{{ rule.id }}"
                 hx-target="#rule-list"
                 hx-swap="innerHTML"
                 hx-disabled-elt="find button">
-            <button type="submit">저장</button>
+            <button type="submit" class="mt-0">저장</button>
             {{ wait("저장하는 중") }}
           </form>
-          {# 대기 문구를 제 id 로 가리킨다. `closest td` 로 잡으면 이 칸의 문구 셋이
-             한꺼번에 겹쳐 뜬다 #}
-          <button type="button"
+          <button type="button" class="mt-0"
                   hx-post="/ui/rules/{{ rule.id }}/toggle"
                   hx-target="#rule-list"
                   hx-swap="innerHTML"
                   hx-disabled-elt="this"
                   hx-indicator="#rule-toggle-wait-{{ rule.id }}">{% if rule.enabled %}끄기{% else %}켜기{% endif %}</button>
           {{ wait("켜고 끄는 중", "rule-toggle-wait-" ~ rule.id) }}
-          <button type="button"
+          {% endif %}
+          <button type="button" class="mt-0"
                   hx-delete="/ui/rules/{{ rule.id }}"
                   hx-target="#rule-list"
                   hx-swap="innerHTML"
@@ -94,25 +109,24 @@
       </td>
     </tr>
     {% else %}
-    {{ empty_row(8, "등록된 규칙이 없다. 아래 규칙 추가로 첫 규칙을 만든다. 규칙이 없으면 추출된 값이 그대로 저장된다") }}
+    <tr>
+      <td colspan="8" class="cell-text text-slate-600">
+        등록된 규칙이 없다. 아래에서 첫 규칙을 만든다. 규칙이 없으면 수집한 값이 그대로 저장된다
+      </td>
+    </tr>
     {% endfor %}
   </tbody>
 </table>
 </div>
 
-<h4>규칙 추가</h4>
 <form hx-post="/ui/rules" hx-target="#rule-list" hx-swap="innerHTML"
-      hx-disabled-elt="find button">
+      hx-disabled-elt="find button" class="mt-4">
   <fieldset>
-    <legend>추가한 규칙은 다음에 정규화되는 건부터 적용된다</legend>
-    {# 라벨 하나에 입력 하나다. 앞서 여기는 <p> 안에서 </label> 이 짝 없이 닫혀 있었고,
-       그래서 메모 칸과 활성 체크박스가 한 라벨 안으로 빨려 들어가 있었다 #}
-    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
+    <legend>규칙 추가</legend>
+    <div class="flex flex-wrap items-end gap-x-4 gap-y-2">
       <span>
-        <label for="new-field" class="block">필드</label>
-        <select id="new-field" name="field_name">
-          {% for field in fields %}<option value="{{ field }}">{{ field }}</option>{% endfor %}
-        </select>
+        <label for="new-field" class="block">칸</label>
+        <select id="new-field" name="field_name">{% for field in fields %}<option value="{{ field }}">{{ labels[field] }}</option>{% endfor %}</select>
       </span>
       <span>
         <label for="new-type" class="block">타입</label>
@@ -121,27 +135,27 @@
         </select>
       </span>
       <span>
-        <label for="new-priority" class="block">우선순위</label>
-        <input id="new-priority" name="priority" type="number" value="0" size="4">
+        <label for="new-priority" class="block">순서</label>
+        <input id="new-priority" name="priority" type="number" value="0">
       </span>
-      <span>
-        <label for="new-enabled">활성</label>
+      <span class="pb-1.5">
+        <label for="new-enabled">켜짐</label>
         <input id="new-enabled" name="enabled" type="checkbox" checked>
       </span>
-    </p>
-    <p>
-      <label for="new-note">메모</label>
-      <br>
-      <textarea id="new-note" name="note" rows="2" placeholder="이 규칙이 하는 일"
-                class="w-full max-w-2xl"></textarea>
-    </p>
-    <p>
-      <label for="new-config">설정 JSON</label>
-      <br>
-      <textarea id="new-config" name="rule_config" rows="4" cols="70" spellcheck="false"
-                class="code w-full max-w-2xl">{}</textarea>
-    </p>
-    <p>
+    </div>
+    <div class="mt-3 grid gap-3 md:grid-cols-2">
+      <span>
+        <label for="new-config" class="block">설정 JSON</label>
+        <textarea id="new-config" name="rule_config" rows="3" spellcheck="false"
+                  class="code w-full">{}</textarea>
+      </span>
+      <span>
+        <label for="new-note" class="block">메모</label>
+        <textarea id="new-note" name="note" rows="3" placeholder="이 규칙이 하는 일"
+                  class="w-full"></textarea>
+      </span>
+    </div>
+    <p class="flex items-center gap-2">
       <button type="submit">규칙 추가</button>
       {{ wait("규칙을 추가하는 중") }}
     </p>

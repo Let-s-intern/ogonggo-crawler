@@ -5,20 +5,18 @@
 {% block content %}
 <section>
   <h3>규칙</h3>
-  <p>규칙 변경은 이후 정규화되는 건부터 적용된다. 이미 정규화된 데이터는 그대로다.</p>
+  <p>
+    AI 가 채우지 않는 수집 칸(회사명·제목·본문·모집 마감·모집 시작)만 다듬는다. 저장한 규칙은
+    다음에 정규화하는 공고부터 적용된다.
+  </p>
   <div id="rule-list" hx-get="/ui/rules" hx-trigger="load" hx-swap="innerHTML">
     {{ empty("규칙을 불러오는 중") }}
   </div>
 </section>
 
-<hr>
-
 <section>
-  <h3>규칙 미리보기</h3>
-  <p>
-    값을 넣어 규칙이 무엇을 하는지 저장 전에 확인한다. 여기서는 아무것도 저장하지 않는다.
-    정규식 하나가 값을 지워 버려도 화면에서 먼저 보인다.
-  </p>
+  <h3>미리보기</h3>
+  <p>값을 넣어 규칙이 무엇을 하는지 저장 전에 본다. 아무것도 저장하지 않는다.</p>
   {# hx-vals 를 여기 두면 안 된다. HTMX 는 그것을 자식 폼까지 물려주고, 폼이 보낸 값을
      덮어써서 입력한 값이 서버에 도달하지 못한다 #}
   <div id="rule-preview" hx-get="/ui/rules/preview" hx-trigger="load" hx-swap="innerHTML">
@@ -26,15 +24,9 @@
   </div>
 </section>
 
-<hr>
-
 <section>
-  <h3>기존 데이터 재정규화</h3>
-  <p>
-    규칙 저장과는 별개의 동작이다. 여기서 누를 때만 <code>raw_jobs</code> 를 다시 읽어
-    <code>normalized_jobs</code> 를 갱신한다. 원본과 전달 표시(<code>delivered_at</code>)는
-    건드리지 않는다.
-  </p>
+  <h3>재정규화</h3>
+  <p>여기서 누를 때만 수집 원본을 다시 읽어 정규화한 값을 갱신한다. 규칙 저장과는 따로 돈다.</p>
   <div id="renormalize-panel" hx-get="/ui/renormalize" hx-trigger="load"
        hx-target="this" hx-swap="outerHTML">
     {{ empty("상태를 불러오는 중") }}

@@ -1,10 +1,8 @@
 """규칙 미리보기. 저장하기 전에 무슨 일이 일어나는지 보여 준다.
 
-정규식 하나를 잘못 쓰면 값이 조용히 지워진다. 지금까지는 그것을 알아채는 방법이 공고가
-실제로 수집될 때까지 기다리는 것뿐이었다. PRD 4.4 는 규칙을 웹에서 고치라고 하는데,
-화면에서 확인할 방법이 없으면 규칙을 쓰는 일이 도박이 된다.
-
-여기서는 아무것도 저장하지 않는다. DB 는 읽기만 한다.
+정규식 하나를 잘못 쓰면 값이 조용히 지워진다. 여기서는 아무것도 저장하지 않는다. DB 는 읽기만
+한다. 고를 수 있는 칸은 규칙 목록과 같은 수집 칸 다섯이다 (`app/normalize/rules.py` 의
+`RULE_FIELDS`).
 """
 
 from __future__ import annotations
@@ -20,7 +18,14 @@ from app.api import rules
 from app.api.ui import render
 from app.api.ui_rules import _config
 from app.normalize.engine import _apply, _by_field, load_rules
-from app.normalize.rules import NORMALIZED_FIELDS, RULE_TYPES, Rule, RuleConfigError, build_rule
+from app.normalize.rules import (
+    RULE_FIELD_LABELS,
+    RULE_FIELDS,
+    RULE_TYPES,
+    Rule,
+    RuleConfigError,
+    build_rule,
+)
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
 
@@ -39,8 +44,7 @@ class Step:
 def _steps(sample: str, applied: list[Rule]) -> tuple[list[Step], str | None]:
     """규칙을 순서대로 적용하며 매 단계를 기록한다.
 
-    엔진과 같은 규칙으로 멈춘다 — 값이 비면 뒤 규칙에 넘기지 않는다. 미리보기가 실제 동작과
-    다르면 미리보기를 믿을 수 없다.
+    엔진과 같은 규칙으로 멈춘다 — 값이 비면 뒤 규칙에 넘기지 않는다.
     """
     steps: list[Step] = []
     value = sample
@@ -65,7 +69,7 @@ def preview_initial_fragment(
     conn: Annotated[sqlite3.Connection, Depends(rules.get_connection)],
 ) -> HTMLResponse:
     """빈 미리보기. 화면이 처음 열릴 때 폼만 그린다."""
-    return preview_fragment(request, conn, field_name=NORMALIZED_FIELDS[0])
+    return preview_fragment(request, conn, field_name=RULE_FIELDS[0])
 
 
 @router.post("/ui/rules/preview", response_class=HTMLResponse)
@@ -106,7 +110,9 @@ def preview_fragment(
         request,
         "fragments/rule_preview.html",
         field_name=field_name,
-        fields=NORMALIZED_FIELDS,
+        field_label=RULE_FIELD_LABELS.get(field_name, field_name),
+        fields=RULE_FIELDS,
+        labels=RULE_FIELD_LABELS,
         rule_types=RULE_TYPES,
         sample=sample,
         draft_type=draft_type,
