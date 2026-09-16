@@ -34,7 +34,7 @@ services:
     #
     # 어떤 코드가 떠 있는지는 `/health` 의 `build` 로 확인한다. 빌드가 심는 값이라 이 줄보다
     # 정확하다 — 이 줄과 그 값이 어긋나면 배포가 안 간 것이다.
-    image: ghcr.io/let-s-intern/ogonggo-crawler:sha-50bf5f9
+    image: ghcr.io/let-s-intern/ogonggo-crawler:sha-846c4b5
     restart: unless-stopped
 
     environment:
