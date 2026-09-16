@@ -75,9 +75,19 @@ jobs:
           FILE: docker-compose.coolify.yml
         run: |
           tag="sha-$(echo "${{ github.sha }}" | cut -c1-7)"
-          image="ghcr.io/${{ env.IMAGE }}:$tag"
+          # 이미지 이름은 소문자만 쓸 수 있다. `github.repository` 에 대문자가 있으면 GHCR 에
+          # 올라간 이름과 여기서 찾는 이름이 어긋나 아래 sed 가 아무 줄도 못 찾는다
+          name=$(echo "${{ env.IMAGE }}" | tr '[:upper:]' '[:lower:]')
+          image="ghcr.io/$name:$tag"
+          # 찾을 줄이 없으면 실패로 끝낸다. 2026-09-15 에 레포 이름이 바뀐 뒤 이 단계가 옛
+          # 이름의 줄을 못 찾고도 "이미 고정돼 있다" 며 지나갔고, 그 사이 배포는 8/31 이미지를
+          # 계속 다시 띄웠다. 못 고쳤으면 배포도 가지 않아야 한다
+          if ! grep -qE "^[[:space:]]*image: ghcr\.io/$name:" "$FILE"; then
+            echo "::error::$FILE 에 ghcr.io/$name 이미지 줄이 없다. 태그를 고정하지 못했다"
+            exit 1
+          fi
           # `\s` 는 BSD sed 에 없다. 로컬에서 같은 줄을 시험할 수 있게 POSIX 문자류를 쓴다
-          sed -i -E "s|^([[:space:]]*image: ghcr\.io/${{ env.IMAGE }}):.*$|\1:$tag|" "$FILE"
+          sed -i -E "s|^([[:space:]]*image: ghcr\.io/$name):.*$|\1:$tag|" "$FILE"
           if git diff --quiet -- "$FILE"; then
             echo "이미 $image 다. 커밋하지 않는다"
             exit 0
