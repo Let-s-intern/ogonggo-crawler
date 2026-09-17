@@ -5,7 +5,7 @@
 #
 # 서버에 두는 것
 #   ~/ogonggo-crawler/docker-compose.ec2.yml  이 파일. 배포마다 덮어쓴다
-#   ~/ogonggo-crawler/.env                    레포 시크릿 CRAWLER_ENV 를 배포마다 그대로 쓴다
+#   ~/ogonggo-crawler/.env                    레포 시크릿 EC2_ENV 를 배포마다 그대로 쓴다
 #   crawler-data 볼륨                          수집 데이터(SQLite). 컨테이너를 지워도 남는다
 services:
   api:

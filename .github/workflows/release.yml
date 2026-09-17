@@ -7,7 +7,7 @@
 #   EC2_HOST     탄력적 IP
 #   EC2_USER     Ubuntu AMI 면 ubuntu, Amazon Linux 면 ec2-user
 #   EC2_KEY      인스턴스 키 페어의 개인 키(.pem 내용 전체)
-#   CRAWLER_ENV  서버의 .env 내용 전체. ADMIN_PASSWORD 등 (docker-compose.ec2.yml)
+#   EC2_ENV  서버의 .env 내용 전체. ADMIN_PASSWORD 등 (docker-compose.ec2.yml)
 name: release
 
 on:
@@ -110,7 +110,7 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           CRAWLER_IMAGE: ${{ needs.image.outputs.image }}
-          CRAWLER_ENV: ${{ secrets.CRAWLER_ENV }}
+          EC2_ENV: ${{ secrets.EC2_ENV }}
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BUILD_SHA: ${{ github.sha }}
@@ -118,17 +118,17 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
-          envs: CRAWLER_IMAGE,CRAWLER_ENV,GHCR_USER,GHCR_TOKEN,BUILD_SHA
+          envs: CRAWLER_IMAGE,EC2_ENV,GHCR_USER,GHCR_TOKEN,BUILD_SHA
           command_timeout: 20m
           script: |
             set -eu
             cd ~/ogonggo-crawler
-            if [ -z "$CRAWLER_ENV" ]; then
-              echo "CRAWLER_ENV 시크릿이 비었다. ADMIN_PASSWORD 없이 띄우지 않는다"
+            if [ -z "$EC2_ENV" ]; then
+              echo "EC2_ENV 시크릿이 비었다. ADMIN_PASSWORD 없이 띄우지 않는다"
               exit 1
             fi
             umask 077
-            printf '%s\n' "$CRAWLER_ENV" > .env
+            printf '%s\n' "$EC2_ENV" > .env
             echo "$GHCR_TOKEN" | sudo docker login ghcr.io -u "$GHCR_USER" --password-stdin
             sudo CRAWLER_IMAGE="$CRAWLER_IMAGE" docker compose -f docker-compose.ec2.yml pull
             sudo CRAWLER_IMAGE="$CRAWLER_IMAGE" docker compose -f docker-compose.ec2.yml up -d --remove-orphans
