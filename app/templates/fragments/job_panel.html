@@ -107,6 +107,22 @@
                 <option value="{{ value }}" {% if raw == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
               </select>
+              {% elif field.kind == "list" %}
+              {# 설정의 직무 분류·산업 분류 안에서만 고른다. 직무는 직군마다 묶어 보인다 #}
+              <select name="{{ field.name }}" class="mt-0 w-full {% if not shown %}border-amber-400 bg-amber-50{% endif %}">
+                <option value="">비어 있음</option>
+                {% if field.name == "job_role" %}
+                {% for major, minors in list_choices.job_roles.items() %}
+                <optgroup label="{{ major }}">
+                  {% for minor in minors %}<option value="{{ minor }}" {% if raw == minor and job.job_field == major %}selected{% endif %}>{{ minor }}</option>{% endfor %}
+                </optgroup>
+                {% endfor %}
+                {% else %}
+                {% for value in (list_choices.job_fields if field.name == "job_field" else list_choices.industries) %}
+                <option value="{{ value }}" {% if raw == value %}selected{% endif %}>{{ value }}</option>
+                {% endfor %}
+                {% endif %}
+              </select>
               {% elif field.kind == "long" %}
               <textarea name="{{ field.name }}" rows="4" class="mt-0 w-full {% if not shown %}border-amber-400 bg-amber-50{% endif %}">{{ raw or "" }}</textarea>
               {% else %}

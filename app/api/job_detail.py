@@ -23,6 +23,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from app import industries, taxonomy
 from app.classify.schema import FALLBACK_FIELDS, STORED_CLASSIFY_FIELDS, VALUE_LABELS
 from app.normalize.engine import OVERRIDABLE_FIELDS
 from app.normalize.rules import RULE_FIELDS
@@ -44,6 +45,8 @@ KIND_TEXT = "text"
 KIND_LONG = "long"
 KIND_CHOICE = "choice"
 KIND_DATE = "date"
+# 설정의 직무 분류·산업 분류 표에서 고르는 칸. 목록이 운영 중에 바뀌어 화면이 그때마다 읽는다
+KIND_LIST = "list"
 
 
 @dataclass(frozen=True)
@@ -69,9 +72,9 @@ SECTIONS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("company_name", "회사"),
             Field("parent_company_name", "모회사"),
             Field("title", "제목"),
-            Field("industry", "산업"),
-            Field("job_field", "직군"),
-            Field("job_role", "직무"),
+            Field("industry", "산업", KIND_LIST),
+            Field("job_field", "직군", KIND_LIST),
+            Field("job_role", "직무", KIND_LIST),
             Field("cover_image_url", "대표 이미지"),
         ),
     ),
@@ -181,6 +184,34 @@ def ai_filled_fields(raw: dict[str, object], job: Any) -> frozenset[str]:
     """
     return frozenset(
         name for name in FALLBACK_FIELDS if not str(raw.get(name) or "").strip() and job[name]
+    )
+
+
+@dataclass(frozen=True)
+class ListChoices:
+    """직군·직무·산업을 고를 목록. 켜진 것만이다 — AI 가 고르는 목록과 같다."""
+
+    job_fields: tuple[str, ...]
+    job_roles: dict[str, tuple[str, ...]]
+    industries: tuple[str, ...]
+
+    def check(self, job_field: str, job_role: str, industry: str) -> str:
+        """목록 밖 값이면 무엇이 틀렸는지 한 줄, 맞으면 빈 문자열. 빈 값은 맞다."""
+        if job_field and job_field not in self.job_fields:
+            return f"직군 '{job_field}' 은 직무 분류에 없다"
+        if job_role and job_role not in self.job_roles.get(job_field, ()):
+            return f"직무 '{job_role}' 은 직군 '{job_field or '비어 있음'}' 아래에 없다"
+        if industry and industry not in self.industries:
+            return f"산업 '{industry}' 은 산업 분류에 없다"
+        return ""
+
+
+def list_choices(conn: sqlite3.Connection) -> ListChoices:
+    tree = taxonomy.enabled_tree(conn)
+    return ListChoices(
+        job_fields=tuple(major for major, _ in tree),
+        job_roles=dict(tree),
+        industries=industries.enabled_names(conn),
     )
 
 

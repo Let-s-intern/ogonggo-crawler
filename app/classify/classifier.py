@@ -903,6 +903,9 @@ def _taxonomy_choices(
         minors = tuple(minor for _, minor_list in taxonomy_tree for minor in minor_list)
         if minors:
             choices[JOB_ROLE] = minors
+        # 직무는 고른 직군 아래의 것이어야 한다. 근거 검사가 직군마다 이 목록으로 다시 본다
+        for major, minor_list in taxonomy_tree:
+            choices[f"{JOB_ROLE}:{major}"] = tuple(minor_list)
     if industries:
         choices[INDUSTRY] = tuple(industries)
     return choices or None

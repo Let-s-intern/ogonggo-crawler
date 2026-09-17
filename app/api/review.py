@@ -322,6 +322,7 @@ def render_panel(
         source_labels=job_detail.SOURCE_LABELS,
         field_display=job_detail.display,
         editing=editing,
+        list_choices=job_detail.list_choices(conn) if editing else None,
         message=message,
         custom_values=custom_fields.values_for(conn, int(row["raw_job_id"]), int(row["part"])),
     )

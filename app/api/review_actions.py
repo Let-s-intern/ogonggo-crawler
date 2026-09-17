@@ -81,6 +81,16 @@ async def job_edit_submit(
     form = await request.form()
     raw_job_id, part = int(job["raw_job_id"]), int(job["part"])
 
+    # 직군·직무·산업은 설정의 목록 안에서만 받는다. 직무는 고친 뒤의 직군 아래에 있어야 한다
+    def picked(name: str) -> str:
+        return str(form[name]).strip() if name in form else str(job[name] or "").strip()
+
+    wrong = job_detail.list_choices(conn).check(
+        picked("job_field"), picked("job_role"), picked("industry")
+    )
+    if wrong:
+        return render_panel(request, conn, normalized_id, editing=True, message=wrong)
+
     changed: list[str] = []
     for field in job_detail.EDITABLE_FIELDS:
         if field.name not in form:
