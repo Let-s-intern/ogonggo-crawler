@@ -11,6 +11,8 @@
 | 안 되면 목록에 쉬운 말 사유와 다시 찾기가 남는다 | 창을 닫으면 실패를 모른다 |
 | 다시 찾기는 초안을 지우고 공고 주소를 넣어 다시 건다 | 초안이 쌓인다 |
 | 지우기는 줄과 초안을 같이 지운다 | 실패한 줄이 계속 남는다 |
+| 공고 주소를 처음부터 넣을 수 있다 | 목록만으로 못 찾는 사이트를 한 번 실패시켜야 한다 |
+| 실패하면 단계마다 본 것과 막힌 곳이 보인다 | 왜 실패했는지 모른다 |
 """
 
 from __future__ import annotations
@@ -117,6 +119,14 @@ class Fake:
         class Created:
             id = crawler_id
             list_mode = "static"
+            detail_mode = "static"
+            detail_url = payload.detail_url or f"{LIST_URL}/1"
+            matches = {"list.item": 14, "list.title": 14, "list.link": 14, "detail.body": 1}
+            failed_fields: list[str] = []
+            notes = ["목록: 반복 영역에서 형제 12개를 덜어냈다"]
+            path_evidence = "항목에 상세 주소가 있다"
+            path_reason = ""
+            path_failure = ""
 
         return Created()
 
@@ -168,6 +178,27 @@ def test_사이트_목록의_추가_버튼이_창을_연다(client: TestClient) 
     assert 'hx-get="/ui/sites/new"' in body
     assert 'name="list_url"' in form and 'name="company"' in form
     assert 'name="interval_minutes"' in form
+    # 공고 하나의 주소도 처음부터 넣을 수 있다 (2026-09-17)
+    assert 'name="detail_url"' in form
+
+
+def test_처음부터_넣은_공고_주소로_등록한다(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    launched: list[Any],
+) -> None:
+    fake = Fake(conn, found=True)
+    install(monkeypatch, fake)
+    client.post(
+        "/ui/sites/new",
+        data={"list_url": LIST_URL, "company": "예시", "detail_url": f"{LIST_URL}/7"},
+    )
+
+    finish(launched)
+
+    assert fake.registered[-1].detail_url == f"{LIST_URL}/7"
+    assert conn.execute("SELECT count(*) FROM workflows").fetchone()[0] == 1
 
 
 def test_주소와_회사_이름이_없으면_걸지_않는다(
@@ -244,6 +275,13 @@ def test_안_되면_목록에_쉬운_말_사유와_다시_찾기가_남는다(
     assert 'hx-trigger="every 3s"' not in listing
     retry = client.get("/ui/sites/new/1").text
     assert "공고 하나의 주소로 다시 찾기" in retry
+    # 단계마다 무엇을 봤는지 보인다. 셀렉터·상세 길은 됐고 시험 수집에서 막혔다
+    assert "무슨 일이 있었나" in retry
+    assert "✓ 1. 목록을 읽고 셀렉터 만들기" in retry
+    assert "목록 항목 14개" in retry
+    assert "✓ 2. 상세 페이지로 가는 길 찾기" in retry
+    assert "✕ 3. 공고 몇 건 시험 수집" in retry
+    assert "상세로 갈 길이 없다" in retry
     assert 'name="replace_add_id" value="1"' in retry
     assert conn.execute("SELECT count(*) FROM workflows").fetchone()[0] == 0
 
@@ -262,6 +300,9 @@ def test_등록이_거절되면_사유를_남긴다(
     finish(launched)
 
     assert "공고 목록을 찾지 못했어요" in client.get("/ui/sites").text
+    retry = client.get("/ui/sites/new/1").text
+    assert "✕ 1. 목록을 읽고 셀렉터 만들기" in retry
+    assert "목록이 없다" in retry
 
 
 def test_다시_찾기는_초안을_지우고_공고_주소를_넣어_다시_건다(

@@ -36,7 +36,12 @@
           {{ interval_select(interval, "site-add-interval") }}
         </p>
       </div>
-      {% if detail_url %}<input type="hidden" name="detail_url" value="{{ detail_url }}">{% endif %}
+      <p class="my-0">
+        <label for="site-add-detail" class="block">공고 하나의 주소 <span class="font-normal text-slate-500">(선택)</span></label>
+        <input id="site-add-detail" name="detail_url" type="url" value="{{ detail_url }}"
+               placeholder="https://careers.example.com/jobs/123" class="w-full">
+        <span class="text-xs text-slate-500">비워 두면 목록에서 찾습니다. 넣으면 그 페이지를 보고 상세 셀렉터를 만들어 더 잘 찾습니다</span>
+      </p>
       <p class="my-0 flex justify-end"><button type="submit">추가</button></p>
     </form>
 
@@ -52,17 +57,30 @@
     {% elif step == "notfound" %}
     <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
       <p class="font-semibold">{{ add.company }} — {{ add.problem or "끝까지 찾지 못했어요" }}</p>
-      <p class="mb-0 mt-1 break-all text-xs text-amber-700">{{ add.list_url }}</p>
-      {% if add.technical %}
+      <p class="mb-0 mt-1 break-all text-xs text-amber-700">{{ add.list_url }}{% if add.detail_url %}<br>공고 주소: {{ add.detail_url }}{% endif %}</p>
+      {% if add.technical and not add.steps %}
       <details class="mb-0 mt-1 border-0 p-0"><summary class="text-xs font-normal text-amber-700">기술 정보</summary>
         <p class="mt-1 break-all text-xs">{{ add.technical }}</p></details>
       {% endif %}
     </div>
-    {% if add.matched is not none %}
-    <table class="w-full text-sm">
-      <tr><td class="py-1 text-slate-500">목록에서 찾은 공고</td><td class="text-right {% if add.matched %}text-emerald-700{% else %}text-red-700{% endif %}">{{ add.matched }}건</td></tr>
-      <tr><td class="py-1 text-slate-500">상세 페이지까지 가져온 공고</td><td class="text-right {% if add.success_count %}text-emerald-700{% else %}text-red-700{% endif %}">{{ add.success_count }}건</td></tr>
-    </table>
+    {% if add.steps %}
+    <div>
+      <p class="mb-1 text-sm font-medium text-slate-900">무슨 일이 있었나</p>
+      <ol class="site-add-steps space-y-2">
+        {% for item in add.steps %}
+        <li class="rounded-md border px-3 py-2 text-sm {% if item.ok %}border-emerald-200 bg-emerald-50{% elif item.ok is none %}border-slate-200 bg-slate-50{% else %}border-red-200 bg-red-50{% endif %}">
+          <p class="m-0 font-medium {% if item.ok %}text-emerald-800{% elif item.ok is none %}text-slate-700{% else %}text-red-800{% endif %}">
+            {% if item.ok %}✓{% elif item.ok is none %}·{% else %}✕{% endif %} {{ loop.index }}. {{ item.title }}
+          </p>
+          {% if item.lines %}
+          <ul class="mb-0 mt-1 list-none space-y-0.5 pl-4 text-xs text-slate-700">
+            {% for line in item.lines %}<li class="break-all">{{ line }}</li>{% endfor %}
+          </ul>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
     {% endif %}
 
     <div class="rounded-md border border-slate-200 p-3">

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import itertools
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 # 한꺼번에 돌리는 사이트 추가 수
@@ -36,6 +36,18 @@ STATE_WORDS: dict[str, str] = {
 
 
 @dataclass
+class Step:
+    """사이트 추가의 한 단계에서 무엇을 봤는지. 실패했을 때 운영자가 어디서 막혔는지 읽는다.
+
+    `ok` 가 None 이면 거기까지 가지 못했다.
+    """
+
+    title: str
+    ok: bool | None
+    lines: list[str] = field(default_factory=list)
+
+
+@dataclass
 class SiteAdd:
     id: int
     list_url: str
@@ -49,6 +61,8 @@ class SiteAdd:
     matched: int | None = None
     success_count: int | None = None
     created_at: datetime | None = None
+    # 단계마다 본 것. 실패한 줄의 `다시 찾기` 창이 보여 준다 (2026-09-17 결정)
+    steps: list[Step] = field(default_factory=list)
 
     @property
     def running(self) -> bool:
