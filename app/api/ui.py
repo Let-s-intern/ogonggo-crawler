@@ -155,7 +155,7 @@ NEXT_STEPS: dict[str, str] = {
     "detail_unreachable": "상세에 가지 못했다. 크롤러를 다시 등록해 상세로 가는 길을 찾는다",
     "detail_empty": "상세는 열렸는데 본문이 비었다. 상세의 본문 셀렉터만 고친다",
     "list_not_found": "정적 HTML 에 목록이 없다. 렌더(Playwright) 방식으로 올려 다시 생성한다",
-    "no_api_key": "그 기능이 고른 제공자의 API 키가 비어 있다. 환경변수를 채우면 다시 된다",
+    "no_api_key": "API 키가 없다. 설정 > AI 에서 키를 넣으면 다시 된다",
     "api_error": "생성 모델 호출이 실패했다. 잠시 뒤 다시 생성한다",
     "unknown_provider": "설정의 제공자 이름이 없는 이름이다. gemini/claude/gpt/qwen/ollama 나 "
     "AI 설정 화면에서 추가한 회사 이름이어야 한다",

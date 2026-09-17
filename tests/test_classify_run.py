@@ -322,7 +322,7 @@ async def test_a_missing_api_key_fails_the_run_without_touching_anything(
     await classify_pending(conn, progress, settings=Settings(gemini_api_key=""))
 
     assert progress.failed == 1
-    assert "GEMINI_API_KEY" in progress.errors[0]
+    assert "API 키가 없다" in progress.errors[0]
     assert conn.execute("SELECT count(*) AS n FROM job_classifications").fetchone()["n"] == 0
 
 

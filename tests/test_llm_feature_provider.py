@@ -199,7 +199,7 @@ async def test_a_missing_key_stops_that_feature_and_does_not_move_to_another_pro
         )
 
     assert caught.value.reason == "no_api_key"
-    assert "QWEN_API_KEY" in str(caught.value)
+    assert "API 키가 없다" in str(caught.value)
 
 
 async def test_fixing_selectors_calls_its_own_provider_not_the_generators(

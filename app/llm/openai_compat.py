@@ -68,7 +68,7 @@ def _build(key_setting: str, base_url_setting: str | None) -> Any:
         """
         api_key = getattr(settings, key_setting)
         if not api_key:
-            raise LlmCallError("no_api_key", f"{key_setting.upper()} 가 비어 있다")
+            raise LlmCallError("no_api_key", "API 키가 없다")
         # 주소를 갈아 끼우는 것은 호환 엔드포인트를 쓰는 제공자뿐이다. GPT 는 SDK 의 기본
         # 주소를 그대로 쓰므로 `None` 이고, 그때는 인자를 넘기지 않는다
         base_url = getattr(settings, base_url_setting) if base_url_setting else None
@@ -227,7 +227,7 @@ def _custom_client(name: str, definition: CustomDefinition) -> Any:
         """키는 설정에서만 온다. 반드시 넘긴다 — 넘기지 않으면 SDK 가 환경의 키를 읽는다."""
         api_key = settings.llm_custom_keys.get(name, "").strip()
         if not api_key:
-            raise LlmCallError("no_api_key", f"`{name}` 의 API 키가 비어 있다")
+            raise LlmCallError("no_api_key", "API 키가 없다")
         return AsyncOpenAI(api_key=api_key, base_url=definition.base_url)
 
     return build_client

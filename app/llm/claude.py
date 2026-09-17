@@ -42,7 +42,7 @@ def build_client(settings: Settings) -> AsyncAnthropic:
     이 서비스가 설정한 적 없는 키로 호출이 나간다.
     """
     if not settings.claude_api_key:
-        raise LlmCallError("no_api_key", "CLAUDE_API_KEY 가 비어 있다")
+        raise LlmCallError("no_api_key", "API 키가 없다")
     return AsyncAnthropic(api_key=settings.claude_api_key)
 
 
