@@ -12,4 +12,13 @@
     {{ empty("제공자 설정을 불러오는 중") }}
   </div>
 </section>
+
+{# 비용 화면이 쓰는 모델 단가. 코드 표가 기본이고 여기서 넣은 값이 이긴다 (`app/llm/pricing.py`) #}
+<section id="prices">
+  <h3>모델 단가</h3>
+  <p>비용 화면이 이 단가로 계산합니다. 100만 토큰당 달러이고, 비워서 저장하면 직접 넣은 단가를 지웁니다</p>
+  <div id="price-table" hx-get="/ui/prices" hx-trigger="load" hx-swap="innerHTML">
+    {{ empty("단가를 불러오는 중") }}
+  </div>
+</section>
 {% endblock %}

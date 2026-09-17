@@ -29,7 +29,6 @@ from fastapi.testclient import TestClient
 
 from app import db
 from app.api.settings import get_connection
-from app.api.ui import NAV
 from app.llm import pricing
 from app.llm.base import Usage
 from app.llm.log import CLASSIFY, record_call
@@ -153,18 +152,6 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
 
 def near(body: str, label: str, size: int = 300) -> str:
     return body[body.index(label) : body.index(label) + size]
-
-
-def test_대시보드는_위_메뉴_비용이_연다() -> None:
-    """비용 화면이 생기기 전까지 대시보드가 그 자리에 있다 (LC-3344)."""
-    assert ("/cost", "비용") in NAV
-
-
-def test_화면이_열리고_조각_둘을_부른다(client: TestClient) -> None:
-    body = client.get("/cost").text
-
-    assert 'hx-get="/ui/dashboard"' in body
-    assert 'hx-get="/ui/dashboard/logs"' in body
 
 
 def test_오늘_새_공고_건수가_수집_시각과_같다(client: TestClient, conn: sqlite3.Connection) -> None:

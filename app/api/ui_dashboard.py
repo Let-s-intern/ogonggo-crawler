@@ -31,7 +31,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 
 from app.api.settings import get_connection
-from app.api.ui import display_zone, render, render_page
+from app.api.ui import display_zone, render
 from app.classify.store import pending_count as classify_pending_count
 from app.crawler.failures import SUCCESS
 from app.crawler.runner import consecutive_failures
@@ -330,13 +330,6 @@ def workflow_states(conn: sqlite3.Connection) -> list[WorkflowState]:
         # 시각은 화면이 `as_time` 으로 그린다. 여기서 문자열로 바꾸면 표시 시간대 검사가 못 본다
         result.append(WorkflowState(str(row["name"]), word, tone, str(row["last_run_at"] or "")))
     return result
-
-
-@router.get("/cost", response_class=HTMLResponse)
-def dashboard_page(request: Request) -> HTMLResponse:
-    """위 메뉴 `비용` 이 여는 자리. 비용 화면이 생기기 전까지는 지금 대시보드를 그대로 보여 준다
-    (LC-3344 6단계에서 바뀐다)."""
-    return render_page(request, "pages/dashboard.html")
 
 
 @router.get("/ui/dashboard", response_class=HTMLResponse)

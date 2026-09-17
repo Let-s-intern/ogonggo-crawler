@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import db
+from app.api import crawlers as crawlers_api
 from app.api import rules as rules_api
 from app.api.ui import NAV, SETTINGS_NAV, SETTINGS_SECTIONS, SITE_NAV
 from app.main import app
@@ -44,6 +45,7 @@ def client(path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestClient]
             connection.close()
 
     app.dependency_overrides[rules_api.get_connection] = request_connection
+    app.dependency_overrides[crawlers_api.get_connection] = request_connection
     try:
         yield TestClient(app, follow_redirects=False)
     finally:

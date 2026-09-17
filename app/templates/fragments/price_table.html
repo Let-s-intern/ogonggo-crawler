@@ -1,0 +1,30 @@
+{# 모델 단가 표 (`app/api/ui_cost.py` 의 `price_table_fragment`). 줄마다 폼 하나라 누른 모델만 저장한다 #}
+{% from "macros.html" import notice_box %}
+{% if message %}{{ notice_box(message) }}{% endif %}
+<div class="table-scroll bg-white">
+<table class="data-table">
+  <thead>
+    <tr><th scope="col">모델</th><th scope="col" class="num">호출</th><th scope="col">입력 $/1M</th><th scope="col">출력 $/1M</th><th scope="col">어디서 온 값</th><th scope="col"></th></tr>
+  </thead>
+  <tbody>
+    {% for name, known, calls in rows %}
+    <tr>
+      <td class="font-mono text-xs">{{ name }}</td>
+      <td class="num">{{ calls }}</td>
+      <td colspan="4" class="p-0">
+        <form class="flex items-center gap-2 px-3 py-1.5" hx-post="/ui/prices" hx-target="#price-table" hx-swap="innerHTML"
+              hx-disabled-elt="find button">
+          <input type="hidden" name="model" value="{{ name }}">
+          <input type="text" name="input_usd" inputmode="decimal" value="{{ known.price.input_usd if known else '' }}"
+                 aria-label="{{ name }} 입력 단가" class="mt-0 w-20 {% if not known %}border-amber-400 bg-amber-50{% endif %}">
+          <input type="text" name="output_usd" inputmode="decimal" value="{{ known.price.output_usd if known else '' }}"
+                 aria-label="{{ name }} 출력 단가" class="mt-0 w-20 {% if not known %}border-amber-400 bg-amber-50{% endif %}">
+          <span class="w-20 text-xs {% if known %}text-slate-500{% else %}text-amber-700{% endif %}">{{ known.source if known else "단가 없음" }}</span>
+          <button type="submit" class="btn-quiet mt-0">저장</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
