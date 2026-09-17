@@ -6,15 +6,14 @@
 |---|---|
 | `정규화` 묶음에서 화면이 켜진다 | 산업 목록을 고칠 자리를 찾지 못한다 |
 | 표가 비면 기본 산업 불러오기만 보이고, 누르면 11개가 들어온다 | 빈 표에서 무엇을 할지 모른다 |
-| 더하고 고치고 끈다 | 산업 목록을 코드로만 바꾼다 |
-| 겹친 이름은 사유와 함께 거절한다 | 저장이 조용히 실패한다 |
-| 분류된 공고 수를 보이고 이름을 고치면 어긋난다고 알린다 | 이름과 공고 값이 몰래 갈린다 |
-| 지우는 단추는 없다 | 분류된 공고가 목록 밖 값을 갖는다 |
+| 평소에는 칩, 수정을 누르면 줄마다 고치고 저장 한 번으로 저장한다 (2026-09-17) | 줄마다 저장한다 |
+| 겹친 이름이면 아무것도 저장하지 않는다 | 절반만 저장된다 |
+| 이름을 바꾸면 이미 분류된 공고의 값도 바뀐다 | 이름과 공고 값이 몰래 갈린다 |
+| 메모 칸과 지우는 단추는 없다 | 분류된 공고가 목록 밖 값을 갖는다 |
 """
 
 from __future__ import annotations
 
-import html
 import json
 import pathlib
 import sqlite3
@@ -82,17 +81,11 @@ def test_화면이_설정에서_켜진다(client: TestClient) -> None:
     assert 'hx-get="/ui/industries"' in body
 
 
-def test_표가_비어있으면_기본_산업_불러오기만_보인다(client: TestClient) -> None:
-    body = client.get("/ui/industries").text
-
-    assert "기본 산업 불러오기" in body
-    assert "산업 분류가 아직 없다" in body
-    assert "산업 추가" not in body
-
-
 def test_기본_산업을_불러오면_열한_개가_들어오고_단추가_사라진다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
+    assert "기본 산업 불러오기" in client.get("/ui/industries").text
+
     body = client.post("/ui/industries/seed").text
 
     assert "기본 산업 11개를 불러왔다" in body
@@ -101,52 +94,63 @@ def test_기본_산업을_불러오면_열한_개가_들어오고_단추가_사�
     assert len(industries.list_all(conn)) == 11
 
 
-def test_더하고_고치고_끈다(client: TestClient, conn: sqlite3.Connection) -> None:
-    # 화면은 따옴표를 HTML 엔티티로 적는다
-    added = html.unescape(client.post("/ui/industries", data={"name": "건설업"}).text)
-    assert "'건설업' 를 더했다" in added
-    (created,) = industries.list_all(conn)
-
-    saved = html.unescape(
-        client.put(
-            f"/ui/industries/{created.id}", data={"name": "건설·토목업", "sort_order": "2"}
-        ).text
-    )
-    assert "'건설·토목업' 를 저장했다" in saved
-
-    toggled = html.unescape(client.post(f"/ui/industries/{created.id}/toggle").text)
-    assert "'건설·토목업' 를 껐다" in toggled
-    assert "꺼짐" in toggled
-    assert industries.enabled_names(conn) == ()
-
-
-def test_겹친_이름은_사유와_함께_거절한다(client: TestClient, conn: sqlite3.Connection) -> None:
-    industries.create(conn, name="건설업")
-
-    body = client.post("/ui/industries", data={"name": "건설업"}).text
-
-    assert "duplicate_name" in body
-    assert len(industries.list_all(conn)) == 1
-
-
-def test_공고_수를_보이고_이름을_고치면_어긋난다고_알린다(
+def test_평소에는_칩이고_수정을_누르면_줄마다_고쳐_한_번에_저장한다(
     client: TestClient, conn: sqlite3.Connection
 ) -> None:
+    it = industries.create(conn, name="IT·정보통신업", sort_order=0)
+    finance = industries.create(conn, name="금융·은행업", sort_order=1)
+
+    view = client.get("/ui/industries").text
+    edit = client.get("/ui/industries?edit=true").text
+    body = client.put(
+        "/ui/industries",
+        data={
+            "industry_id": [str(finance.id), str(it.id), ""],
+            "industry_name": ["금융업", "IT·정보통신업", "게임업"],
+            "industry_on": ["0", "1", "1"],
+        },
+    ).text
+
+    assert view.count("industry-chip") == 2 and 'name="industry_name"' not in view
+    assert edit.count('name="industry_name"') == 3  # 두 줄과 새 줄 틀
+    assert "메모" not in view + edit and "삭제" not in view + edit
+    assert "저장했습니다" in body
+    assert [(item.name, item.enabled) for item in industries.list_all(conn)] == [
+        ("금융업", False),
+        ("IT·정보통신업", True),
+        ("게임업", True),
+    ]
+
+
+def test_이름을_바꾸면_이미_분류된_공고의_값도_바뀐다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    it = industries.create(conn, name="IT·정보통신업")
+    add_classified_job(conn, 1, "IT·정보통신업")
+
+    body = client.put(
+        "/ui/industries",
+        data={"industry_id": [str(it.id)], "industry_name": ["IT업"], "industry_on": ["1"]},
+    ).text
+
+    assert "IT·정보통신업 → IT업" in body
+    assert conn.execute("SELECT industry FROM normalized_jobs").fetchone()[0] == "IT업"
+
+
+def test_겹친_이름이면_아무것도_저장하지_않는다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    it = industries.create(conn, name="IT·정보통신업")
     finance = industries.create(conn, name="금융·은행업")
-    add_classified_job(conn, 1, "금융·은행업")
-    add_classified_job(conn, 2, "금융·은행업")
 
-    assert "2건" in client.get("/ui/industries").text
+    body = client.put(
+        "/ui/industries",
+        data={
+            "industry_id": [str(it.id), str(finance.id)],
+            "industry_name": ["같은이름", "같은이름"],
+            "industry_on": ["1", "1"],
+        },
+    ).text
 
-    body = client.put(f"/ui/industries/{finance.id}", data={"name": "금융업"}).text
-
-    assert "이미 분류된 공고 2건은 새 이름과 어긋난다" in body
-
-
-def test_지우는_단추는_없다(client: TestClient, conn: sqlite3.Connection) -> None:
-    industries.create(conn, name="건설업")
-
-    body = client.get("/ui/industries").text
-
-    assert "hx-delete" not in body
-    assert "삭제" not in body
+    assert "같은 이름이 두 번 있다" in body
+    assert [item.name for item in industries.list_all(conn)] == ["IT·정보통신업", "금융·은행업"]

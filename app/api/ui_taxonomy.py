@@ -1,8 +1,12 @@
 """직무 분류 화면의 조각 라우트.
 
-체계 CRUD 는 `app/taxonomy.py` 를 그대로 부른다. 이 파일이 더하는 것은 화면이 필요로 하는
-두 가지뿐이다 — 대분류 아래 소분류를 묶어 트리로 그리는 것, 그리고 그 이름으로 이미
-분류된 공고 수를 얹는 것.
+2026-09-17 결정(LC-3344). 왼쪽에 대분류, 오른쪽에 고른 대분류의 소분류를 칩으로 보인다 — 채용
+사이트의 직무 고르기 화면과 같은 모양이라 단계가 눈에 보이고, "대분류/소분류" 구분 칸이 필요 없다.
+평소에는 읽기만 하고, `수정` 을 누르면 이름·순서·켜짐을 고친 뒤 `저장` 한 번으로 저장한다.
+줄마다 저장 단추가 있던 예전 표는 무엇이 저장됐는지 알기 어려웠다. 메모 칸은 AI 에게 가지 않는
+값이라 뺐다.
+
+체계 CRUD 는 `app/taxonomy.py` 를 그대로 부른다.
 
 ## 공고 수는 여기서 센다
 
@@ -19,7 +23,6 @@ from __future__ import annotations
 
 import pathlib
 import sqlite3
-from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -38,14 +41,6 @@ SEED_PATH = pathlib.Path(__file__).resolve().parent.parent.parent / (
 )
 
 
-@dataclass(frozen=True)
-class TaxonomyRow:
-    """화면이 그리는 한 줄. 저장된 노드에 그 이름을 가진 공고 수를 얹은 것이다."""
-
-    node: taxonomy.TaxonomyNode
-    job_count: int
-
-
 def _job_counts(conn: sqlite3.Connection, column: str) -> dict[str, int]:
     """`column`(`job_field` 또는 `job_role`) 값별 공고 수. 호출부가 고정된 두 이름만 넘긴다."""
     rows = conn.execute(
@@ -55,45 +50,43 @@ def _job_counts(conn: sqlite3.Connection, column: str) -> dict[str, int]:
     return {str(row["name"]): int(row["n"]) for row in rows}
 
 
-def _name_count(conn: sqlite3.Connection, column: str, name: str) -> int:
-    """이름 하나의 공고 수. 이름을 고치기 전에 그 값을 화면에 보여줄 때 쓴다."""
-    row = conn.execute(
-        f"SELECT COUNT(*) AS n FROM normalized_jobs WHERE {column} = ?", (name,)
-    ).fetchone()
-    return int(row["n"]) if row is not None else 0
-
-
-def build_tree(conn: sqlite3.Connection) -> list[tuple[TaxonomyRow, list[TaxonomyRow]]]:
-    """대분류와 그 아래 소분류를 묶어, 각자의 공고 수와 함께 늘어놓는다."""
-    major_counts = _job_counts(conn, "job_field")
-    minor_counts = _job_counts(conn, "job_role")
-    tree: list[tuple[TaxonomyRow, list[TaxonomyRow]]] = []
-    for major in taxonomy.list_majors(conn):
-        major_row = TaxonomyRow(major, major_counts.get(major.name, 0))
-        minor_rows = [
-            TaxonomyRow(minor, minor_counts.get(minor.name, 0))
-            for minor in taxonomy.list_minors(conn, major.id)
-        ]
-        tree.append((major_row, minor_rows))
-    return tree
-
-
-def _tree(
+def _view(
     request: Request,
     conn: sqlite3.Connection,
     *,
+    major_id: int | None = None,
+    edit: bool = False,
     message: str = "",
-    error: dict[str, str] | None = None,
+    error: str = "",
+    draft: dict[str, object] | None = None,
 ) -> HTMLResponse:
-    """트리 조각 하나. 더하기·고치기·켜기끄기·씨앗 넣기가 모두 이 조각으로 돌아온다."""
+    """왼쪽 대분류 목록과 오른쪽에 고른 대분류의 소분류. 모든 동작이 이 조각으로 돌아온다.
+
+    `draft` 는 저장이 거절됐을 때 사용자가 넣은 값이다. 거절한 뒤 저장된 값으로 되돌리면
+    고친 것을 처음부터 다시 해야 한다.
+    """
+    majors = taxonomy.list_majors(conn)
+    selected = next((major for major in majors if major.id == major_id), None)
+    if selected is None and majors:
+        selected = majors[0]
+    minors = taxonomy.list_minors(conn, selected.id) if selected else []
+    enabled_counts = {
+        major.id: len(taxonomy.list_minors(conn, major.id, enabled_only=True)) for major in majors
+    }
     return render(
         request,
         "fragments/taxonomy_tree.html",
-        tree=build_tree(conn),
-        majors=taxonomy.list_majors(conn),
+        majors=majors,
+        selected=selected,
+        minors=minors,
+        enabled_counts=enabled_counts,
+        field_count=_job_counts(conn, "job_field").get(selected.name, 0) if selected else 0,
+        role_counts=_job_counts(conn, "job_role"),
+        edit=edit and selected is not None,
         is_empty=taxonomy.is_empty(conn),
         message=message,
         error=error,
+        draft=draft,
     )
 
 
@@ -101,86 +94,59 @@ def _tree(
 def taxonomy_tree_fragment(
     request: Request,
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    major: int | None = None,
+    edit: bool = False,
 ) -> HTMLResponse:
-    return _tree(request, conn)
+    return _view(request, conn, major_id=major, edit=edit)
 
 
-@router.post("/ui/taxonomy", response_class=HTMLResponse)
-def create_node_fragment(
+@router.post("/ui/taxonomy/majors", response_class=HTMLResponse)
+def add_major_fragment(
     request: Request,
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
-    name: Annotated[str, Form()],
-    parent_id: Annotated[str, Form()] = "",
-    sort_order: Annotated[int, Form()] = 0,
-    note: Annotated[str, Form()] = "",
+    name: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    """대분류(`parent_id` 없음) 또는 소분류를 더한다."""
-    parsed_parent = int(parent_id) if parent_id.strip() else None
+    """대분류를 맨 뒤에 더하고, 곧바로 소분류를 넣을 수 있게 수정 화면으로 연다."""
     try:
-        created = taxonomy.create(
-            conn, parent_id=parsed_parent, name=name, sort_order=sort_order, note=note
+        created = taxonomy.add_major(conn, name)
+    except taxonomy.TaxonomyError as exc:
+        return _view(request, conn, error=str(exc))
+    return _view(request, conn, major_id=created.id, edit=True)
+
+
+@router.put("/ui/taxonomy/{major_id}", response_class=HTMLResponse)
+def save_major_fragment(
+    request: Request,
+    major_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    name: Annotated[str, Form()] = "",
+    enabled: Annotated[str, Form()] = "",
+    minor_id: Annotated[list[str] | None, Form()] = None,
+    minor_name: Annotated[list[str] | None, Form()] = None,
+    minor_on: Annotated[list[str] | None, Form()] = None,
+) -> HTMLResponse:
+    """수정 화면에 보인 대로 대분류와 그 소분류를 저장한다. 순서는 화면의 줄 순서다."""
+    ids, names, ons = minor_id or [], minor_name or [], minor_on or []
+    minors = [
+        taxonomy.MinorEdit(
+            int(ids[index]) if index < len(ids) and ids[index].isdigit() else None,
+            minor,
+            index < len(ons) and ons[index] == "1",
+        )
+        for index, minor in enumerate(names)
+    ]
+    try:
+        renamed = taxonomy.save_major(
+            conn, major_id, name=name, enabled=enabled == "1", minors=minors
         )
     except taxonomy.TaxonomyError as exc:
-        return _tree(request, conn, error={"reason": exc.reason, "message": str(exc)})
-
-    kind = "대분류" if created.parent_id is None else "소분류"
-    return _tree(request, conn, message=f"{kind} '{created.name}' 를 더했다")
-
-
-@router.put("/ui/taxonomy/{node_id}", response_class=HTMLResponse)
-def update_node_fragment(
-    request: Request,
-    node_id: int,
-    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
-    name: Annotated[str, Form()],
-    sort_order: Annotated[int, Form()] = 0,
-    note: Annotated[str, Form()] = "",
-) -> HTMLResponse:
-    """이름·순서·메모를 저장한다. 이름이 바뀌면 옛 이름으로 이미 분류된 공고 수를 함께
-    알린다 — 저장 순간 그 건들의 값과 목록의 이름이 어긋난다(PRD 3절).
-    """
-    existing = taxonomy.read(conn, node_id)
-    if existing is None:
-        return _tree(
-            request, conn, error={"reason": "not_found", "message": f"id {node_id} 가 없다"}
-        )
-
-    column = "job_field" if existing.parent_id is None else "job_role"
-    old_name = existing.name
-    old_count = _name_count(conn, column, old_name)
-
-    try:
-        updated = taxonomy.update(conn, node_id, name=name, sort_order=sort_order, note=note)
-    except taxonomy.TaxonomyError as exc:
-        return _tree(request, conn, error={"reason": exc.reason, "message": str(exc)})
-
-    if updated.name != old_name and old_count > 0:
-        message = (
-            f"'{old_name}' 를 '{updated.name}' 로 고쳤다. "
-            f"'{old_name}' 으로 이미 분류된 공고 {old_count}건은 새 이름과 어긋난다"
-        )
-    else:
-        message = f"'{updated.name}' 를 저장했다"
-    return _tree(request, conn, message=message)
-
-
-@router.post("/ui/taxonomy/{node_id}/toggle", response_class=HTMLResponse)
-def toggle_node_fragment(
-    request: Request,
-    node_id: int,
-    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
-) -> HTMLResponse:
-    """켜짐·꺼짐만 뒤집는다. 지우는 라우트는 없다 — 끈 값으로 이미 분류된 공고는 그대로
-    남고, 그 값은 새 분류에서만 빠진다."""
-    existing = taxonomy.read(conn, node_id)
-    if existing is None:
-        return _tree(
-            request, conn, error={"reason": "not_found", "message": f"id {node_id} 가 없다"}
-        )
-
-    updated = taxonomy.set_enabled(conn, node_id, not existing.enabled)
-    state = "켰다" if updated.enabled else "껐다"
-    return _tree(request, conn, message=f"'{updated.name}' 를 {state}")
+        draft = {"name": name, "enabled": enabled == "1", "minors": minors}
+        return _view(request, conn, major_id=major_id, edit=True, error=str(exc), draft=draft)
+    message = "저장했습니다"
+    if renamed:
+        changes = ", ".join(f"{old} → {new}" for old, new in renamed)
+        message += f". 이미 분류된 공고의 이름도 바꿨습니다 ({changes})"
+    return _view(request, conn, major_id=major_id, message=message)
 
 
 @router.post("/ui/taxonomy/seed", response_class=HTMLResponse)
@@ -192,15 +158,10 @@ def seed_taxonomy_fragment(
     않는다 — 화면에는 표가 비어 있을 때만 이 단추 자체가 없다(`taxonomy_tree.html`)."""
     majors_added, minors_added = taxonomy.load_seed(conn, SEED_PATH)
     if majors_added == 0 and minors_added == 0:
-        return _tree(
-            request,
-            conn,
-            error={
-                "reason": "not_empty",
-                "message": "표가 이미 비어 있지 않아 기본 분류를 다시 불러오지 않았다",
-            },
+        return _view(
+            request, conn, error="표가 이미 비어 있지 않아 기본 분류를 다시 불러오지 않았다"
         )
-    return _tree(
+    return _view(
         request,
         conn,
         message=f"기본 분류를 불러왔다: 대분류 {majors_added}개, 소분류 {minors_added}개",

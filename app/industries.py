@@ -163,3 +163,72 @@ def load_seed(conn: sqlite3.Connection, path: pathlib.Path) -> int:
     for order, name in enumerate(data["industries"]):
         create(conn, name=name, sort_order=order)
     return len(data["industries"])
+
+
+@dataclass(frozen=True)
+class IndustryEdit:
+    """수정 화면이 보낸 산업 한 줄. `id` 가 없으면 새로 더한 줄이다. 순서는 목록 순서다."""
+
+    id: int | None
+    name: str
+    enabled: bool
+
+
+def save_all(conn: sqlite3.Connection, rows: list[IndustryEdit]) -> list[tuple[str, str]]:
+    """산업 목록을 화면에 보인 대로 한 번에 저장한다 (2026-09-17 결정).
+
+    `app/taxonomy.py` 의 `save_major` 와 같은 규칙이다 — 한 줄이라도 틀리면 아무것도 저장하지
+    않고, 보내지 않은 줄은 지우지 않으며, 이름을 바꾸면 이미 분류된 공고의 값도 같이 바꾼다.
+    바꾼 (옛 이름, 새 이름) 을 돌려준다.
+    """
+    cleaned = [IndustryEdit(row.id, row.name.strip(), row.enabled) for row in rows]
+    names = [row.name for row in cleaned]
+    if any(not item for item in names):
+        raise IndustryError("empty_name", "이름이 빈 산업이 있다")
+    duplicates = sorted({item for item in names if names.count(item) > 1})
+    if duplicates:
+        raise IndustryError("duplicate_name", f"같은 이름이 두 번 있다: {', '.join(duplicates)}")
+    existing = {item.id: item for item in list_all(conn)}
+    unknown = [row.id for row in cleaned if row.id is not None and row.id not in existing]
+    if unknown:
+        raise IndustryError("not_found", f"없는 산업이다: {unknown}")
+    sent = {row.id for row in cleaned}
+    kept_names = {item.name for item_id, item in existing.items() if item_id not in sent}
+    clash = sorted(set(names) & kept_names)
+    if clash:
+        raise IndustryError("duplicate_name", f"이미 있는 산업이다: {', '.join(clash)}")
+
+    renamed: list[tuple[str, str]] = []
+    conn.execute("SAVEPOINT save_industries")
+    try:
+        for row in cleaned:
+            if row.id is not None and existing[row.id].name != row.name:
+                conn.execute(
+                    "UPDATE industries SET name = ? WHERE id = ?", (f"\x00{row.id}", row.id)
+                )
+        for order, row in enumerate(cleaned):
+            if row.id is None:
+                conn.execute(
+                    "INSERT INTO industries (name, sort_order, enabled) VALUES (?, ?, ?)",
+                    (row.name, order, int(row.enabled)),
+                )
+                continue
+            before = existing[row.id]
+            if before.name != row.name:
+                for table in ("job_classifications", "normalized_jobs"):
+                    conn.execute(
+                        f"UPDATE {table} SET industry = ? WHERE industry = ?",
+                        (row.name, before.name),
+                    )
+                renamed.append((before.name, row.name))
+            conn.execute(
+                "UPDATE industries SET name = ?, sort_order = ?, enabled = ?,"
+                " updated_at = datetime('now') WHERE id = ?",
+                (row.name, order, int(row.enabled), row.id),
+            )
+        conn.execute("RELEASE save_industries")
+    except Exception:
+        conn.execute("ROLLBACK TO save_industries")
+        conn.execute("RELEASE save_industries")
+        raise
+    return renamed
