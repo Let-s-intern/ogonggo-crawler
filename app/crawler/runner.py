@@ -534,6 +534,13 @@ async def _collect(
     record = _record(item, detail.fields, detail.source_text, detail.cover_image)
     if not record["body"].strip():
         # 상세는 열렸는데 본문이 없다. 나머지 필드가 채워져 있어도 적재하지 않는다.
+        if detail.images:
+            # 본문이 이미지뿐이었는데 읽지 못했다. 셀렉터가 아니라 이미지 읽기를 봐야 한다
+            reason = "; ".join(detail.notes) or "이미지 읽기가 꺼져 있다"
+            raise DetailEmptyError(
+                f"본문이 이미지뿐인데 이미지를 읽지 못했다: {reason}. "
+                "설정 > AI 에서 이미지를 읽을 수 있는 AI 를 이미지 읽기에 지정한다"
+            )
         raise DetailEmptyError("상세를 열었지만 본문이 비었다. 상세의 본문 셀렉터를 고친다")
     digest = content_hash(record)
 

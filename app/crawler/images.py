@@ -141,7 +141,12 @@ async def read_detail_images(
         return replace(detail, notes=(*detail.notes, "이미지에서 읽은 글이 없다"))
     joined = f"{IMAGE_TEXT_MARK}\n{text}"
     source = f"{detail.source_text}\n{joined}" if detail.source_text.strip() else joined
-    return replace(detail, source_text=source)
+    fields = detail.fields
+    if not fields.get("body", "").strip():
+        # 본문 글자가 아예 없던 공고다. 읽은 글이 곧 본문이다 — 비워 두면 적재 단계가 본문 없음으로
+        # 버린다 (`app/crawler/runner.py`)
+        fields = {**fields, "body": text}
+    return replace(detail, fields=fields, source_text=source)
 
 
 async def _download(

@@ -225,6 +225,97 @@ def test_모든_항목이_같은_주소면_id_로_채택하지_않는다() -> No
     assert path.ok is False
 
 
+def test_주소의_일부와만_겹치는_값은_id_로_고르지_않는다() -> None:
+    """KT 실측(2026-09-17): 정렬 순서 `sortOrder` 가 공고 번호 앞자리와 겹쳐 id 로 뽑혔다."""
+    items = [
+        ListItem(index=0, title="첫 공고", link="https://example.test/careers/266550", date=""),
+        ListItem(index=1, title="둘째 공고", link="https://example.test/careers/267551", date=""),
+    ]
+    payload = {
+        "data": [
+            {"sortOrder": 266, "noticeSn": 266550, "name": "첫 공고"},
+            {"sortOrder": 267, "noticeSn": 267551, "name": "둘째 공고"},
+        ]
+    }
+    request = ObservedRequest(
+        method="GET",
+        url="https://example.test/api/recruit",
+        status=200,
+        content_type="application/json",
+        body=json.dumps(payload, ensure_ascii=False),
+    )
+
+    path = propose_list_config(
+        [request],
+        items,
+        ["https://example.test/careers/266550", "https://example.test/careers/267551"],
+    )
+
+    assert path.ok is True
+    assert path.config().id_field == "noticeSn"
+    assert path.config().link_template == "https://example.test/careers/{id}"
+
+
+def test_링크가_없는_페이지는_눌러서_도착한_주소로_id_를_찾는다() -> None:
+    """롯데ON 실측(2026-09-17): 항목에 링크가 없고, 눌러야 `/job_posting/UJFP0dBm` 이 열린다."""
+    items = [
+        ListItem(index=0, title="광고 상품 & 플랫폼 기획", link="", date="", detail_absent=True),
+        ListItem(index=1, title="데이터 엔지니어", link="", date="", detail_absent=True),
+    ]
+    payload = {
+        "count": 2,
+        "results": [
+            {
+                "status": "in_progress",
+                "externalTitle": "광고 상품 & 플랫폼 기획",
+                "addressKey": "UJFP0dBm",
+            },
+            {"status": "in_progress", "externalTitle": "데이터 엔지니어", "addressKey": "Q7xk2Lmn"},
+        ],
+    }
+    request = ObservedRequest(
+        method="GET",
+        url="https://example.test/_backend/recruitments?page=1",
+        status=200,
+        content_type="application/json",
+        body=json.dumps(payload, ensure_ascii=False),
+    )
+
+    path = propose_list_config(
+        [request], items, [], clicked_url="https://example.test/job_posting/UJFP0dBm"
+    )
+
+    assert path.ok is True
+    assert path.config().id_field == "addressKey"
+    assert path.config().link_template == "https://example.test/job_posting/{id}"
+
+
+def test_눌러서_얻은_주소와_겹쳐도_항목마다_같은_값이면_id_로_쓰지_않는다() -> None:
+    items = [
+        ListItem(index=0, title="첫 공고", link="", date="", detail_absent=True),
+        ListItem(index=1, title="둘째 공고", link="", date="", detail_absent=True),
+    ]
+    payload = {
+        "results": [
+            {"name": "첫 공고", "companyKey": "LOTTEON"},
+            {"name": "둘째 공고", "companyKey": "LOTTEON"},
+        ]
+    }
+    request = ObservedRequest(
+        method="GET",
+        url="https://example.test/api/list",
+        status=200,
+        content_type="application/json",
+        body=json.dumps(payload, ensure_ascii=False),
+    )
+
+    path = propose_list_config(
+        [request], items, [], clicked_url="https://example.test/LOTTEON/job/1"
+    )
+
+    assert path.ok is False
+
+
 @pytest.mark.asyncio
 async def test_다시_불러_같은_목록이_오면_채택한다() -> None:
     items, links = rendered("kakao-list-20260825.html", KAKAO_SELECTORS, KAKAO_LIST_URL)

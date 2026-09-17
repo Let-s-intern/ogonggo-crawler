@@ -390,10 +390,19 @@ def get_generator(
             )
 
         static_result = await _generate(list_url, detail_url, STATIC, settings)
-        if not static_result.verification.list_missing:
+        static_weak = _weak_list(static_result)
+        if not static_result.verification.list_missing and not static_weak:
             return replace(static_result, render_mode=STATIC)
 
-        logger.info("정적 HTML 에 목록이 없어 렌더로 다시 만든다 url=%s", list_url)
+        if static_weak and not static_result.verification.list_missing:
+            # 정적 HTML 에서 반복은 잡았지만 항목이 한 건뿐이거나 따라갈 링크가 없다. CJ 실측
+            # (2026-09-17): 목록을 JS 로 채우는 페이지의 껍데기에 항목 모양이 한 건 있어 그것으로
+            # 셀렉터를 만들었고, 그 셀렉터는 렌더한 페이지에서 0건이었다. 렌더해서 더 나은 결과가
+            # 나올 때만 바꾼다 — 링크를 목록에 두지 않는 사이트(삼성)나 공고가 정말 한 건인
+            # 목록은 그대로다
+            logger.info("정적 목록이 약해 렌더로도 만들어 본다 url=%s", list_url)
+        else:
+            logger.info("정적 HTML 에 목록이 없어 렌더로 다시 만든다 url=%s", list_url)
         try:
             rendered = await _generate(list_url, detail_url, PLAYWRIGHT, settings)
         except FetchError as exc:
@@ -404,6 +413,26 @@ def get_generator(
                 static_result,
                 render_mode=STATIC,
                 notes=[*static_result.notes, f"렌더로 다시 만들지도 못했다: {exc}"],
+            )
+
+        if static_weak and not static_result.verification.list_missing:
+            if not _better_list(rendered, static_result):
+                return replace(
+                    static_result,
+                    render_mode=STATIC,
+                    notes=[
+                        *static_result.notes,
+                        "정적 목록이 약해 렌더로도 만들어 봤지만 나아지지 않았다",
+                    ],
+                )
+            return replace(
+                rendered,
+                render_mode=PLAYWRIGHT,
+                notes=[
+                    *rendered.notes,
+                    "정적 목록이 약해(항목 한 건 이하이거나 링크 없음) 렌더한 HTML 로 "
+                    "셀렉터를 만들었다",
+                ],
             )
 
         if rendered.verification.list_missing:
@@ -418,6 +447,34 @@ def get_generator(
         )
 
     return generate
+
+
+def _links_failed(result: GenerationResult) -> bool:
+    """목록에서 따라갈 링크를 하나도 읽지 못했는가. 링크가 없다고 답한 경우(건너뜀)는 아니다."""
+    return "list.link" in result.verification.failed_list_fields
+
+
+def _item_count(result: GenerationResult) -> int:
+    return int(result.verification.summary().get("list.item", 0))
+
+
+def _weak_list(result: GenerationResult) -> bool:
+    """정적으로 만든 목록이 렌더로도 만들어 볼 만큼 약한가. 항목이 한 건 이하이거나 링크가 없다."""
+    return _links_failed(result) or _item_count(result) < 2
+
+
+def _better_list(rendered: GenerationResult, static: GenerationResult) -> bool:
+    """렌더로 만든 목록이 정적보다 나은가.
+
+    항목이 더 많이 잡히면 낫다 — 링크를 못 읽어도 된다. 링크는 등록 판정이 항목을 눌러 찾는다.
+    CJ 실측(2026-09-17): 렌더한 목록 10건의 링크가 `javascript:` 라 "링크 실패" 로 보고 빈 목록
+    안내 한 건짜리 정적 결과를 남겼다. 항목 수가 같으면 링크를 읽는 쪽이 낫다.
+    """
+    if rendered.verification.list_missing:
+        return False
+    if _item_count(rendered) != _item_count(static):
+        return _item_count(rendered) > _item_count(static)
+    return _links_failed(static) and not _links_failed(rendered)
 
 
 async def _generate(

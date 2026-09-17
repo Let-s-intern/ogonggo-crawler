@@ -32,8 +32,8 @@ from app.selector.narrow import Narrowing, narrow_item_selector
 from app.selector.schema import (
     SelectorSchemaError,
     SelectorSet,
-    parse_selectors,
-    parse_selectors_allowing_empty,
+    parse_generated,
+    parse_generated_allowing_empty,
 )
 from app.selector.verify import VerificationReport, verify_selectors
 
@@ -180,7 +180,7 @@ async def generate_from_html(
         text, usage = await call_model(resolved_client, model, prompt, attempt, provider=provider)
         last_text = text
         try:
-            selectors = parse_selectors(text)
+            selectors, moved = parse_generated(text)
         except SelectorSchemaError as exc:
             logger.warning(
                 "셀렉터 생성 응답 거절 model=%s attempt=%d reason=%s message=%s",
@@ -189,11 +189,10 @@ async def generate_from_html(
                 exc.reason,
                 exc,
             )
-            if exc.reason == "unknown_field":
-                # 스키마에 없는 필드를 지어냈다. 무엇이었을지 추측하지 않는다.
-                raise SelectorGenerationError(exc.reason, str(exc)) from exc
-            # `unparsable` 은 모양이 깨진 것, `missing_field` 는 내용이 모자란 것이다.
-            # 둘 다 한 번 더 물어본다 (`.claude/rules/llm.md` 의 "깨진 응답만 1회").
+            # 깨진 모양(`unparsable`), 모자란 내용(`missing_field`), 스키마에 없는 이름
+            # (`unknown_field`) 모두 한 번 더 묻는다. 없는 이름은 뜻을 추측해 살리지 않고 다시
+            # 묻기만 한다 — 같은 응답이 두 번 오면 거절한다. 옆 묶음에 잘못 둔 칸은 거절하기 전에
+            # `parse_generated` 가 제자리로 옮긴다 (2026-09-17)
             last_error = exc
             continue
 
@@ -214,7 +213,7 @@ async def generate_from_html(
             usage=usage,
             attempts=attempt,
             verification=report,
-            notes=_notes(cleaned_list, cleaned_detail, narrowing),
+            notes=[*_notes(cleaned_list, cleaned_detail, narrowing), *moved],
         )
 
     assert last_error is not None  # 루프는 최소 한 번 돈다
@@ -222,7 +221,7 @@ async def generate_from_html(
     if last_error.reason == "missing_field" and last_text is not None:
         # 모양은 맞는데 필드가 비어 있다. 통째로 버리면 운영자가 손으로 고칠 대상조차 없다.
         # 빈 채로 draft 에 저장하고 어느 자리가 비었는지 알린다 (`.claude/rules/llm.md`).
-        selectors, empty_fields = parse_selectors_allowing_empty(last_text)
+        selectors, empty_fields, moved = parse_generated_allowing_empty(last_text)
         narrowing = narrow_item_selector(selectors, list_html)
         selectors = narrowing.selectors
         report = verify_selectors(selectors, list_html, detail_html)
@@ -239,12 +238,19 @@ async def generate_from_html(
             verification=report,
             notes=[
                 *_notes(cleaned_list, cleaned_detail, narrowing),
-                f"모델이 채우지 못한 필드: {', '.join(empty_fields)}. 손으로 채운다",
+                *moved,
+                *(
+                    [f"모델이 채우지 못한 필드: {', '.join(empty_fields)}. 손으로 채운다"]
+                    if empty_fields
+                    else []
+                ),
             ],
         )
 
+    # 스키마에 없는 이름이 끝까지 왔으면 그 사유를 그대로 둔다. 화면이 사유마다 다음 할 일을 적는다
+    reason = "unknown_field" if last_error.reason == "unknown_field" else "unparsable"
     raise SelectorGenerationError(
-        "unparsable", f"{MAX_ATTEMPTS}회 모두 스키마에 맞지 않았다: {last_error}"
+        reason, f"{MAX_ATTEMPTS}회 모두 스키마에 맞지 않았다: {last_error}"
     ) from last_error
 
 

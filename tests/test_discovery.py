@@ -641,6 +641,57 @@ async def test_클릭이_데려간_주소를_공고마다_다른_형식으로_�
 
 
 @pytest.mark.asyncio
+async def test_모델이_따라갈_수_없는_링크를_골라도_눌러서_상세_주소를_찾는다() -> None:
+    """네이버 실측(2026-09-17): 모델이 고른 링크의 href 가 `javascript:` 라 항목이 전부 버려졌고,
+    판정이 "항목 0건" 으로 끝나 클릭하지 않았다. 제목이 잡히면 링크 없이 받아 누른다.
+    """
+    opened: list[str] = []
+    pages = {
+        "30005276": "<html><body><h1>온보딩 프로그램 운영 지원</h1></body></html>",
+        "30005281": "<html><body><h1>재무회계 담당</h1></body></html>",
+    }
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text=ROBOTS)
+        if request.url.path == "/jobs":
+            return httpx.Response(200, text=SHELL)
+        return httpx.Response(200, text=pages.get(request.url.params.get("annoId", ""), ""))
+
+    selectors = parse_selectors(
+        json.dumps(
+            {
+                "list": {"item": "li.item", "title": "p.tit", "link": "a.tit", "date": ""},
+                "detail": {
+                    "title": "h1",
+                    "body": "div.body",
+                    "qualifications": "",
+                    "recruitment_end_at": "",
+                    "department": "",
+                },
+            }
+        )
+    )
+    client = fetcher_for(handle)
+    element = StubElement()
+    session = session_for(ONCLICK_LIST, [element])
+    element.action = lambda: setattr(session.page, "url", VIEW_URL)
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL, selectors, fetcher=client, sleep=nosleep, open_probe=opener(session, opened)
+        )
+    finally:
+        await client.aclose()
+
+    assert element.clicks == 1
+    assert discovery.ok is True
+    assert discovery.link is not None
+    assert discovery.link.template == (
+        "https://example.test/rcrt/view.do?annoId={onclick|arg1}&lang=ko"
+    )
+
+
+@pytest.mark.asyncio
 async def test_확인되지_않는_주소_형식은_채택하지_않는다() -> None:
     """두 번째 항목이 첫 항목과 같은 페이지를 주면 그 형식은 공고를 가르지 못한다."""
     opened: list[str] = []
