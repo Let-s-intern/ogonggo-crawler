@@ -33,6 +33,8 @@ from app.api import (
     ui_runs,
     ui_settings,
     ui_side,
+    ui_site_add,
+    ui_sites,
     ui_storage,
     ui_taxonomy,
     ui_tests,
@@ -111,6 +113,8 @@ app.include_router(ui_dashboard.router)
 app.include_router(ui_crawlers.router)
 app.include_router(ui_tests.router)
 app.include_router(ui_workflows.router)
+app.include_router(ui_sites.router)
+app.include_router(ui_site_add.router)
 app.include_router(ui_runs.router)
 app.include_router(ui_rules.router)
 app.include_router(ui_rules_preview.router)

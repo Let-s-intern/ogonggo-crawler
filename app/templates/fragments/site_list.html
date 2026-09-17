@@ -1,0 +1,37 @@
+{# 사이트 목록 (`app/api/ui_sites.py` 의 `site_list_fragment`). 한 줄에 상태·새 공고·마지막 수집만
+   두고, 조작은 오른쪽 패널로 옮겼다. 문제가 있는 사이트만 줄 끝에 `고치기` 가 붙는다 #}
+<ul class="divide-y divide-slate-100">
+  {% for card, problem in rows %}
+  {% set item = card.item %}
+  <li class="site-row">
+    <button type="button" data-panel-open
+            hx-get="/ui/sites/{{ item.id }}/panel" hx-target="#app-panel-body" hx-swap="innerHTML"
+            class="m-0 flex w-full flex-wrap items-center gap-x-4 gap-y-1 rounded-none border-0 bg-transparent px-4 py-3 text-left font-normal shadow-none hover:bg-slate-50">
+      <span class="h-2.5 w-2.5 shrink-0 rounded-full {% if card.tone == 'bad' or problem %}bg-red-500{% elif item.status != 'active' %}bg-slate-300{% else %}bg-emerald-500{% endif %}"
+            aria-hidden="true"></span>
+      <span class="min-w-0 sm:w-56">
+        <span class="site-name block truncate font-medium text-slate-900">{{ item.name }}</span>
+        <span class="block truncate text-xs text-slate-400">{{ item.list_url }}</span>
+      </span>
+      <span class="min-w-0 flex-1 whitespace-normal text-sm {% if problem %}text-red-700{% else %}text-slate-500{% endif %}">
+        {% if card.running %}수집하는 중
+        {% elif problem %}{{ problem }}
+        {% elif item.status != 'active' %}멈춤
+        {% elif item.last_run_status %}정상
+        {% else %}아직 수집 전{% endif %}
+      </span>
+      <span class="text-right text-sm">
+        <span class="block text-slate-700">새 공고 <span class="font-semibold tabular-nums">{{ card.last_counts.new if card.last_counts else 0 }}</span></span>
+        <span class="block text-xs text-slate-400">{{ item.last_run_at | as_time if item.last_run_at else "수집 기록 없음" }}</span>
+      </span>
+      <span class="shrink-0 rounded-md border px-3 py-1 text-sm font-medium {% if problem %}border-red-600 bg-red-600 text-white{% else %}border-slate-300 bg-white text-slate-700{% endif %}">
+        {% if problem %}고치기{% else %}열기{% endif %}
+      </span>
+    </button>
+  </li>
+  {% else %}
+  <li class="px-4 py-6 text-sm text-slate-500">
+    아직 사이트가 없습니다. 오른쪽 위 <span class="font-medium">+ 사이트 추가</span>로 채용공고 목록 페이지를 등록합니다
+  </li>
+  {% endfor %}
+</ul>

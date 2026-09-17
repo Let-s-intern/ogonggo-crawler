@@ -340,7 +340,11 @@
       panel.addEventListener('click', function (evt) {
         if (evt.target === panel) { panel.close(); }
       });
-      panel.addEventListener('close', function () { body.innerHTML = ''; });
+      // 닫히면 목록이 패널에서 바뀐 것(멈춤·주기·고친 셀렉터)을 다시 읽게 알린다
+      panel.addEventListener('close', function () {
+        body.innerHTML = '';
+        document.body.dispatchEvent(new CustomEvent('panel-closed'));
+      });
 
       // 지우고 나면 패널이 보던 공고는 없다
       document.body.addEventListener('jobs-deleted', function () {
