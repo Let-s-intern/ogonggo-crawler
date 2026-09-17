@@ -20,11 +20,13 @@ from app.api import (
     settings,
     side,
     ui,
+    ui_ai_quick,
     ui_companies,
     ui_cost,
     ui_crawlers,
     ui_dashboard,
     ui_deliver,
+    ui_fields,
     ui_industries,
     ui_llm,
     ui_notify,
@@ -112,6 +114,7 @@ app.include_router(side.router)
 app.include_router(ui.router)
 app.include_router(ui_dashboard.router)
 app.include_router(ui_cost.router)
+app.include_router(ui_fields.router)
 app.include_router(ui_crawlers.router)
 app.include_router(ui_tests.router)
 app.include_router(ui_workflows.router)
@@ -130,6 +133,7 @@ app.include_router(ui_settings.router)
 app.include_router(ui_notify.router)
 app.include_router(ui_storage.router)
 app.include_router(ui_llm.router)
+app.include_router(ui_ai_quick.router)
 app.include_router(ui_taxonomy.router)
 app.include_router(ui_industries.router)
 app.include_router(ui_prompt_rules.router)

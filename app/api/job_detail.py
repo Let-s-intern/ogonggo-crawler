@@ -107,6 +107,37 @@ SECTIONS: tuple[tuple[str, tuple[Field, ...]], ...] = (
 )
 
 FIELDS: tuple[Field, ...] = tuple(field for _, fields in SECTIONS for field in fields)
+
+# 오공고 등록 요청의 칸 이름 (`app/deliver/spring.py` 의 `payload`). 설정 > 수집 항목이 보여 준다
+SPRING_NAMES: dict[str, str] = {
+    "company_name": "companyName",
+    "parent_company_name": "parentCompanyName",
+    "title": "title",
+    "industry": "industry",
+    "job_field": "jobField",
+    "job_role": "jobRole",
+    "cover_image_url": "coverImageUrl",
+    "employment_type": "employmentType",
+    "experience_type": "experienceType",
+    "experience_min_years": "experienceMinYears",
+    "education_level": "educationLevel",
+    "region": "region",
+    "recruitment_type": "recruitmentType",
+    "recruitment_headcount": "recruitmentHeadcount",
+    "application_method": "applicationMethod",
+    "recruitment_start_at": "recruitmentStartAt",
+    "recruitment_end_at": "recruitmentEndAt",
+    "closes_when_filled": "closesWhenFilled",
+    "auto_close_enabled": "autoCloseEnabled",
+    "company_and_team_introduction": "companyAndTeamIntroduction",
+    "responsibilities": "responsibilities",
+    "qualifications": "qualifications",
+    "preferred_qualifications": "preferredQualifications",
+    "compensation": "compensation",
+    "benefits": "benefits",
+    "hiring_process": "hiringProcess",
+    "recruitment_notice": "recruitmentNotice",
+}
 EDITABLE_FIELDS: tuple[Field, ...] = tuple(field for field in FIELDS if field.editable)
 
 _CLASSIFIED = set(STORED_CLASSIFY_FIELDS)

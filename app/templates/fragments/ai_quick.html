@@ -1,0 +1,24 @@
+{# 설정 > AI 의 빠른 설정 (`app/api/ui_ai_quick.py`). 키는 다시 그리지 않고 끝 네 자리만 보인다 #}
+{% from "macros.html" import notice_box, wait %}
+{% if error %}<p class="notice notice-bad">{{ error }}</p>{% endif %}
+{% if message %}{{ notice_box(message) }}{% endif %}
+<form class="space-y-2" hx-post="/ui/llm/quick" hx-target="#ai-quick" hx-swap="innerHTML"
+      hx-disabled-elt="find button" hx-indicator="#ai-quick-wait">
+  <label for="ai-quick-key" class="block">DeepSeek API 키</label>
+  <div class="flex flex-wrap gap-2">
+    <input id="ai-quick-key" name="api_key" type="password" autocomplete="off"
+           placeholder="{% if state.key_present %}저장됨 · 끝자리 {{ state.key_tail or '····' }} — 바꾸려면 새 키를 넣는다{% else %}sk-로 시작하는 키{% endif %}"
+           class="mt-0 min-w-0 flex-1">
+    <button type="submit" class="mt-0">저장</button>
+    {{ wait("DeepSeek 에 연결하는 중", "ai-quick-wait") }}
+  </div>
+</form>
+<p class="mt-2 text-sm">
+  {% if state.all_features %}
+  <span class="state-ok">● 연결됨</span> <span class="text-slate-600">· 분류와 셀렉터 생성·수정이 {{ state.model }} 로 돕니다</span>
+  {% elif state.using %}
+  <span class="state-warn">● 일부만 DeepSeek</span> <span class="text-slate-600">· {{ state.using | map(attribute="label") | join(", ") }}</span>
+  {% else %}
+  <span class="state-idle">● DeepSeek 를 쓰지 않는 중</span> <span class="text-slate-600">· 키를 넣으면 분류와 셀렉터 생성·수정을 DeepSeek 로 바꿉니다</span>
+  {% endif %}
+</p>

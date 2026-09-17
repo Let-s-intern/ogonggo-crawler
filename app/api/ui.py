@@ -74,6 +74,7 @@ SETTINGS_SECTIONS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (
         "수집·분류",
         (
+            ("/settings/fields", "수집 항목"),
             ("/taxonomy", "직무 분류"),
             ("/industries", "산업 분류"),
             ("/prompt-rules", "AI 분류 규칙"),
@@ -569,6 +570,11 @@ def render_settings(request: Request, name: str, /) -> HTMLResponse:
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request) -> HTMLResponse:
     return render_settings(request, "pages/settings_llm.html")
+
+
+@router.get("/settings/fields", response_class=HTMLResponse)
+def settings_fields_page(request: Request) -> HTMLResponse:
+    return render_settings(request, "pages/settings_fields.html")
 
 
 @router.get("/settings/notify", response_class=HTMLResponse)

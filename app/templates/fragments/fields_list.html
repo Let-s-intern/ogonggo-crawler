@@ -1,0 +1,78 @@
+{# 수집 항목 목록 (`app/api/ui_fields.py`). 위는 오공고로 보내는 칸, 아래는 운영자가 더한 항목이다 #}
+{% from "macros.html" import notice_box %}
+{% if message %}{{ notice_box(message) }}{% endif %}
+
+<section>
+  <div class="flex flex-wrap items-start gap-3">
+    <div class="min-w-0 flex-1">
+      <h3>직접 더한 항목</h3>
+      <p>오공고에 없는 칸을 더 보고 싶을 때 씁니다. AI가 공고 본문에서 찾아 채우고, 값은 크롤러의 공고 상세에만 보입니다(오공고로 보내지 않음)</p>
+    </div>
+    <button type="button" data-modal-open hx-get="/ui/fields/new" hx-target="#app-modal-body" hx-swap="innerHTML"
+            class="mt-0 border-slate-800 bg-slate-800 text-white hover:bg-slate-700">+ 항목 추가</button>
+  </div>
+
+  {% if progress.running or progress.done %}
+  <div class="notice {% if progress.error %}notice-bad{% else %}notice-idle{% endif %}"
+       {% if progress.running %}hx-get="/ui/fields" hx-trigger="every 2s" hx-target="#fields-list" hx-swap="innerHTML"{% endif %}>
+    <span class="font-semibold">{{ progress.field_label }}</span> 다시 채우기
+    {% if progress.running %}— {{ progress.done }} / {{ progress.total }}건 도는 중{% else %}— 끝남. 공고 {{ progress.done }}건 중 {{ progress.filled }}건을 채웠다{% endif %}
+    {% if progress.error %}<span class="block">{{ progress.error }}</span>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if customs %}
+  <div class="table-scroll bg-white">
+  <table class="data-table">
+    <thead><tr><th scope="col">항목</th><th scope="col">AI 에게 줄 설명</th><th scope="col">형식</th><th scope="col" class="num">채워진 비율</th><th scope="col">사용</th><th scope="col"></th></tr></thead>
+    <tbody>
+      {% for item, pct in customs %}
+      <tr class="{% if not item.enabled %}text-slate-400{% endif %}">
+        <td class="font-medium">{{ item.label }}</td>
+        <td class="cell-text text-xs">{{ item.instruction or "—" }}</td>
+        <td class="text-xs">{{ item.type_label }}{% if item.choices %}<span class="block text-slate-400">{{ item.choices | join(" · ") }}</span>{% endif %}</td>
+        <td class="num">{{ pct }}%</td>
+        <td>
+          <button type="button" class="btn-quiet mt-0" hx-post="/ui/fields/{{ item.id }}/toggle" hx-target="#fields-list" hx-swap="innerHTML">{% if item.enabled %}켜짐{% else %}꺼짐{% endif %}</button>
+        </td>
+        <td>
+          <form class="flex items-center gap-1" hx-post="/ui/fields/{{ item.id }}/fill" hx-target="#fields-list" hx-swap="innerHTML"
+                hx-confirm="{{ item.label }} 항목을 최근 공고에 채운다. 공고마다 AI 호출이 한 번 나간다. 계속할까">
+            <select name="limit" class="mt-0 text-xs" aria-label="다시 채울 공고 수">
+              {% for count in fill_limits %}<option value="{{ count }}">최근 {{ count }}건</option>{% endfor %}
+            </select>
+            <button type="submit" class="btn-quiet mt-0" {% if progress.running or not item.enabled %}disabled{% endif %}>다시 채우기</button>
+          </form>
+          <button type="button" class="mt-1 border-0 bg-transparent px-0 text-xs text-slate-400 shadow-none hover:bg-transparent hover:text-red-600"
+                  hx-post="/ui/fields/{{ item.id }}/delete" hx-target="#fields-list" hx-swap="innerHTML"
+                  hx-confirm="{{ item.label }} 항목과 채운 값을 지운다. 되돌릴 수 없다">지우기</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="text-sm text-slate-500">아직 더한 항목이 없습니다</p>
+  {% endif %}
+</section>
+
+<section>
+  <h3>오공고로 보내는 칸</h3>
+  <p>코드와 오공고 서버가 함께 정하는 칸이라 여기서 더하거나 끄지 않습니다. <span class="font-semibold text-sky-700">사이트</span>는 페이지에서 바로 읽고, <span class="font-semibold text-violet-700">AI</span>는 본문을 읽고 채우고, <span class="font-semibold text-slate-600">자동</span>은 다른 값으로 정합니다</p>
+  <div class="table-scroll bg-white">
+  <table class="data-table">
+    <thead><tr><th scope="col">항목</th><th scope="col">가져오는 곳</th><th scope="col">오공고 칸</th><th scope="col" class="num">채워진 비율</th></tr></thead>
+    <tbody>
+      {% for row in builtin %}
+      <tr>
+        <td>{{ row.label }}</td>
+        <td class="text-xs {% if row.source == 'AI' %}text-violet-700{% elif row.source == '사이트' %}text-sky-700{% else %}text-slate-500{% endif %}">{{ row.source }}</td>
+        <td class="font-mono text-xs text-slate-500">{{ row.spring }}</td>
+        <td class="num {% if row.pct < 50 %}text-amber-700{% endif %}">{{ row.pct }}%</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>

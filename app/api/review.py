@@ -26,6 +26,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app import custom_fields
 from app.api import crawlers, job_detail
 from app.api.review_filter import (
     DEADLINE_STATES,
@@ -319,6 +320,7 @@ def render_panel(
         field_display=job_detail.display,
         editing=editing,
         message=message,
+        custom_values=custom_fields.values_for(conn, int(row["raw_job_id"]), int(row["part"])),
     )
 
 

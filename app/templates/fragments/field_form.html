@@ -1,0 +1,40 @@
+{# 수집 항목 추가 창 (`app/api/ui_fields.py`). 미리 보기는 저장하지 않고 최근 공고 3건에 물어본다 #}
+<div class="modal-body">
+  <div class="modal-head flex items-center justify-between">
+    <h3 id="app-modal-title" class="text-base font-semibold text-slate-900">수집 항목 추가</h3>
+    <button type="button" data-modal-close class="mt-0">닫기</button>
+  </div>
+  <form class="contents" hx-post="/ui/fields" hx-target="#app-modal-body" hx-swap="innerHTML" hx-disabled-elt="find button">
+    <div class="modal-scroll space-y-3" tabindex="-1" autofocus>
+      {% if error %}<p class="notice notice-bad">{{ error }}</p>{% endif %}
+      <p class="text-sm text-slate-600">더한 뒤 새로 분류하는 공고부터 AI가 본문에서 찾아 채웁니다. 이미 들어온 공고는 목록의 "다시 채우기"로 채웁니다</p>
+      <p class="my-0">
+        <label for="field-label" class="block">항목 이름</label>
+        <input id="field-label" name="label" type="text" required maxlength="40" value="{{ values.label }}"
+               placeholder="예: 근무 형태 (재택 여부)" class="w-full">
+      </p>
+      <p class="my-0">
+        <label for="field-instruction" class="block">AI에게 줄 설명</label>
+        <textarea id="field-instruction" name="instruction" rows="3" maxlength="400" class="w-full"
+                  placeholder="예: 재택·하이브리드·출근 중 하나로 적는다. 본문에 없으면 비운다">{{ values.instruction }}</textarea>
+      </p>
+      <p class="my-0">
+        <label for="field-type" class="block">값 형식</label>
+        <select id="field-type" name="value_type">
+          {% for value, label in types.items() %}<option value="{{ value }}" {% if value == values.value_type %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </p>
+      <p class="my-0">
+        <label for="field-choices" class="block">보기 <span class="font-normal text-slate-400">(보기 중 하나일 때만, 줄마다 하나)</span></label>
+        <textarea id="field-choices" name="choices" rows="3" class="w-full" placeholder="재택&#10;하이브리드&#10;출근">{{ values.choices }}</textarea>
+      </p>
+      <div id="field-preview"></div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn-quiet" hx-post="/ui/fields/preview" hx-include="closest form"
+              hx-target="#field-preview" hx-swap="innerHTML" hx-disabled-elt="this"
+              title="저장하지 않고 최근 공고 3건에 물어본다. AI 호출이 3번 나간다">공고 3건으로 미리 보기</button>
+      <button type="submit" class="ml-auto">추가</button>
+    </div>
+  </form>
+</div>

@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from app import industries, taxonomy
+from app import custom_fields, industries, taxonomy
 from app.classify import prompt_rules
 from app.classify.classifier import ClassifyError, chosen, classify_body
 from app.classify.schema import build_classification_model
@@ -303,6 +303,9 @@ async def classify_ids(
             # 분류는 남았다. 규칙을 고쳐 재정규화하면 그때 반영된다
             progress.note(f"raw_jobs {raw_job_id}: 분류는 저장했으나 정규화가 실패했다: {exc}")
             continue
+        # 운영자가 화면에서 더한 항목이 켜져 있으면 한 번 더 묻는다. 없으면 호출도 없다.
+        # 실패해도 분류는 성공이다 (`app/custom_fields.py`)
+        await custom_fields.fill_job(conn, raw_job_id, settings=settings)
         progress.processed += 1
 
     logger.info(
