@@ -332,8 +332,10 @@ def workflow_states(conn: sqlite3.Connection) -> list[WorkflowState]:
     return result
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/cost", response_class=HTMLResponse)
 def dashboard_page(request: Request) -> HTMLResponse:
+    """위 메뉴 `비용` 이 여는 자리. 비용 화면이 생기기 전까지는 지금 대시보드를 그대로 보여 준다
+    (LC-3344 6단계에서 바뀐다)."""
     return render_page(request, "pages/dashboard.html")
 
 

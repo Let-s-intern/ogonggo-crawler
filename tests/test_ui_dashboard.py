@@ -155,12 +155,13 @@ def near(body: str, label: str, size: int = 300) -> str:
     return body[body.index(label) : body.index(label) + size]
 
 
-def test_네비게이션_맨_앞이_대시보드다() -> None:
-    assert NAV[0] == ("/", "대시보드")
+def test_대시보드는_위_메뉴_비용이_연다() -> None:
+    """비용 화면이 생기기 전까지 대시보드가 그 자리에 있다 (LC-3344)."""
+    assert ("/cost", "비용") in NAV
 
 
 def test_화면이_열리고_조각_둘을_부른다(client: TestClient) -> None:
-    body = client.get("/").text
+    body = client.get("/cost").text
 
     assert 'hx-get="/ui/dashboard"' in body
     assert 'hx-get="/ui/dashboard/logs"' in body

@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from app import db, taxonomy
 from app.api.settings import get_connection
-from app.api.ui import NAV_GROUPS
+from app.api.ui import SETTINGS_NAV
 from app.main import app
 from app.normalize.engine import insert_normalized
 
@@ -80,8 +80,7 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
 
 
 def test_네비게이션에_직무_분류가_있다() -> None:
-    group = next(members for path, label, members in NAV_GROUPS if label == "AI 분류")
-    assert ("/taxonomy", "직무 분류") in group
+    assert ("/taxonomy", "직무 분류") in SETTINGS_NAV
 
 
 def test_화면이_열리고_네비게이션이_켜진다(client: TestClient) -> None:

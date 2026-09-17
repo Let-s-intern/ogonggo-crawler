@@ -1,8 +1,8 @@
-{# 설정의 껍데기. 하위 메뉴는 다른 묶음처럼 헤더 두 번째 줄이 그린다 (`app/api/ui.py` 의
-   `SETTINGS_NAV`). 내용은 자식이 채운다 #}
+{# 설정 하위 화면의 껍데기. 왼쪽 목록은 `base.html` 이 그린다 (`app/api/ui.py` 의
+   `SETTINGS_SECTIONS`). 제목은 왼쪽 목록에서 켜진 이름이고, 내용은 자식이 채운다 #}
 {% extends "base.html" %}
-{% block title %}설정{% endblock %}
-{% block heading %}설정{% endblock %}
+{% block title %}{{ current_label }}{% endblock %}
+{% block heading %}{{ current_label }}{% endblock %}
 {% block content %}
 {% block section %}{% endblock %}
 {% endblock %}

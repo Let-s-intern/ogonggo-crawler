@@ -67,13 +67,13 @@ def keyed(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestClie
         app.dependency_overrides.clear()
 
 
-def test_오공고_전송은_따로_열리는_화면이다(client: TestClient) -> None:
-    """위 네비게이션에 바로 얹힌다. 하위 메뉴가 없다 (`app/api/ui.py` 의 `NAV`)."""
+def test_오공고_전송은_설정_안의_화면이다(client: TestClient) -> None:
+    """설정의 기본 무리에 있다 (`app/api/ui.py` 의 `SETTINGS_SECTIONS`, 2026-09-17)."""
     body = client.get("/deliver").text
 
+    assert '<a href="/settings" aria-current="page"' in body
     assert '<a href="/deliver" aria-current="page"' in body
     assert 'hx-get="/ui/deliver"' in body
-    assert 'aria-label="하위 메뉴"' not in body
 
 
 def test_무엇을_보내고_보내지_않는지_적고_키는_받지_않는다(client: TestClient) -> None:

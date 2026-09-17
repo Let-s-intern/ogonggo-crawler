@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "macros.html" import empty %}
-{% block title %}대시보드{% endblock %}
-{% block heading %}대시보드{% endblock %}
+{% block title %}비용{% endblock %}
+{% block heading %}비용{% endblock %}
 {% block content %}
 <div id="dashboard-summary" hx-get="/ui/dashboard" hx-trigger="load" hx-swap="innerHTML">
   {{ empty("불러오는 중") }}

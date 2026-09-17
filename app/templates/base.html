@@ -231,14 +231,14 @@
                 class="mt-0 border-slate-300 bg-white text-slate-600 hover:bg-slate-50">로그아웃</button>
       </form>
     </div>
-    {# 묶음 안의 화면들. 묶이지 않은 화면(대시보드·오공고 전송)에는 이 줄이 없다 #}
+    {# 사이트 묶음의 탭. 사이트 화면 하나로 합쳐지기 전까지만 있다 (`app/api/ui.py` 의 `SITE_NAV`) #}
     {% if group_nav %}
     <div class="border-t border-slate-100">
       <nav aria-label="하위 메뉴" class="mx-auto max-w-7xl px-6">
         <ul class="flex flex-wrap gap-x-5">
           {% for path, label in group_nav %}
           <li>
-            {% if path == group_active %}
+            {% if path == current %}
             <a href="{{ path }}" aria-current="page"
                class="-mb-px block border-b-2 border-slate-900 py-2.5 text-sm font-semibold text-slate-900">{{ label }}</a>
             {% else %}
@@ -269,10 +269,40 @@
      여기를 채운다. 비어 있으면 아무것도 차지하지 않는다 #}
   <div id="global-error" role="alert"></div>
 
+  {# 설정은 왼쪽 목록과 오른쪽 내용 두 칸이다. 좁은 화면에서는 목록이 위로 올라간다
+     (`app/api/ui.py` 의 `SETTINGS_SECTIONS`) #}
+  {% if side_nav %}
+  <div class="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-6 md:flex-row">
+    <nav aria-label="설정 메뉴" class="shrink-0 md:w-48">
+      <h2 class="mb-3 text-xl font-bold tracking-tight text-slate-900">설정</h2>
+      {% for section, items in side_nav %}
+      <p class="mb-1 mt-4 px-3 text-xs font-medium text-slate-400 first-of-type:mt-0">{{ section }}</p>
+      <ul class="flex flex-wrap gap-1 md:flex-col">
+        {% for path, label in items %}
+        <li>
+          {% if path == current %}
+          <a href="{{ path }}" aria-current="page"
+             class="block rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-slate-200">{{ label }}</a>
+          {% else %}
+          <a href="{{ path }}"
+             class="block rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">{{ label }}</a>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% endfor %}
+    </nav>
+    <main class="min-w-0 flex-1">
+      <h3 class="mb-5 text-lg font-bold tracking-tight text-slate-900">{% block heading %}{% endblock %}</h3>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  {% else %}
   <main class="mx-auto max-w-7xl px-6 py-6">
-    <h2 class="mb-5 text-xl font-bold tracking-tight text-slate-900">{% block heading %}{% endblock %}</h2>
-    {% block content %}{% endblock %}
+    <h2 class="mb-5 text-xl font-bold tracking-tight text-slate-900">{{ self.heading() }}</h2>
+    {{ self.content() }}
   </main>
+  {% endif %}
 
   <footer class="mx-auto max-w-7xl border-t border-slate-200 px-6 py-4">
     {# HTMX 가 붙었는지 화면에서 바로 보이는 자리. 로드되면 이 문장이 갈린다 #}

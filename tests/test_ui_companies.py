@@ -35,7 +35,7 @@ from fastapi.testclient import TestClient
 
 from app import companies, db
 from app.api.settings import get_connection
-from app.api.ui import NAV_GROUPS
+from app.api.ui import SETTINGS_NAV
 from app.main import app
 from app.normalize.engine import insert_normalized
 from app.storage import s3
@@ -95,13 +95,12 @@ def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestCli
 
 
 def test_네비게이션에_회사_로고가_있다() -> None:
-    """개별 화면이 아니라 `공고` 묶음 안에 있다 (`app/api/ui.py` 의 `NAV_GROUPS`).
+    """설정의 왼쪽 목록에 있다 (`app/api/ui.py` 의 `SETTINGS_SECTIONS`, 2026-09-17).
 
     이름도 `회사` 에서 `회사 로고` 로 바뀌었다 — 이 화면이 실제로 하는 일이 로고 관리다
     (2026-08-29 결정).
     """
-    data_group = next(members for path, label, members in NAV_GROUPS if label == "공고")
-    assert ("/companies", "회사 로고") in data_group
+    assert ("/companies", "회사 로고") in SETTINGS_NAV
 
 
 def test_회사_화면이_열리고_네비게이션이_켜진다(client: TestClient) -> None:
