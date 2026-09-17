@@ -1,7 +1,9 @@
-"""사이트 추가. 목록 주소와 회사 이름만 받아 등록 → 시험 수집 → 자동 수집 시작까지 창 하나에서 한다.
+"""사이트 추가. 목록 주소와 회사 이름, 수집 주기만 받고 나머지는 요청 밖에서 돈다.
 
 2026-09-17 결정(LC-3344). 예전에는 크롤러 등록 · 테스트 실행 · 워크플로우 승격이 세 화면에 흩어져
-있어 무엇을 순서대로 눌러야 하는지 알 수 없었다.
+있어 무엇을 순서대로 눌러야 하는지 알 수 없었다. 한 창으로 모은 뒤에도 등록과 시험 수집을 창에서
+기다려야 해서 한 번에 한 곳밖에 넣지 못했다. 이제 누르면 곧바로 돌아오고, 시험 수집이 되면 자동
+수집까지 시작한다. 진행과 실패는 사이트 목록 맨 위에 보인다 (`app/api/site_adds.py`).
 
 각 단계는 이미 있는 경로를 그대로 부른다 — 등록은 `crawlers.create_crawler`(목록 주소로 상세 경로를
 스스로 찾는 판정 포함), 시험 수집은 `crawlers.test_run`, 시작은 `workflows.promote` 다. 화면 전용
@@ -9,24 +11,26 @@
 
 ## 못 찾았을 때
 
-실제 사이트 다섯 곳에서 목록 주소만으로 끝까지 된 곳이 없었다 (2026-09-17 측정). 그래서 실패가
-드문 경우가 아니라 흔한 경우로 보고, 무엇까지 됐는지와 다음에 할 일을 같은 창에 둔다.
+목록 줄의 `다시 찾기` 가 이 창을 다시 연다. 무엇이 안 됐는지와 두 갈래를 둔다.
 
-- 공고 하나의 주소로 다시 찾기: 같은 목록 주소와 그 공고 주소로 새로 등록한다. 방금 만든 초안
+- 공고 하나의 주소로 다시 찾기: 같은 목록 주소와 그 공고 주소로 새로 건다. 방금 만든 초안
   크롤러는 지운다 — 초안은 워크플로우가 없어 수집한 공고도 없다
 - 셀렉터 직접 고치기: 시험 실행 화면으로 보낸다
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sqlite3
-from typing import Annotated
+from collections.abc import Callable, Coroutine
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from app.api import crawlers, workflows
+from app import db
+from app.api import crawlers, site_adds, workflows
 from app.api.ui import render
 from app.api.ui_crawlers import error_detail
 from app.api.ui_sites import PROBLEMS, UNKNOWN_PROBLEM
@@ -48,6 +52,7 @@ INTERVALS: tuple[tuple[int, str], ...] = (
     (360, "6시간마다"),
     (1440, "하루에 한 번"),
 )
+DEFAULT_INTERVAL = 60
 
 # 등록이 거절한 사유를 쉬운 말로. 없는 사유는 원래 문장을 그대로 쓴다
 REGISTER_PROBLEMS: dict[str, str] = {
@@ -69,8 +74,8 @@ def _form(request: Request, **context: object) -> HTMLResponse:
 
 @router.get("/ui/sites/new", response_class=HTMLResponse)
 def site_add_form(request: Request) -> HTMLResponse:
-    """사이트 추가 창의 첫 화면. 목록 주소와 회사 이름만 받는다."""
-    return _form(request, step="form", list_url="", company="")
+    """사이트 추가 창의 첫 화면. 목록 주소와 회사 이름, 수집 주기만 받는다."""
+    return _form(request, step="form", list_url="", company="", interval=DEFAULT_INTERVAL)
 
 
 def _drop_draft(conn: sqlite3.Connection, crawler_id: int) -> None:
@@ -88,6 +93,99 @@ def _drop_draft(conn: sqlite3.Connection, crawler_id: int) -> None:
         logger.warning("사이트 추가: 초안 크롤러 %s 를 지우지 못했다: %s", crawler_id, exc.detail)
 
 
+def get_add_launcher() -> Callable[[Coroutine[Any, Any, None]], None]:
+    """사이트 추가를 요청 밖에서 돌린다. 테스트는 이 의존성을 갈아끼운다."""
+
+    def launch(coro: Coroutine[Any, Any, None]) -> None:
+        site_adds.keep(asyncio.get_running_loop().create_task(coro))
+
+    return launch
+
+
+def get_add_connect() -> Callable[[], sqlite3.Connection]:
+    """요청 밖 작업이 쓸 연결을 연다. 요청의 연결은 응답과 함께 닫힌다."""
+    return db.connect
+
+
+def _fail(add: site_adds.SiteAdd, problem: str, technical: str) -> None:
+    add.state = site_adds.FAILED
+    add.problem = problem
+    add.technical = technical
+    logger.info("사이트 추가 실패: %s %s — %s", add.company, add.list_url, technical or problem)
+
+
+async def _work(
+    add: site_adds.SiteAdd,
+    connect: Callable[[], sqlite3.Connection],
+    generate: crawlers.GenerateFn,
+    discover: crawlers.DiscoverFn,
+    fetcher: FetchPolicy,
+    scheduler: WorkflowScheduler,
+) -> None:
+    """등록 → 시험 수집 → 자동 수집 시작. 어디서 멈췄는지를 `add` 에 남긴다."""
+    async with site_adds.slot():
+        conn = connect()
+        try:
+            add.state = site_adds.FINDING
+            try:
+                created = await crawlers.create_crawler(
+                    crawlers.CrawlerCreate(
+                        list_url=add.list_url,
+                        detail_url=add.detail_url,
+                        default_company=add.company,
+                    ),
+                    conn,
+                    generate,
+                    discover,
+                )
+            except HTTPException as exc:
+                detail = error_detail(exc)
+                _fail(
+                    add,
+                    REGISTER_PROBLEMS.get(detail.get("reason", ""), detail.get("message", "")),
+                    detail.get("message", ""),
+                )
+                return
+
+            add.crawler_id = created.id
+            add.state = site_adds.TESTING
+            try:
+                run = await crawlers.test_run(created.id, conn, fetcher, TRY_LIMIT, "")
+            except HTTPException as exc:
+                _fail(
+                    add,
+                    "셀렉터는 만들었지만 시험 수집을 돌리지 못했어요",
+                    error_detail(exc).get("message", ""),
+                )
+                return
+            add.matched, add.success_count = run.matched, run.success_count
+            if run.status != "success" or run.success_count == 0:
+                _fail(add, PROBLEMS.get(run.error_class or "", UNKNOWN_PROBLEM), run.error_message)
+                return
+
+            try:
+                workflows.promote(
+                    workflows.WorkflowCreate(
+                        crawler_id=created.id,
+                        name=add.company,
+                        interval_minutes=add.interval_minutes,
+                    ),
+                    conn,
+                    scheduler,
+                )
+            except HTTPException as exc:
+                _fail(add, "자동 수집을 시작하지 못했어요", error_detail(exc).get("message", ""))
+                return
+            # 사이트가 됐다. 이제 사이트 목록의 한 줄로 보인다
+            site_adds.forget(add.id)
+            logger.info("사이트 추가: %s 자동 수집을 시작했다", add.company)
+        except Exception as exc:  # noqa: BLE001 — 요청 밖이라 여기서 잡지 않으면 아무도 모른다
+            logger.exception("사이트 추가: %s 에서 예상하지 못한 오류", add.list_url)
+            _fail(add, UNKNOWN_PROBLEM, f"{type(exc).__name__}: {exc}")
+        finally:
+            conn.close()
+
+
 @router.post("/ui/sites/new", response_class=HTMLResponse)
 async def site_add_try(
     request: Request,
@@ -95,14 +193,23 @@ async def site_add_try(
     generate: Annotated[crawlers.GenerateFn, Depends(crawlers.get_generator)],
     discover: Annotated[crawlers.DiscoverFn, Depends(crawlers.get_discoverer)],
     fetcher: Annotated[FetchPolicy, Depends(crawlers.get_crawl_fetcher)],
+    scheduler: Annotated[WorkflowScheduler, Depends(workflows.get_workflow_scheduler)],
+    launch: Annotated[Callable[[Coroutine[Any, Any, None]], None], Depends(get_add_launcher)],
+    connect: Annotated[Callable[[], sqlite3.Connection], Depends(get_add_connect)],
     list_url: Annotated[str, Form()] = "",
     company: Annotated[str, Form()] = "",
     detail_url: Annotated[str, Form()] = "",
-    replace_crawler_id: Annotated[str, Form()] = "",
+    interval_minutes: Annotated[int, Form()] = DEFAULT_INTERVAL,
+    replace_add_id: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    """등록하고 곧바로 공고 몇 건을 시험 수집한다. 결과에 따라 시작 또는 다시 찾기로 이어진다."""
+    """사이트 추가를 걸고 곧바로 돌아온다. 창을 닫거나 다른 곳을 또 걸어도 된다."""
     list_url, company, detail_url = list_url.strip(), company.strip(), detail_url.strip()
-    kept = {"list_url": list_url, "company": company, "detail_url": detail_url}
+    kept = {
+        "list_url": list_url,
+        "company": company,
+        "detail_url": detail_url,
+        "interval": interval_minutes,
+    }
     if not list_url.startswith(("http://", "https://")) or not company:
         return _form(
             request,
@@ -113,92 +220,61 @@ async def site_add_try(
     if detail_url and not detail_url.startswith(("http://", "https://")):
         return _form(
             request,
-            step="notfound",
+            step="form",
             error="공고 주소는 http:// 나 https:// 로 시작해야 합니다",
-            crawler_id=replace_crawler_id,
             **kept,
         )
-    if replace_crawler_id.strip().isdigit():
-        _drop_draft(conn, int(replace_crawler_id))
+    if replace_add_id.strip().isdigit():
+        old = site_adds.forget(int(replace_add_id))
+        if old is not None and old.crawler_id is not None:
+            _drop_draft(conn, old.crawler_id)
 
-    try:
-        created = await crawlers.create_crawler(
-            crawlers.CrawlerCreate(
-                list_url=list_url, detail_url=detail_url, default_company=company
-            ),
-            conn,
-            generate,
-            discover,
-        )
-    except HTTPException as exc:
-        detail = error_detail(exc)
+    allowed = {minutes for minutes, _ in INTERVALS}
+    add = site_adds.new(
+        list_url,
+        company,
+        detail_url,
+        interval_minutes if interval_minutes in allowed else DEFAULT_INTERVAL,
+    )
+    launch(_work(add, connect, generate, discover, fetcher, scheduler))
+    response = _form(request, step="queued", add=add)
+    response.headers["HX-Trigger"] = "site-added"
+    return response
+
+
+@router.get("/ui/sites/new/{add_id}", response_class=HTMLResponse)
+def site_add_retry_form(request: Request, add_id: int) -> HTMLResponse:
+    """찾지 못한 사이트 추가를 다시 여는 창. 무엇이 안 됐는지와 공고 주소로 다시 찾기를 둔다."""
+    add = site_adds.get(add_id)
+    if add is None:
         return _form(
             request,
-            step="notfound",
-            problem=REGISTER_PROBLEMS.get(detail.get("reason", ""), detail.get("message", "")),
-            technical=detail.get("message", ""),
-            crawler_id="",
-            **kept,
+            step="form",
+            error="그 사이트 추가 기록이 없어요. 서버가 다시 떴을 수 있어요. 처음부터 넣어 주세요",
+            list_url="",
+            company="",
+            interval=DEFAULT_INTERVAL,
         )
-
-    try:
-        run = await crawlers.test_run(created.id, conn, fetcher, TRY_LIMIT, "")
-    except HTTPException as exc:
-        detail = error_detail(exc)
-        return _form(
-            request,
-            step="notfound",
-            problem="셀렉터는 만들었지만 시험 수집을 돌리지 못했어요",
-            technical=detail.get("message", ""),
-            crawler_id=created.id,
-            created=created,
-            **kept,
-        )
-
-    if run.status == "success" and run.success_count > 0:
-        return _form(request, step="found", crawler_id=created.id, created=created, run=run, **kept)
     return _form(
         request,
         step="notfound",
-        problem=PROBLEMS.get(run.error_class or "", UNKNOWN_PROBLEM),
-        technical=run.error_message,
-        crawler_id=created.id,
-        created=created,
-        run=run,
-        **kept,
+        add=add,
+        list_url=add.list_url,
+        company=add.company,
+        detail_url=add.detail_url,
+        interval=add.interval_minutes,
     )
 
 
-@router.post("/ui/sites/new/{crawler_id}/start", response_class=HTMLResponse)
-def site_add_start(
-    request: Request,
-    crawler_id: int,
-    conn: Annotated[sqlite3.Connection, Depends(workflows.get_connection)],
-    scheduler: Annotated[WorkflowScheduler, Depends(workflows.get_workflow_scheduler)],
-    name: Annotated[str, Form()] = "",
-    interval_minutes: Annotated[int, Form()] = 30,
+@router.post("/ui/sites/new/{add_id}/dismiss", response_class=HTMLResponse)
+def site_add_dismiss(
+    add_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
 ) -> HTMLResponse:
-    """시험 수집을 통과한 사이트의 자동 수집을 시작한다."""
-    try:
-        created = workflows.promote(
-            workflows.WorkflowCreate(
-                crawler_id=crawler_id, name=name.strip(), interval_minutes=interval_minutes
-            ),
-            conn,
-            scheduler,
-        )
-    except HTTPException as exc:
-        return _form(
-            request,
-            step="notfound",
-            problem="자동 수집을 시작하지 못했어요",
-            technical=error_detail(exc).get("message", ""),
-            crawler_id=crawler_id,
-            list_url="",
-            company="",
-            detail_url="",
-        )
-    response = _form(request, step="started", workflow=created)
-    # 사이트 목록을 다시 부르게 한다
-    response.headers["HX-Trigger"] = "site-added"
-    return response
+    """찾지 못한 사이트 추가를 목록에서 지운다. 만들다 만 초안도 같이 지운다."""
+    add = site_adds.get(add_id)
+    if add is not None and not add.running:
+        site_adds.forget(add_id)
+        if add.crawler_id is not None:
+            _drop_draft(conn, add.crawler_id)
+    return HTMLResponse("", headers={"HX-Trigger": "site-added"})

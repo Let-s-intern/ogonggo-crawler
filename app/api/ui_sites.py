@@ -26,7 +26,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from app.api import crawlers, workflows
+from app.api import crawlers, site_adds, workflows
 from app.api.ui import render
 from app.api.ui_crawlers import error_detail
 from app.api.ui_tests import repair_panel
@@ -87,6 +87,7 @@ def site_list_fragment(
         request,
         "fragments/site_list.html",
         rows=[(card, _problem(conn, card)) for card in cards],
+        adds=site_adds.listed(),
     )
 
 

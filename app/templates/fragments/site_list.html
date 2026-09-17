@@ -1,5 +1,34 @@
 {# 사이트 목록 (`app/api/ui_sites.py` 의 `site_list_fragment`). 한 줄에 상태·새 공고·마지막 수집만
-   두고, 조작은 오른쪽 패널로 옮겼다. 문제가 있는 사이트만 줄 끝에 `고치기` 가 붙는다 #}
+   두고, 조작은 오른쪽 패널로 옮겼다. 문제가 있는 사이트만 줄 끝에 `고치기` 가 붙는다.
+
+   맨 위는 추가 중인 사이트다 (`app/api/site_adds.py`). 돌고 있는 것이 있으면 3초마다 목록을 다시
+   부르고, 다 끝나면 멈춘다 #}
+{% if adds %}
+<ul class="divide-y divide-slate-100 border-b border-slate-200 bg-slate-50">
+  {% for add in adds %}
+  <li class="site-add-row flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
+    <span class="h-2.5 w-2.5 shrink-0 rounded-full {% if add.running %}animate-pulse bg-sky-500{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>
+    <span class="min-w-0 sm:w-56">
+      <span class="block truncate font-medium text-slate-900">{{ add.company }}</span>
+      <span class="block truncate text-xs text-slate-400">{{ add.list_url }}</span>
+    </span>
+    <span class="min-w-0 flex-1 whitespace-normal text-sm {% if add.running %}text-sky-800{% else %}text-amber-800{% endif %}">
+      {% if add.running %}추가하는 중 · {% endif %}{{ add.state_word }}
+    </span>
+    {% if not add.running %}
+    <span class="flex shrink-0 gap-2">
+      <button type="button" data-modal-open hx-get="/ui/sites/new/{{ add.id }}" hx-target="#app-modal-body" hx-swap="innerHTML"
+              class="mt-0 border-amber-600 bg-amber-600 text-white hover:bg-amber-500">다시 찾기</button>
+      <button type="button" hx-post="/ui/sites/new/{{ add.id }}/dismiss" hx-swap="none" class="mt-0">지우기</button>
+    </span>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% if adds | selectattr("running") | list %}
+<div hidden hx-get="/ui/sites" hx-trigger="every 3s" hx-target="#site-list" hx-swap="innerHTML"></div>
+{% endif %}
+{% endif %}
 <ul class="divide-y divide-slate-100">
   {% for card, problem in rows %}
   {% set item = card.item %}
@@ -30,8 +59,10 @@
     </button>
   </li>
   {% else %}
+  {% if not adds %}
   <li class="px-4 py-6 text-sm text-slate-500">
     아직 사이트가 없습니다. 오른쪽 위 <span class="font-medium">+ 사이트 추가</span>로 채용공고 목록 페이지를 등록합니다
   </li>
+  {% endif %}
   {% endfor %}
 </ul>
