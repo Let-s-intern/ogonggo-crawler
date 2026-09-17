@@ -15,10 +15,10 @@
 </form>
 <p class="mt-2 text-sm">
   {% if state.all_features %}
-  <span class="state-ok">● 연결됨</span> <span class="text-slate-600">· 분류와 셀렉터 생성·수정이 {{ state.model }} 로 돕니다</span>
+  <span class="state-ok">● 연결됨</span> <span class="text-slate-600">· 분류·셀렉터 생성·수정·이미지 읽기가 {{ state.model }} 로 돕니다</span>
   {% elif state.using %}
   <span class="state-warn">● 일부만 DeepSeek</span> <span class="text-slate-600">· {{ state.using | map(attribute="label") | join(", ") }}</span>
   {% else %}
-  <span class="state-idle">● DeepSeek 를 쓰지 않는 중</span> <span class="text-slate-600">· 키를 넣으면 분류와 셀렉터 생성·수정을 DeepSeek 로 바꿉니다</span>
+  <span class="state-idle">● DeepSeek 를 쓰지 않는 중</span> <span class="text-slate-600">· 키를 넣으면 분류·셀렉터 생성·수정·이미지 읽기를 DeepSeek 로 바꿉니다</span>
   {% endif %}
 </p>

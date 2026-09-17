@@ -8,7 +8,7 @@ AI 를 부르지 않는다. 미리 보기·연결은 가짜로 바꿔 끼운다.
 | 항목을 더하고, 끄고, 지운다 | 화면에서 항목을 관리할 수 없다 |
 | 미리 보기는 저장하지 않는다 | 보기만 했는데 항목이 생긴다 |
 | 다시 채우기는 시작만 하고 진행을 보여 준다 | 요청이 수백 건 호출을 기다리다 끊긴다 |
-| DeepSeek 키 하나로 분류와 셀렉터 생성·수정을 지정한다 | 키를 넣고도 다른 AI 로 돈다 |
+| DeepSeek 키 하나로 분류·셀렉터 생성·수정·이미지 읽기를 지정한다 | 키를 넣고도 다른 AI 로 돈다 |
 """
 
 from __future__ import annotations
@@ -149,7 +149,7 @@ def test_DeepSeek_키가_비면_저장하지_않는다(client: TestClient) -> No
     assert "API 키가 비었습니다" in client.post("/ui/llm/quick", data={"api_key": " "}).text
 
 
-def test_DeepSeek_키_하나로_분류와_셀렉터_생성_수정을_지정한다(
+def test_DeepSeek_키_하나로_분류_셀렉터_이미지_읽기를_지정한다(
     client: TestClient, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def fake_models(conn: Any, provider: str, settings: Any = None) -> tuple[list[str], str]:
@@ -164,7 +164,7 @@ def test_DeepSeek_키_하나로_분류와_셀렉터_생성_수정을_지정한�
     features = {
         view.feature: (view.provider, view.model) for view in llm_store.read_config(conn).features
     }
-    for feature in ("classify", "selector_generate", "selector_repair"):
+    for feature in ("classify", "selector_generate", "selector_repair", "image_read"):
         assert features[feature] == ("deepseek", "deepseek-flash")
 
 
