@@ -158,11 +158,20 @@ def test_표에_없는_값은_조건을_걸지_않는다(client: TestClient) -> 
 
 
 def test_필터_폼에_여섯_조건만_있다(client: TestClient) -> None:
+    """오공고 전송 여부 선택은 목록 보기 칩(`보냄`)으로 바뀌었다 (2026-09-17). 주소로는 받는다."""
     html = client.get("/ui/review/filters").text
 
-    for name in ("q", "workflow_id", "delivered", "status", "job_field", "dup"):
+    for name in ("view", "q", "workflow_id", "status", "job_field", "dup"):
         assert f'name="{name}"' in html
-    for removed in ("company_name", "crawled_from", "normalized_from", "empty", "has_suggestion"):
+    for removed in (
+        "delivered",
+        "company_name",
+        "crawled_from",
+        "normalized_from",
+        "empty",
+        "has_suggestion",
+    ):
         assert f'name="{removed}"' not in html
     assert "모집 중" in html and "마감일 없음" in html
-    assert "전송함" in html and "전송 안 함" in html
+    for label in ("오늘 들어옴", "확인 필요", "보냄", "전체"):
+        assert label in html

@@ -2,6 +2,11 @@
 {% block title %}공고 목록{% endblock %}
 {% block heading %}공고 목록{% endblock %}
 {% block content %}
+<div id="review-summary" class="mb-4" hx-get="/ui/review/summary" hx-trigger="load, jobs-deleted from:body"
+     hx-swap="innerHTML">
+  <p class="text-sm text-slate-500">숫자를 불러오는 중</p>
+</div>
+
 <div class="card px-4 py-3">
   <div id="review-filters" hx-get="/ui/review/filters" hx-trigger="load" hx-swap="innerHTML">
     <p class="text-sm text-slate-500">조회 조건을 불러오는 중</p>
@@ -10,7 +15,7 @@
 
 {# 첫 조회만 여기서 한다. 지운 뒤 다시 부르는 것은 조회 조건 폼이 맡는다 — 조건을 아는 쪽이
    부르지 않으면 지우고 나서 화면이 전체 목록으로 되돌아간다 #}
-<div id="review-table" class="mt-3" hx-get="/ui/review" hx-trigger="load" hx-swap="innerHTML">
+<div id="review-table" class="mt-3" hx-get="/ui/review?view=today" hx-trigger="load" hx-swap="innerHTML">
   <p class="text-sm text-slate-500">목록을 불러오는 중</p>
 </div>
 
@@ -65,6 +70,17 @@
         Array.prototype.forEach.call(rows(), function (box) { box.checked = target.checked; });
       }
       sync();
+    });
+
+    // 숫자 카드를 누르면 조회 조건의 같은 칩을 켠다. 폼이 `change` 로 표를 다시 부른다
+    document.body.addEventListener('click', function (evt) {
+      var card = evt.target.closest && evt.target.closest('[data-view]');
+      if (!card) { return; }
+      var radio = document.querySelector(
+        '#review-filter-form input[name="view"][value="' + card.getAttribute('data-view') + '"]');
+      if (!radio) { return; }
+      radio.checked = true;
+      radio.dispatchEvent(new Event('change', { bubbles: true }));
     });
 
     // 표가 갈려 들어오면 체크는 전부 풀린 상태다. 숫자와 단추를 그 상태에 맞춘다

@@ -1,5 +1,8 @@
 """공고 목록 화면. 수집한 공고를 좁혀 보고, 한 건을 오른쪽 패널로 열고, 잘못 들어온 것을 지운다.
 
+위 메뉴의 첫 화면이다 (2026-09-17, LC-3344). 숫자 카드 셋(오늘 들어옴·확인 필요·오늘 보냄)과
+수집이 실패한 사이트 알림이 목록 위에 있고, 목록은 칩으로 오늘 들어옴·확인 필요·보냄·전체를 고른다.
+
 크롤러에서는 사람이 값을 고치지 않는다 (2026-09-15 결정). 예전의 수정 모달·보정·제안 수락과
 완성 공고 화면을 이 한 목록으로 합쳤다. 상세 패널은 오공고로 보내는 칸을 빈 칸까지 모두 보이고,
 보냈는지만 적는다 — 오공고에 들어간 뒤의 상태는 크롤러가 알 수 없다.
@@ -26,20 +29,31 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.api import crawlers
 from app.api.review_filter import (
     DEADLINE_STATES,
-    DELIVERY_STATES,
     DUP_CRITERIA,
     DUP_GROUP_PREVIEW,
     DUP_LABELS,
     DUP_NOTES,
+    FAILED_SQL,
     SENT_SQL,
+    SHORT_BODY_SQL,
+    UNCLASSIFIED_SQL,
+    UNREADY_SQL,
+    VIEW_ALL,
+    VIEW_CHECK,
+    VIEW_SENT,
+    VIEW_TODAY,
+    VIEWS,
     JobFilter,
     count,
     dup_columns,
     dup_groups,
+    failing_sites,
     fill_rates,
     filter_sql,
     order_clause,
     read_filter,
+    sent_today,
+    view_counts,
     workflow_label,
 )
 from app.api.ui import display_zone, render, render_page
@@ -68,7 +82,11 @@ _COLUMNS = f"""
            n.recruitment_end_at AS recruitment_end_at,
            r.crawled_at AS crawled_at,
            w.name AS workflow_name,
-           {SENT_SQL} AS sent
+           {SENT_SQL} AS sent,
+           {FAILED_SQL} AS delivery_failed,
+           {UNREADY_SQL} AS unready,
+           {UNCLASSIFIED_SQL} AS unclassified,
+           {SHORT_BODY_SQL} AS short_body
 """
 
 _FROM = """
@@ -144,6 +162,7 @@ def review_table_fragment(
             "d_day": d_day(row["recruitment_end_at"]),
             "dup_group": group_numbers.get(str(row["dup_key"])) if picked.dup else None,
             "dup_size": int(row["dup_size"]) if picked.dup else 0,
+            "marks": row_marks(row),
         }
         for row in rows
     ]
@@ -170,6 +189,57 @@ def review_table_fragment(
         delete_criteria=criteria,
         # 워크플로우를 골랐을 때만 그 사이트의 수집분을 통째로 비우는 길이 열린다
         workflow=workflow_label(conn, picked.workflow_id),
+        view=picked.view or VIEW_ALL,
+        view_label=VIEWS.get(picked.view, VIEWS[VIEW_ALL]),
+        empty_hint=_EMPTY_HINTS.get(picked.view, _EMPTY_HINTS[""]),
+    )
+
+
+# 목록이 비었을 때의 한 줄. 보기마다 비는 이유가 다르다
+_EMPTY_HINTS: dict[str, str] = {
+    VIEW_TODAY: "오늘 들어온 공고가 없다. 사이트 화면에서 수집이 돌고 있는지 확인한다",
+    VIEW_CHECK: "확인이 필요한 공고가 없다",
+    VIEW_SENT: "아직 오공고로 보낸 공고가 없다",
+    "": (
+        "조건에 맞는 공고가 없다. 조회 조건을 넓히거나, 워크플로우가 한 번이라도 실행됐는지"
+        " 확인한다"
+    ),
+}
+
+
+def row_marks(job: sqlite3.Row) -> list[tuple[str, str]]:
+    """행에 붙일 상태 표시 (낱말, 색). 보낸 공고는 `오공고 보냄` 하나다.
+
+    AI 분류가 안 된 공고는 필수 칸도 당연히 비어 있어 `필수 칸 빔` 을 겹쳐 적지 않는다.
+    """
+    if job["sent"]:
+        return [("오공고 보냄", "ok")]
+    marks: list[tuple[str, str]] = []
+    if job["delivery_failed"]:
+        marks.append(("전송 실패", "bad"))
+    if job["unclassified"]:
+        marks.append(("AI 분류 안 됨", "warn"))
+    elif job["unready"]:
+        marks.append(("필수 칸 빔", "warn"))
+    if job["short_body"]:
+        marks.append(("본문 짧음", "warn"))
+    return marks or [("보내기 전", "idle")]
+
+
+@router.get("/ui/review/summary", response_class=HTMLResponse)
+def review_summary_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+) -> HTMLResponse:
+    """목록 위 숫자 카드 셋과 수집 실패 알림. 카드를 누르면 그 보기로 목록이 바뀐다."""
+    counts = view_counts(conn)
+    return render(
+        request,
+        "fragments/review_summary.html",
+        today=counts[VIEW_TODAY],
+        check=counts[VIEW_CHECK],
+        sent_today=sent_today(conn),
+        failing=failing_sites(conn),
     )
 
 
@@ -186,7 +256,9 @@ def review_filters_fragment(
         workflows=workflows,
         job_majors=[major.name for major in list_majors(conn, enabled_only=True)],
         deadline_states=DEADLINE_STATES,
-        delivery_states=DELIVERY_STATES,
+        views=VIEWS,
+        view_counts=view_counts(conn),
+        default_view=VIEW_TODAY,
         dup_criteria=DUP_CRITERIA,
         dup_labels=DUP_LABELS,
     )

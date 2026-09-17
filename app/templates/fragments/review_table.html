@@ -10,7 +10,7 @@
 
 <div class="flex flex-wrap items-center justify-between gap-2">
   <p class="text-sm text-slate-600">
-    전체 {{ total }}건 중 {% if total %}{{ first_index }}-{{ last_index }}번째{% else %}0건{% endif %}
+    {{ view_label }} {{ total }}건 중 {% if total %}{{ first_index }}-{{ last_index }}번째{% else %}0건{% endif %}
     · {{ page }} / {{ total_pages }} 페이지
   </p>
 </div>
@@ -119,7 +119,7 @@
         <th scope="col">직군 · 직무</th>
         <th scope="col">조건</th>
         <th scope="col">마감</th>
-        <th scope="col">오공고</th>
+        <th scope="col">상태</th>
       </tr>
     </thead>
     <tbody>
@@ -156,13 +156,15 @@
           {% if item.d_day %}<span class="chip {% if item.d_day == '마감' %}chip-idle{% else %}chip-warn{% endif %}">{{ item.d_day }}</span>{% endif %}
         </td>
         <td>
-          {% if job.sent %}<span class="chip chip-ok">전송함</span>{% else %}<span class="chip chip-idle">전송 안 함</span>{% endif %}
+          <span class="flex flex-wrap gap-1">
+            {% for word, tone in item.marks %}<span class="chip chip-{{ tone }}">{{ word }}</span>{% endfor %}
+          </span>
         </td>
       </tr>
       {% else %}
       <tr>
         <td colspan="{{ 7 if dup_picked else 6 }}" class="cell-text py-6 text-slate-500">
-          조건에 맞는 공고가 없다. 조회 조건을 넓히거나, 워크플로우가 한 번이라도 실행됐는지 확인한다
+          {{ empty_hint }}
         </td>
       </tr>
       {% endfor %}

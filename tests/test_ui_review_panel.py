@@ -115,7 +115,7 @@ def test_공고_목록_화면이_조건과_표_조각을_부른다(client: TestC
 
     assert "<title>공고 목록" in body
     assert 'hx-get="/ui/review/filters"' in body
-    assert 'hx-get="/ui/review"' in body
+    assert 'hx-get="/ui/review?view=today"' in body
     assert '<dialog id="app-panel"' in body
 
 
@@ -127,11 +127,11 @@ def test_옛_주소는_공고_목록으로_간다(client: TestClient, old: str) 
     assert response.headers["location"] == "/review"
 
 
-def test_표에_오공고_전송_여부가_칩으로_나온다(client: TestClient) -> None:
+def test_표에_상태가_칩으로_나온다(client: TestClient) -> None:
     html = client.get("/ui/review").text
 
-    assert "전송함" in row_of(html, "AI Engineer 경력 채용")
-    assert "전송 안 함" in row_of(html, "분류 전 공고")
+    assert "오공고 보냄" in row_of(html, "AI Engineer 경력 채용")
+    assert "AI 분류 안 됨" in row_of(html, "분류 전 공고")
 
 
 def test_제목을_누르면_오른쪽_패널이_그_공고를_연다(client: TestClient) -> None:

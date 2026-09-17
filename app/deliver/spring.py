@@ -162,15 +162,18 @@ def missing(body: Mapping[str, Any]) -> list[str]:
 
 # 아직 보내지 않았거나, 실패했지만 다시 보낼 차례가 남은 공고
 _UNSENT = "(d.source_url IS NULL OR (d.status = 'failed' AND d.attempts < ?))"
-# 마감 일시가 아직 지나지 않은 공고
-_OPEN = "(n.recruitment_end_at IS NULL OR n.recruitment_end_at >= ?)"
-# 오공고가 반드시 받는 칸이 SQL 로 보기에 차 있다. 목록 밖 값은 보내기 직전에 `missing` 이 거른다
-_READY = """(trim(coalesce(n.title, '')) != ''
+# 마감 일시가 아직 지나지 않은 공고. 공고 목록의 `확인 필요` 도 같은 조건을 쓴다
+OPEN_SQL = "(n.recruitment_end_at IS NULL OR n.recruitment_end_at >= ?)"
+_OPEN = OPEN_SQL
+# 오공고가 반드시 받는 칸이 SQL 로 보기에 차 있다. 목록 밖 값은 보내기 직전에 `missing` 이 거른다.
+# 공고 목록의 `필수 칸 빔` 표시도 이 조건을 뒤집어 쓴다
+READY_SQL = """(trim(coalesce(n.title, '')) != ''
            AND trim(coalesce(n.company_name, '') || coalesce(n.parent_company_name, '')) != ''
            AND n.employment_type IS NOT NULL
            AND n.experience_type IS NOT NULL
            AND n.education_level IS NOT NULL
            AND n.recruitment_type IS NOT NULL)"""
+_READY = READY_SQL
 
 
 def pending(conn: sqlite3.Connection, limit: int, now: str) -> list[sqlite3.Row]:

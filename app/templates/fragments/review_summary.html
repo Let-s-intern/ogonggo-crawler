@@ -1,0 +1,27 @@
+{# 공고 목록 위 숫자 카드 셋과 수집 실패 알림 (`app/api/review.py` 의 `review_summary_fragment`).
+   카드를 누르면 아래 목록이 그 보기로 바뀐다 — 조회 조건 폼의 칩을 대신 누른다(`data-view`) #}
+{% if failing %}
+<a href="/workflows"
+   class="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-800 hover:bg-red-100">
+  <span class="font-semibold">{{ failing | join(", ") }}</span>
+  수집이 실패했어요. 이 사이트의 새 공고가 들어오지 않고 있습니다
+  <span class="ml-auto font-medium">사이트 보기 →</span>
+</a>
+{% endif %}
+<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+  <button type="button" data-view="today"
+          class="summary-card m-0 block rounded-lg border border-slate-200 bg-white p-4 text-left shadow-none hover:bg-slate-50">
+    <span class="block text-xs font-medium text-slate-500">오늘 들어온 공고</span>
+    <span class="mt-1 block text-2xl font-bold tabular-nums text-slate-900">{{ today }}<span class="ml-1 text-sm font-normal text-slate-400">건</span></span>
+  </button>
+  <button type="button" data-view="check"
+          class="summary-card m-0 block rounded-lg border {% if check %}border-amber-300{% else %}border-slate-200{% endif %} bg-white p-4 text-left shadow-none hover:bg-slate-50">
+    <span class="block text-xs font-medium text-slate-500">확인이 필요한 공고</span>
+    <span class="mt-1 block text-2xl font-bold tabular-nums {% if check %}text-amber-600{% else %}text-slate-900{% endif %}">{{ check }}<span class="ml-1 text-sm font-normal text-slate-400">건</span></span>
+  </button>
+  <button type="button" data-view="sent"
+          class="summary-card m-0 block rounded-lg border border-slate-200 bg-white p-4 text-left shadow-none hover:bg-slate-50">
+    <span class="block text-xs font-medium text-slate-500">오늘 오공고로 보냄</span>
+    <span class="mt-1 block text-2xl font-bold tabular-nums text-slate-900">{{ sent_today }}<span class="ml-1 text-sm font-normal text-slate-400">건</span></span>
+  </button>
+</div>
