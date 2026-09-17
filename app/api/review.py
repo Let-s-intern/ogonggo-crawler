@@ -58,6 +58,7 @@ from app.api.review_filter import (
     workflow_label,
 )
 from app.api.ui import display_zone, render, render_page
+from app.normalize.engine import read_raw
 from app.taxonomy import list_majors
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
@@ -300,6 +301,8 @@ def render_panel(
         return render(request, "fragments/job_panel.html", job=None, normalized_id=normalized_id)
     edited = job_detail.overrides(conn, int(row["raw_job_id"]), int(row["part"]))
     classified = job_detail.classification(conn, row)
+    _, raw = read_raw(conn, int(row["raw_job_id"]))
+    ai_filled = job_detail.ai_filled_fields(raw, row)
     return render(
         request,
         "fragments/job_panel.html",
@@ -313,7 +316,7 @@ def render_panel(
         parts=job_detail.parts_of(conn, int(row["raw_job_id"])),
         sections=job_detail.SECTIONS,
         sources={
-            field.name: job_detail.source_of(field.name, edited, classified is not None)
+            field.name: job_detail.source_of(field.name, edited, classified is not None, ai_filled)
             for field in job_detail.FIELDS
         },
         source_labels=job_detail.SOURCE_LABELS,

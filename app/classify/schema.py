@@ -312,6 +312,13 @@ EXTRACT_FIELDS: tuple[str, ...] = (
     "recruitment_headcount",
 )
 
+# 수집이 사이트에서 읽는 칸인데, 못 읽었으면 AI 가 줄 번호로 짚은 부분으로 채운다
+# (2026-09-17 결정). 사이트마다 셀렉터로 회사·모집 기간을 잡는 것은 키워드 찾기라 자주 빈다 —
+# 공고를 읽는 AI 가 뜻으로 찾는다. 긴 분류 응답 안에서 물으면 DeepSeek 가 거의 짚지 않아 세 칸만
+# 따로 묻는다 (`app/classify/basics.py`). 사이트에서 읽은 값이 있으면 그 값이 먼저다
+# (`app/normalize/engine.py` 의 `fill_fallbacks`). 날짜 두 칸은 원문 글자라 정규화가 날짜로 읽는다
+FALLBACK_FIELDS: tuple[str, ...] = ("company_name", "recruitment_start_at", "recruitment_end_at")
+
 # 분류가 채우는 칸. `normalized_jobs` 의 같은 이름 컬럼으로 간다
 CLASSIFY_FIELDS: tuple[str, ...] = (*JUDGE_FIELDS, *NUMBER_FIELDS, *EXTRACT_FIELDS)
 
@@ -344,7 +351,12 @@ INDUSTRY: Final = "industry"
 # 저장 경로(분류 결과 표, 정규화)가 옮기는 칸 전부. `CLASSIFY_FIELDS` 에 직무 분류 둘을 더한
 # 것이다 — `job_classifications`/`normalized_jobs` 양쪽 다 이 두 칸의 컬럼을 갖는다
 # (`migrations/0025_job_major_minor.sql`)
-STORED_CLASSIFY_FIELDS: tuple[str, ...] = (*CLASSIFY_FIELDS, *TAXONOMY_FIELDS, INDUSTRY)
+STORED_CLASSIFY_FIELDS: tuple[str, ...] = (
+    *CLASSIFY_FIELDS,
+    *TAXONOMY_FIELDS,
+    INDUSTRY,
+    *FALLBACK_FIELDS,
+)
 
 
 def _choices(name: str) -> tuple[str, ...]:
@@ -499,7 +511,11 @@ def validate_classification(
 
 
 def _reject_unknown(data: Mapping[str, Any], allowed: tuple[str, ...], where: str) -> None:
-    unknown = sorted(str(key) for key in data if key not in allowed)
+    # 뽑는 칸에 근거 문장(`position_name_evidence`)을 덧붙이는 것은 모델이 칸을 지어낸 것이 아니라
+    # 쓸데없이 더 적은 것이다. 읽지 않고 넘긴다 — DeepSeek 가 자주 그런다 (2026-09-17)
+    unknown = sorted(
+        str(key) for key in data if key not in allowed and not str(key).endswith("_evidence")
+    )
     if unknown:
         raise ClassifySchemaError(
             "unknown_field", f"{where}스키마에 없는 칸이 있다: {', '.join(unknown)}"

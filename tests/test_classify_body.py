@@ -177,8 +177,8 @@ async def test_a_column_the_schema_does_not_have_is_refused() -> None:
         await classify_body(BODY, settings=settings_with_key(), client=client)
 
     assert caught.value.reason == "unknown_field"
-    # 내용의 문제라 다시 묻지 않는다
-    assert len(client.calls) == 1
+    # 한 번 더 묻는다. DeepSeek 는 다시 물으면 대개 맞게 온다 (2026-09-17)
+    assert len(client.calls) == 2
 
 
 async def test_a_broken_response_is_asked_once_more() -> None:

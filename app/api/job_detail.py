@@ -13,6 +13,7 @@
 | 직접 수정 | `job_field_overrides` 에 그 칸이 있다. 다시 분류해도 이 값이 남는다 |
 | AI | 분류가 채우는 칸이고 그 공고가 분류됐다 |
 | 사이트 | 수집이 페이지에서 읽은 칸이다 |
+| AI(대신) | 회사·모집 시작·모집 마감을 사이트에서 못 읽어 AI 가 원문에서 짚었다 (2026-09-17) |
 | 자동 | 다른 값에서 정규화가 정한 칸이다 (모집 유형·자동 종료·대표 이미지·모회사) |
 """
 
@@ -22,7 +23,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
-from app.classify.schema import STORED_CLASSIFY_FIELDS, VALUE_LABELS
+from app.classify.schema import FALLBACK_FIELDS, STORED_CLASSIFY_FIELDS, VALUE_LABELS
 from app.normalize.engine import OVERRIDABLE_FIELDS
 from app.normalize.rules import RULE_FIELDS
 
@@ -140,7 +141,7 @@ SPRING_NAMES: dict[str, str] = {
 }
 EDITABLE_FIELDS: tuple[Field, ...] = tuple(field for field in FIELDS if field.editable)
 
-_CLASSIFIED = set(STORED_CLASSIFY_FIELDS)
+_CLASSIFIED = set(STORED_CLASSIFY_FIELDS) - set(FALLBACK_FIELDS)
 _COLLECTED = set(RULE_FIELDS)
 
 
@@ -155,15 +156,32 @@ def overrides(conn: sqlite3.Connection, raw_job_id: int, part: int) -> dict[str,
     }
 
 
-def source_of(name: str, edited: dict[str, str], classified: bool) -> str:
-    """그 칸의 값이 어디서 왔는지. 표는 모듈 설명에 있다."""
+def source_of(
+    name: str, edited: dict[str, str], classified: bool, ai_filled: frozenset[str] = frozenset()
+) -> str:
+    """그 칸의 값이 어디서 왔는지. 표는 모듈 설명에 있다.
+
+    `ai_filled` 는 사이트에서 못 읽어 AI 가 채운 칸이다 (`ai_filled_fields`).
+    """
     if name in edited:
         return SOURCE_EDIT
+    if name in ai_filled:
+        return SOURCE_AI
     if name in _CLASSIFIED and classified:
         return SOURCE_AI
     if name in _COLLECTED:
         return SOURCE_SITE
     return SOURCE_AUTO
+
+
+def ai_filled_fields(raw: dict[str, object], job: Any) -> frozenset[str]:
+    """회사·모집 시작·모집 마감 중 사이트에서 못 읽었는데 값이 있는 칸. 그 값은 AI 가 짚은 것이다.
+
+    모집 시작은 AI 도 못 찾으면 수집한 날로 채워지지만 따로 가르지 않는다 — AI 로 보인다.
+    """
+    return frozenset(
+        name for name in FALLBACK_FIELDS if not str(raw.get(name) or "").strip() and job[name]
+    )
 
 
 def display(field: Field, value: Any) -> str:

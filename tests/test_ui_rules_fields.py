@@ -27,7 +27,7 @@ from fastapi.testclient import TestClient
 
 from app import db
 from app.api import rules as rules_api
-from app.classify.schema import STORED_CLASSIFY_FIELDS
+from app.classify.schema import FALLBACK_FIELDS, STORED_CLASSIFY_FIELDS
 from app.main import app
 from app.normalize.rules import NORMALIZED_FIELDS, RULE_FIELDS
 
@@ -87,7 +87,8 @@ def test_규칙_칸은_정규화_칸에서_분류가_덮는_칸과_대표_이미
     expected = [
         name
         for name in NORMALIZED_FIELDS
-        if name not in STORED_CLASSIFY_FIELDS and name != "cover_image_url"
+        if (name not in STORED_CLASSIFY_FIELDS or name in FALLBACK_FIELDS)
+        and name != "cover_image_url"
     ]
     assert sorted(RULE_FIELDS) == sorted(expected)
 

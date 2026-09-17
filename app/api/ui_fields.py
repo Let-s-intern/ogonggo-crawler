@@ -23,6 +23,7 @@ from app import custom_fields, db
 from app.api import crawlers, job_detail
 from app.api.review_filter import _filled
 from app.api.ui import render
+from app.classify.schema import FALLBACK_FIELDS
 from app.llm.base import LlmCallError
 
 logger = logging.getLogger(__name__)
@@ -72,7 +73,11 @@ def _builtin_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         result.append(
             {
                 "label": item.label,
-                "source": SOURCE_WORDS[job_detail.source_of(item.name, {}, True)],
+                "source": (
+                    "사이트, 없으면 AI"
+                    if item.name in FALLBACK_FIELDS
+                    else SOURCE_WORDS[job_detail.source_of(item.name, {}, True)]
+                ),
                 "spring": job_detail.SPRING_NAMES.get(item.name, "—"),
                 "pct": round(filled / total * 100) if total else 0,
             }

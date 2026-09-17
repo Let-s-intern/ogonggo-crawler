@@ -80,8 +80,8 @@ async def test_one_call_fills_one_table_and_suggests_in_the_other(
     )
 
     assert progress.processed == 1
-    # 호출은 한 번뿐이다
-    assert progress.calls == 1
+    # 분류 호출은 한 번뿐이다. 나머지 하나는 사이트에서 못 읽은 모집 기간을 묻는 호출이다
+    assert progress.calls == 2
 
     classified = read_classification(conn, 1)
     assert classified["responsibilities"] == "제휴사 데이터 연동 구조 기획"

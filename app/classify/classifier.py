@@ -200,7 +200,7 @@ class ClassifyError(RuntimeError):
     | `no_api_key` | 환경변수를 채운다. 서버 문제가 아니다 |
     | `api_error` | Gemini 응답 자체가 실패했다. 잠시 뒤 다시 |
     | `unparsable` | 1회 재요청까지 하고도 JSON 이 아니었다 |
-    | `unknown_field` | 모델이 스키마에 없는 칸을 냈다 |
+    | `unknown_field` | 1회 재요청까지 하고도 모델이 스키마에 없는 칸을 냈다 |
     | `empty_body` | 나눌 본문이 없다. 모델을 부르지 않는다 |
     | `parts_mismatch` | 다시 분류하는데 나눈 공고 수와 다르게 답했다. 기존 분류를 둔다 |
 
@@ -859,7 +859,7 @@ class _Asker:
         kind: str,
         parse: Callable[[str], T],
     ) -> tuple[T, Usage, int]:
-        """한 번 묻고 받은 것을 읽는다. 깨진 응답에 한해 한 번 더 묻는다.
+        """한 번 묻고 받은 것을 읽는다. 스키마에 맞지 않으면 한 번 더 묻는다.
 
         `on_call` 은 호출마다 불린다. 깨진 응답으로 한 번 더 물으면 두 번 불린다 — 부르는 쪽이
         그것을 `llm_calls` 에 그대로 남겨야 토큰 합이 실제와 맞는다 (`app/llm/log.py`).
@@ -881,14 +881,14 @@ class _Asker:
                     exc.reason,
                     exc,
                 )
-                if exc.reason != "unparsable":
-                    # 모양이 아니라 내용의 문제다. 다시 물어도 같은 답이 온다
-                    raise ClassifyError(exc.reason, str(exc)) from exc
+                # 없는 칸 이름도 한 번 더 묻는다. Gemini 에서는 다시 물어도 같은 답이었지만
+                # DeepSeek 는 같은 공고에서 매번 다른 칸을 지어낸다(`org_name`, 판정 칸을 common
+                # 에 넣기) — 2026-09-17 APR 20건 중 7건, 다시 물으면 대개 맞게 온다
                 last_error = exc
 
         assert last_error is not None  # 루프는 최소 한 번 돈다
         raise ClassifyError(
-            "unparsable", f"{MAX_ATTEMPTS}회 모두 스키마에 맞지 않았다: {last_error}"
+            last_error.reason, f"{MAX_ATTEMPTS}회 모두 스키마에 맞지 않았다: {last_error}"
         ) from last_error
 
 

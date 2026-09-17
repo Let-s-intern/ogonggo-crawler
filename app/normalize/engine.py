@@ -99,18 +99,19 @@ import re
 import sqlite3
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import date, datetime, time
 
 from bs4 import BeautifulSoup
 
 from app import companies
-from app.classify.schema import STORED_CLASSIFY_FIELDS
+from app.classify.schema import FALLBACK_FIELDS, STORED_CLASSIFY_FIELDS
 from app.classify.store import read_classification, read_parts
 
 # 어디서 줄이 바뀌어야 하는지는 HTML 이 정하고, 그 목록은 저기 하나뿐이다. 여기에 같은
 # 목록을 두 벌 두면 한쪽만 늘어나는 날이 오고 그때 어느 쪽이 진실인지 알 수 없다
 # (`.claude/rules/core.md`).
 from app.crawler.parser import BLOCK_TAGS
+from app.normalize import loose_date
 from app.normalize.rules import (
     DERIVED_FIELDS,
     NORMALIZED_FIELDS,
@@ -291,10 +292,50 @@ def apply_classification(
     if not classification:
         return fields
     for name in STORED_CLASSIFY_FIELDS:
+        if name in FALLBACK_FIELDS:
+            # 사이트에서 읽은 값이 먼저다. 비었을 때만 채우는 일은 `fill_fallbacks` 가 한다
+            continue
         fields[name] = classification.get(name, "").strip() or None
     if fields.get("experience_type") is None:
         fields["experience_type"] = "IRRELEVANT"
     return fields
+
+
+def fill_fallbacks(
+    fields: dict[str, str | None],
+    classification: Mapping[str, str] | None,
+    collected_on: date,
+) -> dict[str, str | None]:
+    """사이트에서 못 읽은 회사 이름·모집 시작·모집 마감을 분류가 짚은 값으로 채운다.
+
+    2026-09-17 결정.
+
+    사이트에서 읽은 값이 있으면 건드리지 않는다. 날짜 두 칸은 분류가 원문에서 짚어 온 글자라
+    `loose_date` 가 날짜를 찾아 읽고, 못 읽으면 빈 채로 둔다 — 사이트 규칙처럼 실패로 멈추지
+    않는다. 모집 시작이 끝까지 비면 수집한 날로 둔다. 오공고는 시작 일시를 받고, 공고가 우리에게
+    보인 날이 가장 가까운 값이다.
+    """
+    classified = classification or {}
+    company = classified.get("company_name", "").strip()
+    if not fields.get("company_name") and company:
+        fields["company_name"] = company
+    for name in (START, END):
+        if fields.get(name):
+            continue
+        text = classified.get(name, "").strip()
+        fields[name] = loose_date.read(text, collected_on) if text else None
+    if not fields.get(START):
+        fields[START] = datetime.combine(collected_on, time()).strftime(loose_date.OUTPUT_FORMAT)
+    return fields
+
+
+def _collected_on(conn: sqlite3.Connection, raw_job_id: int) -> date:
+    """그 공고를 수집한 날. 기록이 없으면 오늘이다."""
+    row = conn.execute("SELECT crawled_at FROM raw_jobs WHERE id = ?", (raw_job_id,)).fetchone()
+    try:
+        return datetime.fromisoformat(str(row["crawled_at"])).date()
+    except (TypeError, ValueError):
+        return datetime.now().date()
 
 
 def read_parent_company(conn: sqlite3.Connection, raw_job_id: int) -> str | None:
@@ -475,6 +516,11 @@ def normalized_values(
         rules,
         read_parent_company(conn, raw_job_id),
         read_classification(conn, raw_job_id, part.number),
+    )
+    fill_fallbacks(
+        fields,
+        read_classification(conn, raw_job_id, part.number),
+        _collected_on(conn, raw_job_id),
     )
     if part.split:
         source_url = f"{source_url}#{part.number}"
