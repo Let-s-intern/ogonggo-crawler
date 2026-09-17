@@ -6,7 +6,8 @@
 흐름은 목록 파싱 → 신규 판정 → 신규 건만 상세 → `raw_jobs` append → 정규화다
 (`.claude/docs/architecture.md` 실행 흐름).
 
-마감이 지난 공고와 이미 아는 공고는 상세를 열지 않고 건너뛴다. 건너뛴 수는 `skipped_count` 로
+마감이 지난 공고, 상시 인재 풀 등록(`app/crawler/talent_pool.py`), 이미 아는 공고는 상세를 열지 않고
+건너뛴다. 건너뛴 수는 `skipped_count` 로
 따로 세고 `fail_count` 와 섞지 않는다 — 건너뜀은 정상이고 실패는 고칠 것이다.
 
 정규화는 적재한 건에 대해서만 돌고, 실패해도 실행을 죽이지 않는다. 규칙이 틀렸다고 수집한
@@ -56,6 +57,7 @@ from app.crawler.fetcher import FetchPolicy, PageSource, get_fetcher
 from app.crawler.hashing import content_hash
 from app.crawler.images import LlmImageReader
 from app.crawler.parser import ListItem
+from app.crawler.talent_pool import is_talent_pool
 from app.normalize.engine import NormalizeError, insert_normalized, load_rules
 from app.normalize.rules import Rule
 from app.notify.message import NewJob
@@ -472,6 +474,10 @@ async def _crawl(
         if collectors.list_date_is_deadline and is_closed(item.date, rules):
             # 마감이 지난 공고다. 상세를 열지 않고 넘긴다 — 실패가 아니라 건너뜀이다.
             # 읽지 못한 날짜는 진행 중으로 본다 (`app/crawler/deadline.py`)
+            result.skipped_count += 1
+            continue
+        if is_talent_pool(item.title):
+            # 상시 인재 풀 등록은 채용 공고가 아니다. 마감과 같은 건너뜀으로 센다
             result.skipped_count += 1
             continue
 
