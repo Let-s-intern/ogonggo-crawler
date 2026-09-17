@@ -243,3 +243,119 @@ def load_seed(conn: sqlite3.Connection, path: pathlib.Path) -> tuple[int, int]:
             create(conn, parent_id=major_node.id, name=minor_name, sort_order=minor_order)
             minors_added += 1
     return (majors_added, minors_added)
+
+
+@dataclass(frozen=True)
+class MinorEdit:
+    """수정 화면이 보낸 소분류 한 줄. `id` 가 없으면 새로 더한 줄이다. 순서는 목록 순서다."""
+
+    id: int | None
+    name: str
+    enabled: bool
+
+
+def save_major(
+    conn: sqlite3.Connection,
+    major_id: int,
+    *,
+    name: str,
+    enabled: bool,
+    minors: list[MinorEdit],
+) -> list[tuple[str, str]]:
+    """대분류 하나와 그 아래 소분류를 화면에 보인 대로 한 번에 저장한다 (2026-09-17 결정).
+
+    수정 화면은 대분류 이름·켜짐과 소분류 줄들을 한꺼번에 보낸다. 순서는 보낸 순서 그대로다.
+    한 줄이라도 틀리면(빈 이름, 겹친 이름) 아무것도 저장하지 않는다 — 절반만 바뀐 분류표는
+    운영자가 손으로 되돌릴 수 없다. 보내지 않은 소분류도 지우지 않는다(위 "지우는 함수가 없다").
+
+    **이름을 바꾸면 그 이름으로 이미 분류된 공고의 값도 같이 바꾼다.** 예전에는 "어긋난다" 고
+    알리기만 해서, 이름 하나 고칠 때마다 공고들이 목록 밖의 값을 갖게 됐다. 분류 결과와 정규화
+    결과 둘 다 이름을 저장하므로 둘 다 바꾼다. 바꾼 (옛 이름, 새 이름) 을 돌려준다.
+    """
+    major = read(conn, major_id)
+    if major is None or major.parent_id is not None:
+        raise TaxonomyError("not_found", f"대분류 id {major_id} 가 없다")
+    major_name = name.strip()
+    if not major_name:
+        raise TaxonomyError("empty_name", "대분류 이름이 비어 있다")
+    cleaned = [MinorEdit(minor.id, minor.name.strip(), minor.enabled) for minor in minors]
+    names = [minor.name for minor in cleaned]
+    if any(not item for item in names):
+        raise TaxonomyError("empty_name", "이름이 빈 소분류가 있다")
+    duplicates = sorted({item for item in names if names.count(item) > 1})
+    if duplicates:
+        raise TaxonomyError("duplicate_name", f"같은 이름이 두 번 있다: {', '.join(duplicates)}")
+    existing = {minor.id: minor for minor in list_minors(conn, major_id)}
+    unknown = [minor.id for minor in cleaned if minor.id is not None and minor.id not in existing]
+    if unknown:
+        raise TaxonomyError("not_found", f"이 대분류에 없는 소분류다: {unknown}")
+    sent = {minor.id for minor in cleaned}
+    kept_names = {minor.name for minor_id, minor in existing.items() if minor_id not in sent}
+    clash = sorted(set(names) & kept_names)
+    if clash:
+        raise TaxonomyError("duplicate_name", f"같은 자리에 이미 있는 이름이다: {', '.join(clash)}")
+    if major_name != major.name:
+        _check_name_unique(conn, None, major_name, exclude_id=major_id)
+
+    renamed: list[tuple[str, str]] = []
+    conn.execute("SAVEPOINT save_major")
+    try:
+        if major_name != major.name:
+            _rename_jobs(conn, "job_field", major.name, major_name)
+            renamed.append((major.name, major_name))
+        conn.execute(
+            "UPDATE job_taxonomy SET name = ?, enabled = ?, updated_at = datetime('now')"
+            " WHERE id = ?",
+            (major_name, int(enabled), major_id),
+        )
+        # 이름을 서로 맞바꾸는 저장도 있다. UNIQUE 에 걸리지 않게 먼저 임시 이름으로 비킨다
+        for minor in cleaned:
+            if minor.id is not None and existing[minor.id].name != minor.name:
+                conn.execute(
+                    "UPDATE job_taxonomy SET name = ? WHERE id = ?",
+                    (f"\x00{minor.id}", minor.id),
+                )
+        for order, minor in enumerate(cleaned):
+            if minor.id is None:
+                conn.execute(
+                    "INSERT INTO job_taxonomy (parent_id, name, sort_order, enabled)"
+                    " VALUES (?, ?, ?, ?)",
+                    (major_id, minor.name, order, int(minor.enabled)),
+                )
+                continue
+            before = existing[minor.id]
+            if before.name != minor.name:
+                _rename_jobs(conn, "job_role", before.name, minor.name, job_field=major_name)
+                renamed.append((before.name, minor.name))
+            conn.execute(
+                "UPDATE job_taxonomy SET name = ?, sort_order = ?, enabled = ?,"
+                " updated_at = datetime('now') WHERE id = ?",
+                (minor.name, order, int(minor.enabled), minor.id),
+            )
+        conn.execute("RELEASE save_major")
+    except Exception:
+        conn.execute("ROLLBACK TO save_major")
+        conn.execute("RELEASE save_major")
+        raise
+    return renamed
+
+
+def add_major(conn: sqlite3.Connection, name: str) -> TaxonomyNode:
+    """대분류를 맨 뒤에 더한다."""
+    row = conn.execute(
+        "SELECT coalesce(max(sort_order), -1) + 1 FROM job_taxonomy WHERE parent_id IS NULL"
+    ).fetchone()
+    return create(conn, parent_id=None, name=name, sort_order=int(row[0]))
+
+
+def _rename_jobs(
+    conn: sqlite3.Connection, column: str, old: str, new: str, *, job_field: str | None = None
+) -> None:
+    """이미 분류된 공고의 직군·직무 이름을 바꾼다. 직무는 그 직군 안의 것만 바꾼다.
+
+    직군 이름을 먼저 바꾸므로 직무를 바꿀 때 보는 직군은 새 이름이다.
+    """
+    where = f"{column} = ?" + (" AND job_field = ?" if job_field is not None else "")
+    params: tuple[str, ...] = (new, old) + ((job_field,) if job_field is not None else ())
+    for table in ("job_classifications", "normalized_jobs"):
+        conn.execute(f"UPDATE {table} SET {column} = ? WHERE {where}", params)

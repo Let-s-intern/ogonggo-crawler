@@ -1,0 +1,8 @@
+{# 항목을 더한 뒤 창 안에 뜨는 안내. 목록은 `fields-changed` 로 다시 불린다 #}
+<div class="modal-body">
+  <div class="modal-head"><h3 id="app-modal-title" class="text-base font-semibold text-slate-900">수집 항목 추가</h3></div>
+  <div class="modal-scroll" tabindex="-1" autofocus>
+    <p class="notice notice-idle"><span class="font-semibold">{{ field.label }}</span> 항목을 더했습니다. 새로 분류하는 공고부터 채워지고, 이미 들어온 공고는 목록의 "다시 채우기"로 채웁니다</p>
+  </div>
+  <div class="modal-foot"><button type="button" data-modal-close class="ml-auto">닫기</button></div>
+</div>

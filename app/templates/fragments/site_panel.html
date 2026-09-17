@@ -1,0 +1,111 @@
+{# 사이트 하나의 오른쪽 패널 (`app/api/ui_sites.py` 의 `site_panel_fragment`).
+
+   위에서부터 문제(있을 때) → 조작과 설정(워크플로우 카드 그대로) → 고치기 → 최근 수집 순이다.
+   고치기는 시험 수집 → AI 로 고치기(단서) → 고친 셀렉터 저장 → 다시 실행이고, 그 조각은 시험 실행
+   화면과 같다 (`fragments/test_result.html`, `fragments/test_repair.html`) #}
+{% from "macros.html" import wait %}
+{% if card is none %}
+<div class="modal-body">
+  <div class="modal-head flex items-center justify-between">
+    <h3 id="app-panel-title" class="text-base font-semibold text-slate-900">사이트를 찾지 못했다</h3>
+    <button type="button" data-panel-close class="mt-0">닫기</button>
+  </div>
+  <div class="modal-scroll"><p class="text-sm text-slate-600">사이트 {{ workflow_id }} 가 없다. 목록을 다시 불러 확인한다.</p></div>
+</div>
+{% else %}
+{% set item = card.item %}
+<div class="flex h-full flex-col">
+  <div class="flex items-start gap-3 border-b border-slate-200 px-6 py-4">
+    <span class="mt-2 h-2.5 w-2.5 shrink-0 rounded-full {% if problem %}bg-red-500{% elif item.status != 'active' %}bg-slate-300{% else %}bg-emerald-500{% endif %}"></span>
+    <div class="min-w-0 flex-1">
+      <h3 id="app-panel-title" class="text-lg font-bold text-slate-900">{{ item.name }}</h3>
+      <p class="truncate text-xs text-slate-400">
+        <a href="{{ item.list_url }}" target="_blank" rel="noreferrer" class="hover:underline">{{ item.list_url }}</a>
+      </p>
+    </div>
+    <button type="button" data-panel-close class="mt-0">닫기</button>
+  </div>
+
+  <div class="flex-1 space-y-5 overflow-y-auto px-6 py-4">
+    {% if problem %}
+    <div class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+      <p class="font-semibold">무엇이 문제인가요</p>
+      <p class="mt-1">{{ problem }}</p>
+      {% if card.reason %}
+      <details class="mt-2 border-0 p-0 text-xs text-red-700">
+        <summary class="text-xs font-normal text-red-700">기술 정보</summary>
+        <p class="mt-1 break-all">{{ card.reason }}</p>
+      </details>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% include "fragments/workflow_card.html" %}
+
+    <div>
+      <h4 class="mb-2 mt-0 text-sm font-semibold text-slate-900">고치기</h4>
+      <p class="text-sm text-slate-500">
+        {% if problem %}아래 순서대로 해 보세요. 고친 셀렉터는 확인하고 저장하기 전까지 적용되지 않습니다
+        {% else %}잘 되고 있으면 고칠 필요가 없습니다. 사이트가 바뀌어 잡히는 값이 틀렸을 때만 씁니다{% endif %}
+      </p>
+      <ol class="mt-3 space-y-3 text-sm">
+        <li class="rounded-md border border-slate-200 p-3">
+          <p class="font-medium text-slate-900">1. 시험 수집으로 어디가 안 되는지 보기</p>
+          <p class="text-xs text-slate-500">공고 3건만 가져와 칸마다 잡혔는지 보여 줍니다. 아래에 AI로 고치기와 셀렉터 편집이 이어서 나옵니다</p>
+          <form class="mt-2" hx-post="/ui/crawlers/{{ item.crawler_id }}/test-run" hx-target="#test-result"
+                hx-swap="innerHTML" hx-disabled-elt="find button" hx-indicator="#site-test-wait">
+            <input type="hidden" name="limit" value="3">
+            <button type="submit" class="mt-0">시험 수집</button>
+            {{ wait("사이트를 가져오는 중. 렌더가 필요하면 1분쯤 걸린다", "site-test-wait") }}
+          </form>
+        </li>
+        <li class="rounded-md border border-slate-200 p-3">
+          <p class="font-medium text-slate-900">2. 공고 하나의 주소로 알려 주기</p>
+          <p class="text-xs text-slate-500">상세 페이지로 못 들어갈 때 씁니다. 사이트에서 공고 하나를 열고 주소창의 주소를 붙여 넣으면 셀렉터를 다시 만듭니다</p>
+          <form class="mt-2 flex flex-wrap gap-2" hx-post="/ui/sites/{{ item.id }}/detail-url" hx-target="#test-repair"
+                hx-swap="innerHTML" hx-disabled-elt="find button" hx-indicator="#site-detail-wait">
+            <input type="url" name="detail_url" required placeholder="https://…/공고 하나의 주소" class="mt-0 min-w-0 flex-1">
+            <button type="submit" class="btn-quiet mt-0">다시 찾기</button>
+            {{ wait("공고 주소로 셀렉터를 만드는 중", "site-detail-wait") }}
+          </form>
+        </li>
+      </ol>
+      <p class="mt-2 text-xs text-slate-400">
+        셀렉터 JSON 이나 크롤러 정의를 손으로 다루려면 <a href="/crawlers" class="underline">크롤러 직접 편집</a>,
+        등록만 하고 시작하지 않은 초안은 <a href="/tests" class="underline">시험 실행</a> 화면에서 봅니다
+      </p>
+      {# 시험 실행과 AI 수정 조각이 들어오는 자리. id 가 시험 실행 화면과 같아야 그 조각들이 그대로 돈다 #}
+      <div id="test-result" class="mt-3"></div>
+      <div id="test-repair" class="mt-3"></div>
+    </div>
+
+    <div>
+      <h4 class="mb-2 mt-0 text-sm font-semibold text-slate-900">최근 수집</h4>
+      {% if runs %}
+      <div class="table-scroll bg-white">
+      <table class="data-table">
+        <thead><tr><th scope="col">시작</th><th scope="col">결과</th><th scope="col" class="num">새 공고</th><th scope="col" class="num">실패</th><th scope="col">어떻게</th></tr></thead>
+        <tbody>
+          {% for run in runs %}
+          <tr>
+            <td>{{ run.started_at | as_time }}</td>
+            <td class="cell-text">
+              {% if run.status is none %}<span class="state-warn">도는 중</span>
+              {% elif run.status == "success" %}<span class="state-ok">성공</span>
+              {% else %}<span class="state-bad">실패</span>{% if run.problem %} <span class="text-xs text-slate-500">{{ run.problem }}</span>{% endif %}{% endif %}
+            </td>
+            <td class="num">{{ run.new }}</td>
+            <td class="num">{{ run.failed }}</td>
+            <td class="text-xs text-slate-500">{{ run.trigger }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+      <p class="text-sm text-slate-500">아직 수집한 적이 없습니다</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}

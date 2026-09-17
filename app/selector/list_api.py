@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
@@ -136,6 +137,7 @@ def propose_list_config(
     requests: Sequence[ObservedRequest],
     items: Sequence[ListItem],
     links: Sequence[str] = (),
+    clicked_url: str = "",
 ) -> ListPath:
     """관찰한 요청 중 이 목록을 그린 것을 골라 `ApiListConfig` 로 옮긴다.
 
@@ -146,6 +148,9 @@ def propose_list_config(
     이유는 항목 자체가 `a` 인 사이트가 있기 때문이다 — 카카오 목록은 `<a><li>...</li></a>`
     라서 항목 안에서 링크를 찾는 셀렉터로는 주소가 나오지 않는다. 페이지에 걸린 주소 쪽을
     보면 셀렉터가 무엇이든 같은 증거를 쓴다.
+
+    `clicked_url` 은 첫 항목을 눌러 도착한 상세 주소다. 페이지에 링크가 하나도 없는 사이트에서
+    id 를 찾는 마지막 증거로 쓴다 (`_id_from_click`).
     """
     titles = [_squeeze(item.title) for item in items if item.title.strip()]
     if len(titles) < MIN_TITLE_HITS:
@@ -181,7 +186,7 @@ def propose_list_config(
         )
 
     _, request, path, entries = best
-    return _build(request, path, entries, items, _usable_links(links, items))
+    return _build(request, path, entries, items, _usable_links(links, items), clicked_url)
 
 
 def _build(
@@ -190,6 +195,7 @@ def _build(
     entries: Sequence[Mapping[str, Any]],
     items: Sequence[ListItem],
     links: Sequence[str],
+    clicked_url: str = "",
 ) -> ListPath:
     """고른 배열을 설정으로 옮긴다. 제목과 링크가 있어야 목록이 된다."""
     matches = _pairs(entries, items)
@@ -199,6 +205,8 @@ def _build(
 
     pairs = [(entry, item) for _, entry, item in matches]
     id_field, link_template = _id_and_link([entry for entry, _ in pairs], links)
+    if not id_field and clicked_url and items:
+        id_field, link_template = _id_from_click(entries, pairs, items[0], clicked_url)
     if not id_field:
         return ListPath(
             reason=(
@@ -351,7 +359,7 @@ def _id_and_link(entries: Sequence[Mapping[str, Any]], links: Sequence[str]) -> 
         for key, value in _values(entry).items():
             if not _usable_id(value):
                 continue
-            found = next((link for link in links if value in link), "")
+            found = next((link for link in links if _token_in(value, link)), "")
             if found:
                 hits.setdefault(key, []).append((value, found))
 
@@ -367,7 +375,55 @@ def _id_and_link(entries: Sequence[Mapping[str, Any]], links: Sequence[str]) -> 
     # 많이 맞은 키가 먼저다. 같으면 값이 긴 쪽 — 짧은 값일수록 우연히 걸린다
     best = max(usable, key=lambda key: (len(usable[key]), len(usable[key][0][0])))
     value, link = usable[best][0]
-    return best, link.replace(value, ID_PLACEHOLDER)
+    return best, _token_pattern(value).sub(ID_PLACEHOLDER, link, count=1)
+
+
+def _token_pattern(value: str) -> re.Pattern[str]:
+    """주소 안에서 그 값이 한 칸을 통째로 차지하는 자리. 앞뒤가 글자·숫자면 다른 값의 일부다."""
+    return re.compile(rf"(?<![0-9A-Za-z]){re.escape(value)}(?![0-9A-Za-z])")
+
+
+def _token_in(value: str, link: str) -> bool:
+    """값이 주소의 한 칸(경로 조각·쿼리 값 등)과 통째로 같은가.
+
+    부분 문자열로 보면 우연히 겹친다. KT 실측(2026-09-17)에서 정렬 순서 `sortOrder` 의 `266` 이
+    공고 주소 `/careers/266550` 앞자리에 들어 있어 id 로 뽑혔고, 주소 형식이 `/careers/{id}550` 이
+    돼 실행마다 모든 공고가 같은 주소로 갔다.
+    """
+    return _token_pattern(value).search(link) is not None
+
+
+def _id_from_click(
+    entries: Sequence[Mapping[str, Any]],
+    pairs: Sequence[tuple[Mapping[str, Any], ListItem]],
+    clicked: ListItem,
+    clicked_url: str,
+) -> tuple[str, str]:
+    """첫 항목을 눌러 도착한 주소 하나로 id 를 찾는다. 페이지에 링크가 없는 사이트의 마지막 길이다.
+
+    롯데ON 실측(2026-09-17): 항목이 링크도 `data-` 속성도 없는 `div` 이고, 누르면 새 탭으로
+    `/job_posting/UJFP0dBm` 이 열렸다. 목록 응답에는 `"addressKey": "UJFP0dBm"` 이 제목과 함께
+    있었지만, 대조할 주소가 페이지에 없어 id 를 못 골랐다.
+
+    주소가 하나뿐이라 우연히 겹치는 값을 막는 조건을 더 건다. 누른 항목과 제목이 같은 응답
+    항목에서, 도착 주소의 한 칸과 통째로 같은 값이고, 그 키가 **응답의 모든 항목에 있고 값이 서로
+    다를 때만** 채택한다. 공고를 가르지 못하는 값은 여기서 떨어진다.
+    """
+    entry = next((one for one, item in pairs if item.index == clicked.index), None)
+    if entry is None:
+        return "", ""
+    flattened = [_values(one) for one in entries]
+    candidates: list[tuple[str, str]] = []
+    for key, value in _values(entry).items():
+        if not _usable_id(value) or not _token_in(value, clicked_url):
+            continue
+        values = [one.get(key, "") for one in flattened]
+        if all(values) and len(set(values)) == len(values):
+            candidates.append((key, value))
+    if not candidates:
+        return "", ""
+    key, value = max(candidates, key=lambda pair: len(pair[1]))
+    return key, _token_pattern(value).sub(ID_PLACEHOLDER, clicked_url, count=1)
 
 
 def _usable_links(links: Sequence[str], items: Sequence[ListItem]) -> list[str]:

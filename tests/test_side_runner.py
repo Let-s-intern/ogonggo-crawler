@@ -351,7 +351,7 @@ def test_a_run_without_a_provider_key_closes_as_failed(jobs: sqlite3.Connection)
 
     assert run.status == runs.FAILED
     assert run.finished_at is not None
-    assert run.error_message is not None and "GEMINI_API_KEY" in run.error_message
+    assert run.error_message is not None and "API 키가 없다" in run.error_message
     assert (run.target_count, run.processed_count) == (3, 0)
     # 아무것도 쓰지 않았다
     assert jobs.execute("SELECT count(*) AS n FROM job_classifications").fetchone()["n"] == 0

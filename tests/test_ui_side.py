@@ -23,7 +23,7 @@ from fastapi.testclient import TestClient
 from app import db
 from app.api import rules as rules_api
 from app.api import side as side_api
-from app.api.ui import NAV_GROUPS
+from app.api.ui import SETTINGS_NAV
 from app.main import app
 from app.scheduler import get_scheduler
 from app.side import runner, store
@@ -84,10 +84,9 @@ def _client_with_fake_provider(path: pathlib.Path, texts: tuple[str, ...]) -> It
         app.dependency_overrides.clear()
 
 
-def test_네비게이션에_분류_실행이_있다() -> None:
-    """`AI 분류` 묶음 안에 있다 (`app/api/ui.py` 의 `NAV_GROUPS`, 2026-09-15 결정)."""
-    classify_group = next(members for path, label, members in NAV_GROUPS if label == "AI 분류")
-    assert ("/side", "분류 실행") in classify_group
+def test_네비게이션에_자동_분류가_있다() -> None:
+    """설정의 시스템 무리에 있다 (`app/api/ui.py` 의 `SETTINGS_SECTIONS`, 2026-09-17 결정)."""
+    assert ("/side", "자동 분류") in SETTINGS_NAV
 
 
 def test_부가_워크플로우_화면이_열리고_네비게이션이_켜진다(client: TestClient) -> None:

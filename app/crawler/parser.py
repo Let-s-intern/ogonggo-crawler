@@ -228,7 +228,13 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
         if not value:
             missing.append(name)
 
+    images = source_images(soup, selectors.body)
     unreadable = [name for name in REQUIRED_DETAIL_FIELDS if not fields[name]]
+    # 본문 자리에 글자 없이 이미지만 있는 공고는 여기서 버리지 않는다. 이미지를 읽어 본문으로
+    # 쓴다 (`app/crawler/images.py`). KT 실측(2026-09-17): 본문 셀렉터는 맞는데 그 안이 공고
+    # 이미지 한 장이라 필수 칸 실패로 끝났다
+    if "body" in unreadable and images:
+        unreadable.remove("body")
     if unreadable:
         raise FieldParseError(f"상세에서 필수 필드를 읽지 못했다: {', '.join(unreadable)}")
 
@@ -238,7 +244,7 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
         fields=fields,
         missing=missing,
         source_text=f"{container}\n{structured}" if structured else container,
-        images=source_images(soup, selectors.body),
+        images=images,
         cover_image=og_image(soup),
     )
 

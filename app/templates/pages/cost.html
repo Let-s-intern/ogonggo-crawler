@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}비용{% endblock %}
+{% block heading %}AI 비용{% endblock %}
+{% block content %}
+{# 비용 화면 (`app/api/ui_cost.py`). 기간은 주소의 period 로 고르고, 화면 전체를 서버가 그린다.
+   원화는 어림값이다 — 달러 단가에 `KRW_PER_USD` 를 곱했다 #}
+{% set r = report %}
+{% macro won(value) %}{{ "{:,}".format(value) }}{% endmacro %}
+
+<nav aria-label="기간" class="mb-4 flex flex-wrap gap-1">
+  {% for value, label in periods.items() %}
+  <a href="/cost?period={{ value }}" {% if value == r.period %}aria-current="page"{% endif %}
+     class="rounded-full px-3 py-1.5 text-sm font-medium {% if value == r.period %}bg-slate-900 text-white{% else %}text-slate-600 hover:bg-white{% endif %}">{{ label }}</a>
+  {% endfor %}
+</nav>
+
+<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+  <div class="card p-4">
+    <p class="text-xs font-medium text-slate-500">{{ periods[r.period] }} 비용</p>
+    <p class="mt-1 text-2xl font-bold tabular-nums text-slate-900">{{ won(r.total.krw) }}<span class="ml-1 text-sm font-normal text-slate-400">원</span></p>
+    <p class="mt-1 text-xs {% if r.change_pct is none %}text-slate-400{% elif r.change_pct > 0 %}text-red-600{% else %}text-emerald-600{% endif %}">
+      {% if r.change_pct is none %}앞 기간 기록 없음{% else %}앞 기간보다 {% if r.change_pct > 0 %}+{% endif %}{{ r.change_pct }}%{% endif %}
+    </p>
+  </div>
+  <div class="card p-4">
+    {% if r.forecast_krw is not none %}
+    <p class="text-xs font-medium text-slate-500">이번 달 예상</p>
+    <p class="mt-1 text-2xl font-bold tabular-nums text-slate-900">{{ won(r.forecast_krw) }}<span class="ml-1 text-sm font-normal text-slate-400">원</span></p>
+    <p class="mt-1 text-xs text-slate-400">지금 속도로 월말까지</p>
+    {% else %}
+    <p class="text-xs font-medium text-slate-500">AI 호출</p>
+    <p class="mt-1 text-2xl font-bold tabular-nums text-slate-900">{{ won(r.total.calls) }}<span class="ml-1 text-sm font-normal text-slate-400">회</span></p>
+    <p class="mt-1 text-xs text-slate-400">실패 {{ r.total.failed }}회</p>
+    {% endif %}
+  </div>
+  <div class="card p-4">
+    <p class="text-xs font-medium text-slate-500">오늘</p>
+    <p class="mt-1 text-2xl font-bold tabular-nums text-slate-900">{{ won(r.today.krw) }}<span class="ml-1 text-sm font-normal text-slate-400">원</span></p>
+    <p class="mt-1 text-xs text-slate-400">AI 호출 {{ won(r.today.calls) }}회</p>
+  </div>
+  <div class="card p-4">
+    <p class="text-xs font-medium text-slate-500">공고 1건당 평균</p>
+    <p class="mt-1 text-2xl font-bold tabular-nums text-slate-900">{% if r.per_job_krw is not none %}{{ r.per_job_krw }}<span class="ml-1 text-sm font-normal text-slate-400">원</span>{% else %}<span class="text-slate-300">—</span>{% endif %}</p>
+    <p class="mt-1 text-xs text-slate-400">이 기간에 분류한 공고 {{ won(r.classified) }}건</p>
+  </div>
+</div>
+
+{% if r.unpriced_models %}
+<a href="/settings#prices"
+   class="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 hover:bg-amber-100">
+  단가가 없는 모델
+  {% for name, calls in r.unpriced_models %}<span class="font-semibold">{{ name or "이름 없음" }}</span> ({{ calls }}회){% if not loop.last %},{% endif %}{% endfor %}
+  의 호출은 비용에 들어가지 않았어요
+  <span class="ml-auto font-medium">단가 넣기 →</span>
+</a>
+{% endif %}
+
+<div class="card mt-4 p-5">
+  <div class="mb-3 flex flex-wrap items-center gap-3">
+    <h3 class="text-sm font-semibold text-slate-900">날짜별 비용</h3>
+    <div class="ml-auto flex flex-wrap gap-3 text-xs text-slate-500">
+      {% for group, color in group_colors.items() %}
+      <span class="inline-flex items-center gap-1"><span class="inline-block h-2.5 w-2.5 rounded-sm {{ color }}"></span>{{ group }}</span>
+      {% endfor %}
+    </div>
+  </div>
+  {% if r.peak_usd > 0 %}
+  <div class="flex h-40 items-end gap-1 border-b border-slate-200">
+    {% for day in r.days %}
+    <div class="flex h-full min-w-0 flex-1 flex-col justify-end" title="{{ day.label }} · {{ won((day.usd * krw_per_usd) | round | int) }}원">
+      {% for group, usd in day.groups.items() | sort(reverse=true) %}
+      <div class="{{ group_colors.get(group, other_color) }}" style="height: {{ (usd / r.peak_usd * 100) | round(1) }}%"></div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  <div class="mt-1 flex justify-between text-xs text-slate-400">
+    <span>{{ r.days[0].label }}</span>{% if r.days | length > 2 %}<span>{{ r.days[(r.days | length) // 2].label }}</span>{% endif %}<span>{{ r.days[-1].label }}</span>
+  </div>
+  {% else %}
+  <p class="py-8 text-center text-sm text-slate-400">이 기간에 비용이 잡힌 AI 호출이 없습니다</p>
+  {% endif %}
+</div>
+
+<div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+  <div class="card p-5">
+    <h3 class="mb-2 text-sm font-semibold text-slate-900">기능별</h3>
+    <table class="w-full text-sm">
+      <thead class="text-xs text-slate-400"><tr><th class="py-1 text-left font-normal">기능</th><th class="text-right font-normal">호출</th><th class="text-right font-normal">비용</th><th class="w-24"></th></tr></thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for name, bucket in r.features %}
+        <tr>
+          <td class="py-2">{{ name }}</td>
+          <td class="text-right tabular-nums">{{ won(bucket.calls) }}회</td>
+          <td class="text-right font-medium tabular-nums">{{ won(bucket.krw) }}원</td>
+          <td class="pl-3"><div class="h-1.5 rounded bg-slate-100"><div class="h-1.5 rounded bg-slate-700" style="width: {{ ((bucket.usd / r.total.usd * 100) if r.total.usd else 0) | round | int }}%"></div></div></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="py-4 text-center text-slate-400">호출 기록이 없습니다</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card p-5">
+    <h3 class="mb-2 text-sm font-semibold text-slate-900">모델별</h3>
+    <table class="w-full text-sm">
+      <thead class="text-xs text-slate-400"><tr><th class="py-1 text-left font-normal">모델</th><th class="text-right font-normal">호출</th><th class="text-right font-normal">실패</th><th class="text-right font-normal">평균 응답</th><th class="text-right font-normal">비용</th></tr></thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for name, bucket, priced in r.models %}
+        <tr>
+          <td class="py-2 font-mono text-xs">{{ name or "이름 없음" }}</td>
+          <td class="text-right tabular-nums">{{ won(bucket.calls) }}</td>
+          <td class="text-right tabular-nums {% if bucket.failed %}text-red-600{% endif %}">{{ bucket.failed }}</td>
+          <td class="text-right tabular-nums">{{ bucket.latency_seconds }}초</td>
+          <td class="text-right font-medium tabular-nums {% if not priced %}text-amber-700{% endif %}">{% if priced %}{{ won(bucket.krw) }}원{% else %}단가 없음{% endif %}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="py-4 text-center text-slate-400">호출 기록이 없습니다</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="mt-3 text-xs text-slate-400">원화는 1달러 {{ krw_per_usd }}원으로 어림한 값입니다. 사이트별 비용은 호출 기록에 사이트가 남지 않아 보여 주지 않습니다</p>
+{% endblock %}

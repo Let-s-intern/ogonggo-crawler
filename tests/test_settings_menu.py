@@ -1,11 +1,10 @@
-"""설정의 하위 메뉴.
+"""설정의 하위 화면.
 
-일곱이다 — AI 제공자 / 정규화 규칙 / 알림 / 파일 저장소 / 동시 실행 / 스냅샷 내보내기 /
-데이터 가져오기. 정규화 규칙은 2026-09-15 에 설정으로 옮겼다. 하위 메뉴는 다른 묶음처럼
-헤더 두 번째 줄이 그린다 (`app/api/ui.py` 의 `SETTINGS_NAV`).
+설정은 한 페이지의 왼쪽 목록이다 (2026-09-17, `app/api/ui.py` 의 `SETTINGS_SECTIONS`). 목록의
+무리와 순서, 어느 화면에서든 위 메뉴가 `설정` 에 머무는지는 `test_ui_nav_groups.py` 가 본다.
 
-여기서 보는 것은 셋이다. 일곱이 다 열리는가, 각 화면이 옮기기 전과 같은 조각을 부르는가,
-그리고 어느 하위 화면에 있든 위 네비게이션이 `설정` 에 머무는가.
+여기서 보는 것은 둘이다. 각 화면이 옮기기 전과 같은 조각을 부르는가, 그리고 제목이 왼쪽
+목록에서 켜진 이름과 같은가.
 """
 
 from __future__ import annotations
@@ -35,18 +34,6 @@ def client() -> Iterator[TestClient]:
     yield TestClient(app, follow_redirects=False)
 
 
-def test_하위_메뉴가_일곱이다() -> None:
-    assert [label for _, label in SETTINGS_NAV] == [
-        "AI 제공자",
-        "정규화 규칙",
-        "알림",
-        "파일 저장소",
-        "동시 실행",
-        "스냅샷 내보내기",
-        "데이터 가져오기",
-    ]
-
-
 @pytest.mark.parametrize(("path", "call"), CALLS)
 def test_하위_화면이_옮기기_전과_같은_자리를_부른다(
     client: TestClient, path: str, call: str
@@ -57,15 +44,11 @@ def test_하위_화면이_옮기기_전과_같은_자리를_부른다(
     assert call in response.text
 
 
-@pytest.mark.parametrize(("path", "_call"), CALLS)
-def test_어느_하위_화면에서도_위_네비게이션은_설정이다(
-    client: TestClient, path: str, _call: str
-) -> None:
-    """위 줄은 설정 묶음의 대표 주소가, 두 번째 줄은 그 화면 자신이 켜진다."""
+@pytest.mark.parametrize(("path", "label"), SETTINGS_NAV)
+def test_제목이_왼쪽_목록의_이름이다(client: TestClient, path: str, label: str) -> None:
     body = client.get(path).text
 
-    assert '<a href="/settings" aria-current="page"' in body
-    assert f'<a href="{path}" aria-current="page"' in body
+    assert f">{label}</h3>" in body
 
 
 def test_내보내기_화면이_파일에_키가_들어_있다고_알린다(client: TestClient) -> None:
@@ -76,12 +59,3 @@ def test_내보내기_화면이_파일에_키가_들어_있다고_알린다(clie
     assert "키도 같이 옮겨집니다" in body
     assert "키 재발급" in body
     assert not any(character in body for character in "✅❌⚠\U0001f4dd⭐")
-
-
-@pytest.mark.parametrize(("path", "_call"), CALLS)
-def test_하위_메뉴_일곱이_모든_화면에_있다(client: TestClient, path: str, _call: str) -> None:
-    body = client.get(path).text
-
-    for menu_path, label in SETTINGS_NAV:
-        assert f'href="{menu_path}"' in body
-        assert label in body

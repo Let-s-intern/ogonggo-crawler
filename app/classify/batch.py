@@ -25,10 +25,11 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from app import industries, taxonomy
+from app import custom_fields, industries, taxonomy
 from app.classify import prompt_rules
+from app.classify.basics import find_basics
 from app.classify.classifier import ClassifyError, chosen, classify_body
-from app.classify.schema import build_classification_model
+from app.classify.schema import FALLBACK_FIELDS, build_classification_model
 from app.classify.store import (
     pending_count,
     pending_ids,
@@ -268,6 +269,23 @@ async def classify_ids(
             progress.note(f"raw_jobs {raw_job_id}: {exc}")
             continue
 
+        # 사이트에서 못 읽은 회사 이름·모집 기간은 따로 짚어 온다. 공고 한 건 전체의 값이라 나눈
+        # 공고마다 같다. 실패해도 분류는 저장한다 — 세 칸이 빌 뿐이다 (`app/classify/basics.py`)
+        needed = [name for name in FALLBACK_FIELDS if not current_values.get(name, "").strip()]
+        basics: dict[str, str] = {}
+        if needed:
+            try:
+                basics = await find_basics(
+                    source,
+                    title,
+                    needed,
+                    settings=resolved,
+                    client=resolved_client,
+                    on_call=counted,
+                )
+            except ClassifyError as exc:
+                progress.note(f"raw_jobs {raw_job_id}: 회사·모집 기간을 짚지 못했다: {exc}")
+
         # 직무마다 나뉘었으면 번호마다 한 행이다. 나누지 않은 공고는 1번 하나이고 직무 이름을
         # 따로 남기지 않는다 — 그 직무는 제목에서 온 `position_name` 그대로다
         # 목록을 고정한 공고는 직무 이름도 저장된 것을 쓴다
@@ -279,7 +297,7 @@ async def classify_ids(
             save_classification(
                 conn,
                 raw_job_id,
-                posting.fields,
+                {**posting.fields, **basics},
                 model=result.usage.model,
                 dropped=posting.dropped,
                 evidence=posting.evidence,
@@ -303,6 +321,9 @@ async def classify_ids(
             # 분류는 남았다. 규칙을 고쳐 재정규화하면 그때 반영된다
             progress.note(f"raw_jobs {raw_job_id}: 분류는 저장했으나 정규화가 실패했다: {exc}")
             continue
+        # 운영자가 화면에서 더한 항목이 켜져 있으면 한 번 더 묻는다. 없으면 호출도 없다.
+        # 실패해도 분류는 성공이다 (`app/custom_fields.py`)
+        await custom_fields.fill_job(conn, raw_job_id, settings=settings)
         progress.processed += 1
 
     logger.info(

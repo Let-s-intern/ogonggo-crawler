@@ -176,7 +176,9 @@ async def _probe(
     sleep: Callable[[float], Awaitable[None]] | None,
 ) -> _Probed:
     """렌더된 목록을 읽고, 필요하면 항목을 눌러 본다. 여기서 `httpx` 를 부르지 않는다."""
-    rendered, rendered_note = _items_from_html(session.html, session.url, selectors)
+    rendered, rendered_note = _items_from_html(
+        session.html, session.url, selectors, linkless_fallback=True
+    )
     outcome: ClickOutcome | None = None
     if rendered and _needs_more(rendered, selectors):
         outcome = await probe_click(
@@ -402,7 +404,15 @@ async def _adopt_list_api(
     사이트가 요구하는 기능성 헤더뿐이고, 이름은 공용 클라이언트가 정한다
     (`.claude/rules/crawling.md`).
     """
-    proposed = propose_list_config(probed.requests, items, _links(probed.html, probed.url))
+    outcome = probed.outcome
+    clicked_url = (
+        outcome.url
+        if outcome is not None and outcome.reached and outcome.url and outcome.url != probed.url
+        else ""
+    )
+    proposed = propose_list_config(
+        probed.requests, items, _links(probed.html, probed.url), clicked_url
+    )
     if not proposed.ok:
         return None, f"목록 API 는 찾지 못했다: {proposed.reason}"
 
@@ -488,7 +498,7 @@ async def _items_from_static(
         page = await fetcher.fetch(list_url)
     except FetchError as exc:
         return "", [], f"정적 fetch 가 실패했다: {exc}"
-    items, note = _items_from_html(page.text, page.url, selectors)
+    items, note = _items_from_html(page.text, page.url, selectors, linkless_fallback=True)
     return page.text, items, note
 
 
@@ -509,12 +519,30 @@ def _static_list_works(
 
 
 def _items_from_html(
-    html: str, base_url: str, selectors: SelectorSet
+    html: str, base_url: str, selectors: SelectorSet, *, linkless_fallback: bool = False
 ) -> tuple[list[ListItem], str]:
+    """목록을 읽는다. `linkless_fallback` 이면 링크만 못 읽은 목록을 링크 없는 항목으로 받는다.
+
+    네이버 실측(2026-09-17): 모델이 고른 링크 셀렉터가 `#n` 을 돌려줘 항목 10건이 전부 버려졌고,
+    판정은 "항목 0건" 으로 끝나 클릭 단계에 가지 못했다. 제목은 잡혔으니 목록은 맞다 — 링크 없는
+    항목으로 받으면 `_needs_more` 가 참이 되어 항목을 눌러 상세 주소를 알아낸다.
+
+    알아낸 주소 형식을 검사하는 자리(`_static_list_works`)는 이 대체를 쓰지 않는다. 링크를 못
+    읽는 형식을 "읽힌다" 고 판정하면 실행이 전부 실패한다.
+    """
     try:
         result = parse_list(html, selectors.list, base_url)
     except CrawlDataError as exc:
-        return [], str(exc)
+        if not linkless_fallback or list_only(selectors.list):
+            return [], str(exc)
+        linkless = selectors.list.model_copy(update={"link": "", "link_template": ""})
+        try:
+            fallback = parse_list(html, linkless, base_url)
+        except CrawlDataError:
+            return [], str(exc)
+        return fallback.items, (
+            f"링크를 읽지 못해 링크 없이 항목 {len(fallback.items)}건을 잡았다 ({exc})"
+        )
     return result.items, f"항목 {len(result.items)}건"
 
 

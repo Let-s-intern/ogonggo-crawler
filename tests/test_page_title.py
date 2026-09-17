@@ -12,13 +12,10 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
-TITLE = "크롤링 자동화 made by seongbin"
-# 상단 제목은 두 조각이다. 앞은 화면 글꼴 그대로, 뒤는 작고 흐리게 단다
-HEADING_NAME = "크롤링 자동화"
-BYLINE = "made by seongbin"
+TITLE = "크롤링 자동화"
 
 # 화면마다 제 이름을 붙이고 뒤에 서비스 이름을 단다
-PAGES = ["/", "/tests", "/workflows", "/rules", "/settings"]
+PAGES = ["/review", "/tests", "/workflows", "/rules", "/settings"]
 
 
 @pytest.fixture
@@ -37,8 +34,8 @@ def test_tab_title_carries_the_service_name(client: TestClient, path: str) -> No
 def test_heading_is_the_service_name(client: TestClient, path: str) -> None:
     body = client.get(path).text
 
-    assert f">{HEADING_NAME} <span" in body
-    assert f">{BYLINE}</span></h1>" in body
+    assert f">{TITLE}</h1>" in body
+    assert "made by" not in body
 
 
 def test_login_screen_carries_it_too(client: TestClient) -> None:
@@ -47,5 +44,5 @@ def test_login_screen_carries_it_too(client: TestClient) -> None:
     body = client.get("/login").text
 
     assert f"<title>로그인 — {TITLE}</title>" in body
-    assert f">{HEADING_NAME} <span" in body
-    assert f">{BYLINE}</span></h1>" in body
+    assert f">{TITLE}</h1>" in body
+    assert "made by" not in body

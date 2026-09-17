@@ -14,6 +14,7 @@ from collections.abc import Iterator
 import pytest
 
 from app import db
+from app.classify.basics import Basics
 from app.classify.batch import ClassifyProgress, classify_ids
 from app.classify.schema import Classification
 from app.classify.store import StoredPart, read_parts
@@ -135,8 +136,10 @@ async def test_긴_공고는_짜임을_다시_묻지_않고_보냈던_줄을_그
     progress, client = await reclassify(conn, LONG, long_posting.MECHANICAL, long_posting.HR)
 
     assert progress.processed == 1
-    assert len(client.calls) == 2
-    assert all(call["config"]["response_schema"] is Classification for call in client.calls)
+    # 나머지 하나는 사이트에서 못 읽은 회사·모집 기간을 묻는 호출이다 (`app/classify/basics.py`)
+    calls = [c for c in client.calls if c["config"]["response_schema"] is not Basics]
+    assert len(calls) == 2
+    assert all(call["config"]["response_schema"] is Classification for call in calls)
     assert "[3] [기계]" in client.calls[0]["contents"]
     assert "[5] [HR]" not in client.calls[0]["contents"]
     assert rows(conn, LONG, "part, part_role, part_lines, responsibilities") == [

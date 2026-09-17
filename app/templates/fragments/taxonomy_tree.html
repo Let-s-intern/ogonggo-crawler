@@ -1,94 +1,108 @@
-{# 직무 분류 트리. 대분류 아래 그 소분류가 바로 이어진다.
+{# 직무 분류 (`app/api/ui_taxonomy.py`). 왼쪽 대분류, 오른쪽 그 소분류. 평소에는 칩으로 읽기만 하고
+   `수정` 을 누르면 줄마다 이름·순서·켜짐을 고쳐 `저장` 한 번으로 저장한다.
 
-   빈 표는 "없음" 으로 끝내지 않는다 — 완전히 비어 있을 때만 나오는 기본 분류 불러오기
-   버튼이 무엇을 하면 채워지는지 그 자리에서 말한다 (`.claude/rules/writing.md`).
-
-   이름을 고치는 칸 옆에 지금 공고 수를 늘 적어 둔다 — 저장하기 전에 그 이름으로 이미
-   분류된 공고가 몇 건인지 보여야 한다(PRD 3절). 저장한 뒤 이름이 실제로 바뀌었으면 그
-   문장도 서버가 함께 돌려준다(`app/api/ui_taxonomy.py`). #}
-{% from "macros.html" import state, empty_row, wait, failure %}
-{% if error %}
-{{ failure(error.reason, error.message, title="저장하지 못했다") }}
-{% endif %}
-{% if message %}
-<p class="font-medium text-slate-700">{{ message }}</p>
-{% endif %}
-
-<div class="table-scroll">
-<table class="data-table">
-  <caption>대분류와 그 아래 소분류. 공고 수는 지금 그 이름으로 분류된 <code>normalized_jobs</code> 건수다</caption>
-  <thead>
-    <tr>
-      <th scope="col">이름</th>
-      <th scope="col">구분</th>
-      <th scope="col">순서</th>
-      <th scope="col">메모</th>
-      <th scope="col">상태</th>
-      <th scope="col" class="num">공고 수</th>
-      <th scope="col">동작</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for major_row, minor_rows in tree %}
-    {% set row = major_row %}
-    {% set indent = false %}
-    {% include "fragments/taxonomy_row.html" with context %}
-    {% for minor_row in minor_rows %}
-    {% set row = minor_row %}
-    {% set indent = true %}
-    {% include "fragments/taxonomy_row.html" with context %}
-    {% endfor %}
-    {% else %}
-    {{ empty_row(7, "직무 분류가 아직 없다. 아래 기본 분류 불러오기로 대분류 25개·소분류 296개를 한 번에 채우거나, 손으로 하나씩 만든다") }}
-    {% endfor %}
-  </tbody>
-</table>
-</div>
+   지우는 단추는 없다. 끄면 AI 가 새 공고에서 고르지 않고, 이미 분류된 공고는 그대로다 #}
+{% from "macros.html" import wait, notice_box %}
+{% if error %}<p class="notice notice-bad">{{ error }}</p>{% endif %}
+{% if message %}{{ notice_box(message) }}{% endif %}
 
 {% if is_empty %}
-<form hx-post="/ui/taxonomy/seed" hx-target="#taxonomy-tree" hx-swap="innerHTML"
-      hx-disabled-elt="find button"
-      hx-confirm="seeds/job-taxonomy-zighang-20260828.json 의 대분류·소분류를 한 번에 넣는다. 계속할까">
-  <button type="submit">기본 분류 불러오기</button>
-  {{ wait("불러오는 중") }}
-  <span class="block text-xs text-slate-500">
-    표가 완전히 비어 있을 때만 보인다. 불러오면 이 버튼은 사라진다
-  </span>
-</form>
-{% else %}
-<h4>직무 분류 추가</h4>
-<form hx-post="/ui/taxonomy" hx-target="#taxonomy-tree" hx-swap="innerHTML"
-      hx-disabled-elt="find button">
-  <fieldset>
-    <legend>부모를 고르지 않으면 대분류로 등록한다</legend>
-    <p class="flex flex-wrap items-end gap-x-4 gap-y-2">
-      <span>
-        <label for="new-taxonomy-parent" class="block">부모(소분류일 때만)</label>
-        <select id="new-taxonomy-parent" name="parent_id">
-          <option value="">(대분류로 등록)</option>
-          {% for major in majors %}
-          <option value="{{ major.id }}">{{ major.name }}</option>
-          {% endfor %}
-        </select>
-      </span>
-      <span>
-        <label for="new-taxonomy-name" class="block">이름</label>
-        <input id="new-taxonomy-name" name="name" type="text" required>
-      </span>
-      <span>
-        <label for="new-taxonomy-order" class="block">순서</label>
-        <input id="new-taxonomy-order" name="sort_order" type="number" value="0" size="4">
-      </span>
-    </p>
-    <p>
-      <label for="new-taxonomy-note">메모</label>
-      <br>
-      <textarea id="new-taxonomy-note" name="note" rows="2" class="w-full max-w-2xl"></textarea>
-    </p>
-    <p>
-      <button type="submit">추가</button>
-      {{ wait("추가하는 중") }}
-    </p>
-  </fieldset>
-</form>
+<div class="card p-4 text-sm text-slate-600">
+  <p>직무 분류가 아직 없습니다. 기본 분류(대분류 25개·소분류 296개)를 불러오거나 대분류를 직접 추가합니다</p>
+  <form hx-post="/ui/taxonomy/seed" hx-target="#taxonomy-tree" hx-swap="innerHTML" hx-disabled-elt="find button">
+    <button type="submit">기본 분류 불러오기</button> {{ wait("불러오는 중") }}
+  </form>
+</div>
 {% endif %}
+
+<div class="card grid overflow-hidden sm:grid-cols-[12rem_1fr]">
+  <div class="border-b border-slate-200 bg-slate-50 sm:border-b-0 sm:border-r">
+    <ul class="max-h-[32rem] overflow-y-auto py-1">
+      {% for major in majors %}
+      <li>
+        <button type="button" hx-get="/ui/taxonomy?major={{ major.id }}" hx-target="#taxonomy-tree" hx-swap="innerHTML"
+                class="taxonomy-major m-0 flex w-full items-center justify-between rounded-none border-0 px-4 py-2 text-left shadow-none {% if selected and major.id == selected.id %}bg-white font-semibold text-slate-900{% else %}bg-transparent font-normal text-slate-600 hover:bg-white{% endif %}">
+          <span class="{% if not major.enabled %}text-slate-400 line-through{% endif %}">{{ major.name }}</span>
+          <span class="text-xs tabular-nums text-slate-400">{{ enabled_counts[major.id] }}</span>
+        </button>
+      </li>
+      {% endfor %}
+    </ul>
+    <form class="flex gap-1 border-t border-slate-200 p-2" hx-post="/ui/taxonomy/majors" hx-target="#taxonomy-tree" hx-swap="innerHTML">
+      <input name="name" type="text" required placeholder="대분류 추가" aria-label="새 대분류 이름" class="mt-0 min-w-0 flex-1 text-sm">
+      <button type="submit" class="mt-0">추가</button>
+    </form>
+  </div>
+
+  <div class="min-w-0 p-4">
+    {% if selected and not edit %}
+    <div class="mb-3 flex flex-wrap items-center gap-3">
+      <h4 class="m-0 text-lg font-semibold {% if not selected.enabled %}text-slate-400 line-through{% endif %}">{{ selected.name }}</h4>
+      {% if not selected.enabled %}<span class="text-xs text-slate-500">꺼짐 · AI 가 고르지 않음</span>{% endif %}
+      <span class="text-xs text-slate-400">공고 {{ field_count }}건</span>
+      <button type="button" hx-get="/ui/taxonomy?major={{ selected.id }}&edit=true" hx-target="#taxonomy-tree" hx-swap="innerHTML" class="ml-auto mt-0">수정</button>
+    </div>
+    <ul class="flex flex-wrap gap-2">
+      {% for minor in minors %}
+      <li class="taxonomy-chip rounded-md border px-3 py-1.5 text-sm {% if minor.enabled %}border-slate-200 bg-white text-slate-800{% else %}border-dashed border-slate-200 bg-slate-50 text-slate-400 line-through{% endif %}"
+          title="{% if minor.enabled %}공고 {{ role_counts.get(minor.name, 0) }}건{% else %}꺼짐{% endif %}">{{ minor.name }}</li>
+      {% else %}
+      <li class="text-sm text-slate-500">소분류가 없습니다. 수정을 눌러 추가합니다</li>
+      {% endfor %}
+    </ul>
+
+    {% elif selected %}
+    {% set d = draft or {"name": selected.name, "enabled": selected.enabled, "minors": minors} %}
+    <form hx-put="/ui/taxonomy/{{ selected.id }}" hx-target="#taxonomy-tree" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]">
+      <div class="mb-3 flex flex-wrap items-end gap-3">
+        <p class="my-0">
+          <label for="taxonomy-major-name" class="block text-xs text-slate-500">대분류 이름</label>
+          <input id="taxonomy-major-name" name="name" type="text" required value="{{ d.name }}" class="mt-0">
+        </p>
+        <label class="my-0 flex items-center gap-1 text-sm">
+          <input type="hidden" name="enabled" value="{{ '1' if d.enabled else '0' }}">
+          <input type="checkbox" class="mt-0" {% if d.enabled %}checked{% endif %} onchange="this.previousElementSibling.value = this.checked ? '1' : '0'"> 켜짐
+        </label>
+      </div>
+      <p class="mb-1 text-xs text-slate-500">위·아래로 순서를 바꿉니다. 끈 소분류는 AI 가 새 공고에서 고르지 않습니다</p>
+      <ol class="taxonomy-edit divide-y divide-slate-100 rounded-md border border-slate-200">
+        {% for minor in d.minors %}
+        <li class="flex items-center gap-2 px-2 py-1.5">
+          <input type="hidden" name="minor_id" value="{{ minor.id if minor.id is not none else '' }}">
+          <span class="flex shrink-0 flex-col">
+            <button type="button" class="m-0 px-1 py-0 text-xs leading-none" aria-label="위로" onclick="const r=this.closest('li'); r.previousElementSibling && r.parentNode.insertBefore(r, r.previousElementSibling)">▲</button>
+            <button type="button" class="m-0 px-1 py-0 text-xs leading-none" aria-label="아래로" onclick="const r=this.closest('li'); r.nextElementSibling && r.parentNode.insertBefore(r.nextElementSibling, r)">▼</button>
+          </span>
+          <input name="minor_name" type="text" required value="{{ minor.name }}" aria-label="소분류 이름" class="mt-0 min-w-0 flex-1">
+          <label class="my-0 flex shrink-0 items-center gap-1 text-sm">
+            <input type="hidden" name="minor_on" value="{{ '1' if minor.enabled else '0' }}">
+            <input type="checkbox" class="mt-0" {% if minor.enabled %}checked{% endif %} onchange="this.previousElementSibling.value = this.checked ? '1' : '0'"> 켜짐
+          </label>
+        </li>
+        {% endfor %}
+      </ol>
+      <template id="taxonomy-new-minor">
+        <li class="flex items-center gap-2 px-2 py-1.5">
+          <input type="hidden" name="minor_id" value="">
+          <span class="flex shrink-0 flex-col">
+            <button type="button" class="m-0 px-1 py-0 text-xs leading-none" aria-label="위로" onclick="const r=this.closest('li'); r.previousElementSibling && r.parentNode.insertBefore(r, r.previousElementSibling)">▲</button>
+            <button type="button" class="m-0 px-1 py-0 text-xs leading-none" aria-label="아래로" onclick="const r=this.closest('li'); r.nextElementSibling && r.parentNode.insertBefore(r.nextElementSibling, r)">▼</button>
+          </span>
+          <input name="minor_name" type="text" required placeholder="새 소분류 이름" aria-label="새 소분류 이름" class="mt-0 min-w-0 flex-1">
+          <label class="my-0 flex shrink-0 items-center gap-1 text-sm">
+            <input type="hidden" name="minor_on" value="1">
+            <input type="checkbox" class="mt-0" checked onchange="this.previousElementSibling.value = this.checked ? '1' : '0'"> 켜짐
+          </label>
+        </li>
+      </template>
+      <p class="mt-2 flex flex-wrap items-center gap-2">
+        <button type="button" class="mt-0" onclick="const list=this.closest('form').querySelector('ol'); list.appendChild(document.getElementById('taxonomy-new-minor').content.cloneNode(true)); list.lastElementChild.querySelector('input[name=minor_name]').focus()">+ 소분류 추가</button>
+        <span class="ml-auto flex gap-2">
+          <button type="button" class="mt-0" hx-get="/ui/taxonomy?major={{ selected.id }}" hx-target="#taxonomy-tree" hx-swap="innerHTML">취소</button>
+          <button type="submit" class="mt-0 border-slate-800 bg-slate-800 text-white hover:bg-slate-700">저장</button>
+        </span>
+      </p>
+    </form>
+    {% endif %}
+  </div>
+</div>

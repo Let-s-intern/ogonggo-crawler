@@ -24,6 +24,7 @@ from collections.abc import Iterator
 import pytest
 
 from app import db
+from app.classify.basics import Basics
 from app.classify.batch import ClassifyProgress, classify_ids
 from app.classify.classifier import MAX_BODY_CHARS, classify_body
 from app.classify.grounding import NOT_IN_SOURCE, ground
@@ -118,7 +119,9 @@ async def test_실행이_보내는_값도_원문과_본문으로_갈린다(conn:
         conn, [1, 2], ClassifyProgress(), client=client, settings=settings_with_key()
     )
 
-    첫_건, 둘째_건 = client.calls[0]["contents"], client.calls[1]["contents"]
+    # 공고마다 회사·모집 기간을 묻는 호출이 하나 더 있다 (`app/classify/basics.py`)
+    calls = [c for c in client.calls if c["config"]["response_schema"] is not Basics]
+    첫_건, 둘째_건 = calls[0]["contents"], calls[1]["contents"]
     assert ONLY_IN_SOURCE in 첫_건
     assert ONLY_IN_SOURCE not in 둘째_건
     assert "제휴사 데이터 연동 구조 기획" in 둘째_건

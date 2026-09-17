@@ -33,7 +33,7 @@ def build_client(settings: Settings | None = None) -> genai.Client:
     """API 키는 설정에서만 온다. 소스에도 로그에도 남기지 않는다."""
     resolved = settings or get_settings()
     if not resolved.gemini_api_key:
-        raise LlmCallError("no_api_key", "GEMINI_API_KEY 가 비어 있다")
+        raise LlmCallError("no_api_key", "API 키가 없다")
     return genai.Client(api_key=resolved.gemini_api_key)
 
 

@@ -3,9 +3,15 @@
 한 화면(`/review`)이 좁혀서 보고, 좁힌 것을 지운다. 목록과 상세 패널은 `app/api/review.py` 다.
 조건을 만드는 곳이 하나여야 표가 센 건수와 지우기가 지우는 행이 같다.
 
-크롤러에서는 사람이 값을 고치지 않는다 (2026-09-15 결정). 그래서 조건도 보는 데 필요한 것만
-남겼다 — 검색, 사이트, 오공고 전송 여부, 모집 여부, 직군, 그리고 잘못 수집된 중복을 지울 때 쓰는
-중복 찾기. 회사 고르기·날짜 범위·빈 값 칸·제안 여부는 뺐다.
+조건은 보는 데 필요한 것만 둔다 — 목록 보기(오늘 들어옴·확인 필요·보냄·전체), 검색, 사이트,
+모집 여부, 직군, 그리고 잘못 수집된 중복을 지울 때 쓰는 중복 찾기.
+
+## 확인 필요
+
+운영자가 이 화면을 여는 이유는 "공고가 잘 들어왔는지 보기" 하나다 (2026-09-17 결정, LC-3344).
+그래서 손이 가야 하는 공고를 한데 모은다. 아직 보내지 않았고 마감 전인 공고 중 넷 중 하나라도
+걸린 것이다 — 오공고가 거절했다, 오공고가 반드시 받는 칸이 비었다, AI 분류가 아직 안 됐다,
+본문이 거의 없다. 마감이 지난 공고는 어차피 보내지 않으므로 넣지 않는다.
 
 ## 조건은 화면에서 온 문자열로 조립하지 않는다
 
@@ -18,7 +24,7 @@ import logging
 import sqlite3
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
@@ -26,6 +32,7 @@ from fastapi.responses import HTMLResponse
 
 from app.api import crawlers
 from app.api.ui import display_zone, render
+from app.deliver.spring import OPEN_SQL, READY_SQL
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +56,39 @@ DELIVERY_STATES: dict[str, str] = {
 SENT_SQL = (
     "EXISTS (SELECT 1 FROM spring_deliveries d"
     " WHERE d.source_url = n.source_url AND d.status = 'sent')"
+)
+
+# 목록 보기. 위 칩과 숫자 카드가 고른다. 비어 있으면 전체다 — 화면은 늘 `today` 를 보내고,
+# 조건 없이 부르는 API 호출과 테스트는 예전처럼 전체를 본다
+VIEW_TODAY = "today"
+VIEW_CHECK = "check"
+VIEW_SENT = "sent"
+VIEW_ALL = "all"
+VIEWS: dict[str, str] = {
+    VIEW_TODAY: "오늘 들어옴",
+    VIEW_CHECK: "확인 필요",
+    VIEW_SENT: "보냄",
+    VIEW_ALL: "전체",
+}
+
+# 이보다 짧은 본문은 상세를 제대로 못 읽은 것으로 본다. 목록의 한 줄 요약만 들어온 경우다
+SHORT_BODY_CHARS = 200
+
+# 확인 필요를 이루는 넷. 목록의 행마다 어느 것에 걸렸는지 표시로도 쓴다. 바인딩이 없는 조각이다
+FAILED_SQL = (
+    "EXISTS (SELECT 1 FROM spring_deliveries d"
+    " WHERE d.source_url = n.source_url AND d.status = 'failed')"
+)
+UNREADY_SQL = f"NOT {READY_SQL}"
+UNCLASSIFIED_SQL = (
+    "NOT EXISTS (SELECT 1 FROM job_classifications c WHERE c.raw_job_id = n.raw_job_id)"
+)
+SHORT_BODY_SQL = f"length(trim(coalesce(n.body, ''))) < {SHORT_BODY_CHARS}"
+
+# 마감 전 조건(`OPEN_SQL`)에 바인딩 하나가 든다 — 표시 시간대의 지금이다
+_CHECK_SQL = (
+    f"(NOT {{sent}} AND {OPEN_SQL} AND ({FAILED_SQL} OR {UNREADY_SQL}"
+    f" OR {UNCLASSIFIED_SQL} OR {SHORT_BODY_SQL}))"
 )
 
 # 같은 공고가 두 번 들어왔는지 보는 기준. 무엇을 중복으로 볼지가 상황마다 달라 고르게 둔다.
@@ -143,6 +183,22 @@ def _today() -> str:
     return datetime.now(display_zone()).date().isoformat()
 
 
+def today_start_utc() -> str:
+    """표시 시간대 오늘 0시를 UTC 문자열로. 수집 시각과 보낸 시각은 UTC 로 저장돼 있다."""
+    local = datetime.now(display_zone()).replace(hour=0, minute=0, second=0, microsecond=0)
+    return local.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def now_local() -> str:
+    """마감 일시와 견줄 지금. 모집 일시는 사이트의 한국 시각 그대로라 표시 시간대로 센다."""
+    return datetime.now(display_zone()).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def check_sql() -> str:
+    """확인 필요 조건. 바인딩 하나(`now_local()`)를 받는다."""
+    return _CHECK_SQL.format(sent=SENT_SQL)
+
+
 def _filled(expression: str) -> str:
     """그 식이 비어 있지 않다는 SQL 조각. 공백만 있는 값도 빈 것으로 본다."""
     return f"TRIM(COALESCE({expression}, ''), {_BLANK_CHARS}) <> ''"
@@ -153,6 +209,7 @@ class JobFilter:
     """조회 조건 한 벌. 표와 지우기가 같은 조건을 본다."""
 
     workflow_id: int | None = None
+    view: str = ""
     query: str = ""
     status: str = ""
     delivered: str = ""
@@ -165,6 +222,7 @@ class JobFilter:
         """폼에 다시 실을 값. 지우기 요청과 페이지 이동이 표와 같은 조건을 들고 가게 한다."""
         return {
             "workflow_id": "" if self.workflow_id is None else str(self.workflow_id),
+            "view": self.view,
             "q": self.query,
             "status": self.status,
             "delivered": self.delivered,
@@ -175,6 +233,7 @@ class JobFilter:
 
 def read_filter(
     workflow_id: str = "",
+    view: str = "",
     q: str = "",
     status: str = "",
     delivered: str = "",
@@ -188,6 +247,7 @@ def read_filter(
     """
     return JobFilter(
         workflow_id=int(workflow_id) if workflow_id.strip().isdigit() else None,
+        view=view if view in VIEWS and view != VIEW_ALL else "",
         query=q.strip(),
         status=status if status in DEADLINE_STATES else "",
         delivered=delivered if delivered in DELIVERY_STATES else "",
@@ -225,6 +285,14 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
     if picked.workflow_id is not None:
         clauses.append("r.workflow_id = ?")
         params.append(picked.workflow_id)
+    if picked.view == VIEW_TODAY:
+        clauses.append("r.crawled_at >= ?")
+        params.append(today_start_utc())
+    elif picked.view == VIEW_CHECK:
+        clauses.append(check_sql())
+        params.append(now_local())
+    elif picked.view == VIEW_SENT:
+        clauses.append(SENT_SQL)
     if picked.query:
         clauses.append("(n.title LIKE ? OR n.company_name LIKE ? OR n.parent_company_name LIKE ?)")
         params.extend([f"%{picked.query}%"] * 3)
@@ -405,6 +473,7 @@ def _describe(conn: sqlite3.Connection, picked: JobFilter, scope: str) -> str:
     return " · ".join(
         (
             f"워크플로우 {workflow}",
+            f"보기 {VIEWS.get(picked.view, '전체')}",
             f"직군 {picked.job_field or '전체'}",
             f"모집 {DEADLINE_STATES.get(picked.status, '전체')}",
             f"오공고 {DELIVERY_STATES.get(picked.delivered, '전체')}",
@@ -412,6 +481,40 @@ def _describe(conn: sqlite3.Connection, picked: JobFilter, scope: str) -> str:
             f"검색어 {picked.query or '없음'}",
         )
     )
+
+
+def view_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    """칩과 숫자 카드의 건수. 다른 조회 조건은 걸지 않은 전체 기준이다."""
+    return {
+        view: count(conn, JobFilter(view=view)) for view in (VIEW_TODAY, VIEW_CHECK, VIEW_SENT)
+    } | {VIEW_ALL: count(conn, JobFilter())}
+
+
+def sent_today(conn: sqlite3.Connection) -> int:
+    """오늘(표시 시간대) 오공고로 보낸 공고 수."""
+    row = conn.execute(
+        "SELECT count(*) AS n FROM spring_deliveries WHERE status = 'sent' AND sent_at >= ?",
+        (today_start_utc(),),
+    ).fetchone()
+    return int(row["n"])
+
+
+def failing_sites(conn: sqlite3.Connection) -> list[str]:
+    """켜져 있는데 마지막 수집이 실패한 사이트 이름. 공고 목록 위 알림 띠가 쓴다.
+
+    멈춘 사이트는 넣지 않는다 — 수집을 안 하고 있으니 "오늘 공고가 안 들어온" 이유가 실패가 아니다.
+    """
+    rows = conn.execute(
+        """
+        SELECT w.name FROM workflows w
+         WHERE w.status = 'active'
+           AND (SELECT c.status FROM crawl_runs c
+                 WHERE c.workflow_id = w.id AND c.status IS NOT NULL
+                 ORDER BY c.id DESC LIMIT 1) IN ('failed', 'timeout')
+         ORDER BY w.name
+        """
+    ).fetchall()
+    return [str(row["name"]) for row in rows]
 
 
 @dataclass(frozen=True)
@@ -536,6 +639,7 @@ def _delete_rows(conn: sqlite3.Connection, raw_job_ids: Sequence[int]) -> tuple[
             overrides += conn.execute(
                 f"DELETE FROM job_field_overrides WHERE raw_job_id IN ({marks})", part
             ).rowcount
+            conn.execute(f"DELETE FROM job_custom_values WHERE raw_job_id IN ({marks})", part)
             conn.execute(f"DELETE FROM job_classifications WHERE raw_job_id IN ({marks})", part)
             conn.execute(f"DELETE FROM job_field_suggestions WHERE raw_job_id IN ({marks})", part)
             normalized += conn.execute(

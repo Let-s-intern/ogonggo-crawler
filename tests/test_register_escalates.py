@@ -53,7 +53,9 @@ class Report:
         self.skipped: list[str] = []
 
     def summary(self) -> dict[str, int]:
-        return {"list.item": 0 if self.list_missing else 1}
+        return {"list.item": 0 if self.list_missing else self.items}
+
+    items = 3
 
 
 class Source:
@@ -196,3 +198,132 @@ async def test_브라우저가_없으면_정적_결과를_사유와_함께_올�
 def test_등록이_돌려주는_셀렉터는_그대로다() -> None:
     """올라간 경로가 무엇이든 저장되는 것은 생성이 낸 셀렉터다."""
     assert isinstance(result_for(RENDERED).selectors, SelectorSet)
+
+
+class LinklessReport(Report):
+    """항목은 잡았지만 링크를 못 읽은 결과."""
+
+    def __init__(self) -> None:
+        super().__init__(list_missing=False)
+        self.failed_list_fields = ["list.link"]
+
+
+@pytest.mark.asyncio
+async def test_정적에서_링크를_못_읽으면_렌더로도_만들어_나은_쪽을_쓴다(
+    monkeypatch: pytest.MonkeyPatch, modes: list[str]
+) -> None:
+    """CJ 실측(2026-09-17): 껍데기에서 항목 1건·링크 0건을 잡고 렌더로 올리지 않았다."""
+
+    async def generate_for_urls(
+        list_url: str, detail_url: str, *, source: Any, **kwargs: Any
+    ) -> GenerationResult:
+        html = (await source.fetch(list_url)).text
+        result = result_for(RENDERED)
+        if html == SHELL:
+            return GenerationResult(
+                selectors=result.selectors,
+                usage=result.usage,
+                attempts=1,
+                verification=LinklessReport(),  # type: ignore[arg-type]
+            )
+        return result
+
+    monkeypatch.setattr(crawlers_api, "generate_for_urls", generate_for_urls)
+    generate = crawlers_api.get_generator(None)
+
+    result = await generate(LIST_URL, DETAIL_URL, "")
+
+    assert modes == [STATIC, PLAYWRIGHT]
+    assert result.render_mode == PLAYWRIGHT
+    assert any("렌더한 HTML 로 셀렉터를 만들었다" in note for note in result.notes)
+
+
+@pytest.mark.asyncio
+async def test_렌더해도_링크를_못_읽으면_정적_결과를_둔다(
+    monkeypatch: pytest.MonkeyPatch, modes: list[str]
+) -> None:
+    """링크를 목록에 두지 않는 사이트(삼성)는 렌더해도 같다. 브라우저 모드로 바꾸지 않는다."""
+
+    async def generate_for_urls(
+        list_url: str, detail_url: str, *, source: Any, **kwargs: Any
+    ) -> GenerationResult:
+        result = result_for(RENDERED)
+        return GenerationResult(
+            selectors=result.selectors,
+            usage=result.usage,
+            attempts=1,
+            verification=LinklessReport(),  # type: ignore[arg-type]
+        )
+
+    monkeypatch.setattr(crawlers_api, "generate_for_urls", generate_for_urls)
+    generate = crawlers_api.get_generator(None)
+
+    result = await generate(LIST_URL, DETAIL_URL, "")
+
+    assert modes == [STATIC, PLAYWRIGHT]
+    assert result.render_mode == STATIC
+    assert "렌더로도 만들어 봤지만 나아지지 않았다" in result.notes[-1]
+
+
+class OneItemReport(Report):
+    """정적 껍데기에서 항목 모양 한 건만 잡은 결과. 링크는 읽었다."""
+
+    items = 1
+
+
+@pytest.mark.asyncio
+async def test_정적_항목이_한_건뿐이면_렌더로도_만들어_더_많이_잡히는_쪽을_쓴다(
+    monkeypatch: pytest.MonkeyPatch, modes: list[str]
+) -> None:
+    """CJ 실측(2026-09-17): 껍데기의 항목 모양 한 건으로 만든 셀렉터가 렌더 페이지에서 0건이었다."""
+
+    async def generate_for_urls(
+        list_url: str, detail_url: str, *, source: Any, **kwargs: Any
+    ) -> GenerationResult:
+        html = (await source.fetch(list_url)).text
+        result = result_for(RENDERED)
+        report = OneItemReport(list_missing=False) if html == SHELL else Report(list_missing=False)
+        return GenerationResult(
+            selectors=result.selectors,
+            usage=result.usage,
+            attempts=1,
+            verification=report,  # type: ignore[arg-type]
+        )
+
+    monkeypatch.setattr(crawlers_api, "generate_for_urls", generate_for_urls)
+    generate = crawlers_api.get_generator(None)
+
+    result = await generate(LIST_URL, DETAIL_URL, "")
+
+    assert modes == [STATIC, PLAYWRIGHT]
+    assert result.render_mode == PLAYWRIGHT
+
+
+@pytest.mark.asyncio
+async def test_렌더_목록이_더_많으면_링크를_못_읽어도_렌더를_쓴다(
+    monkeypatch: pytest.MonkeyPatch, modes: list[str]
+) -> None:
+    """CJ 실측(2026-09-17): 렌더한 10건의 링크가 `javascript:` 였다. 링크는 판정이 눌러서 찾는다."""
+
+    class TenLinklessReport(LinklessReport):
+        items = 10
+
+    async def generate_for_urls(
+        list_url: str, detail_url: str, *, source: Any, **kwargs: Any
+    ) -> GenerationResult:
+        html = (await source.fetch(list_url)).text
+        result = result_for(RENDERED)
+        report = OneItemReport(list_missing=False) if html == SHELL else TenLinklessReport()
+        return GenerationResult(
+            selectors=result.selectors,
+            usage=result.usage,
+            attempts=1,
+            verification=report,  # type: ignore[arg-type]
+        )
+
+    monkeypatch.setattr(crawlers_api, "generate_for_urls", generate_for_urls)
+    generate = crawlers_api.get_generator(None)
+
+    result = await generate(LIST_URL, DETAIL_URL, "")
+
+    assert result.render_mode == PLAYWRIGHT

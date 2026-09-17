@@ -1,0 +1,8 @@
+{% extends "pages/settings.html" %}
+{% from "macros.html" import empty %}
+{% block section %}
+{# 설정 > 수집 항목 (`app/api/ui_fields.py`). 목록은 항목을 더하거나 끄면 다시 불린다 #}
+<div id="fields-list" hx-get="/ui/fields" hx-trigger="load, fields-changed from:body" hx-swap="innerHTML">
+  {{ empty("수집 항목을 불러오는 중") }}
+</div>
+{% endblock %}

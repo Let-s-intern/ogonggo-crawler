@@ -15,7 +15,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}{% endblock %} — 크롤링 자동화 made by seongbin</title>
+  <title>{% block title %}{% endblock %} — 크롤링 자동화</title>
   <script src="https://unpkg.com/htmx.org@2.0.7/dist/htmx.min.js"
           integrity="sha384-ZBXiYtYQ6hJ2Y0ZNoYuI+Nq5MqWBr+chMrS/RkXpNzQCApHEhOt2aY8EJgqwHLkJ"
           crossorigin="anonymous"></script>
@@ -198,9 +198,10 @@
       .chip-warn { @apply bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200; }
       .chip-idle { @apply bg-slate-100 text-slate-600; }
 
-      /* 오른쪽 패널. 목록 위에서 공고 한 건을 읽는다. 모달과 같은 <dialog> 이고 자리만 오른쪽이다 */
+      /* 오른쪽 패널. 목록 위에서 공고 한 건·사이트 하나를 읽고 고친다. 모달과 같은 <dialog> 이고
+         자리만 오른쪽이다. 칸을 두 줄로 놓아도 긴 본문이 읽히는 폭이다 */
       dialog.panel {
-        @apply m-0 ml-auto h-screen max-h-screen w-[min(44rem,100vw)] rounded-none border-0
+        @apply m-0 ml-auto h-screen max-h-screen w-[min(50rem,100vw)] rounded-none border-0
                border-l border-slate-200;
       }
     }
@@ -209,7 +210,7 @@
 <body class="min-h-screen bg-slate-100 text-slate-800 text-[15px] leading-relaxed antialiased">
   <header class="border-b border-slate-200 bg-white">
     <div class="mx-auto flex max-w-7xl flex-wrap items-center gap-x-8 gap-y-2 px-6 py-3">
-      <h1 class="text-base font-bold tracking-tight text-slate-900">크롤링 자동화 <span class="ml-1 text-xs font-normal tracking-normal text-slate-400">made by seongbin</span></h1>
+      <h1 class="text-base font-bold tracking-tight text-slate-900">크롤링 자동화</h1>
       <nav aria-label="메뉴" class="min-w-0 flex-1">
         <ul class="flex flex-wrap gap-1">
           {% for path, label in nav %}
@@ -231,26 +232,6 @@
                 class="mt-0 border-slate-300 bg-white text-slate-600 hover:bg-slate-50">로그아웃</button>
       </form>
     </div>
-    {# 묶음 안의 화면들. 묶이지 않은 화면(대시보드·오공고 전송)에는 이 줄이 없다 #}
-    {% if group_nav %}
-    <div class="border-t border-slate-100">
-      <nav aria-label="하위 메뉴" class="mx-auto max-w-7xl px-6">
-        <ul class="flex flex-wrap gap-x-5">
-          {% for path, label in group_nav %}
-          <li>
-            {% if path == group_active %}
-            <a href="{{ path }}" aria-current="page"
-               class="-mb-px block border-b-2 border-slate-900 py-2.5 text-sm font-semibold text-slate-900">{{ label }}</a>
-            {% else %}
-            <a href="{{ path }}"
-               class="-mb-px block border-b-2 border-transparent py-2.5 text-sm font-medium text-slate-500 hover:border-slate-300 hover:text-slate-900">{{ label }}</a>
-            {% endif %}
-          </li>
-          {% endfor %}
-        </ul>
-      </nav>
-    </div>
-    {% endif %}
   </header>
 
   {# 기본 비밀번호로 떠 있는 동안 지우지 않는다. 공개 주소에서 이 상태는 잠기지 않은 것과
@@ -269,10 +250,40 @@
      여기를 채운다. 비어 있으면 아무것도 차지하지 않는다 #}
   <div id="global-error" role="alert"></div>
 
+  {# 설정은 왼쪽 목록과 오른쪽 내용 두 칸이다. 좁은 화면에서는 목록이 위로 올라간다
+     (`app/api/ui.py` 의 `SETTINGS_SECTIONS`) #}
+  {% if side_nav %}
+  <div class="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-6 md:flex-row">
+    <nav aria-label="설정 메뉴" class="shrink-0 md:w-48">
+      <h2 class="mb-3 text-xl font-bold tracking-tight text-slate-900">설정</h2>
+      {% for section, items in side_nav %}
+      <p class="mb-1 mt-4 px-3 text-xs font-medium text-slate-400 first-of-type:mt-0">{{ section }}</p>
+      <ul class="flex flex-wrap gap-1 md:flex-col">
+        {% for path, label in items %}
+        <li>
+          {% if path == current %}
+          <a href="{{ path }}" aria-current="page"
+             class="block rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-slate-200">{{ label }}</a>
+          {% else %}
+          <a href="{{ path }}"
+             class="block rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">{{ label }}</a>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% endfor %}
+    </nav>
+    <main class="min-w-0 flex-1">
+      <h3 class="mb-5 text-lg font-bold tracking-tight text-slate-900">{% block heading %}{% endblock %}</h3>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  {% else %}
   <main class="mx-auto max-w-7xl px-6 py-6">
-    <h2 class="mb-5 text-xl font-bold tracking-tight text-slate-900">{% block heading %}{% endblock %}</h2>
-    {% block content %}{% endblock %}
+    <h2 class="mb-5 text-xl font-bold tracking-tight text-slate-900">{{ self.heading() }}</h2>
+    {{ self.content() }}
   </main>
+  {% endif %}
 
   <footer class="mx-auto max-w-7xl border-t border-slate-200 px-6 py-4">
     {# HTMX 가 붙었는지 화면에서 바로 보이는 자리. 로드되면 이 문장이 갈린다 #}
@@ -309,7 +320,11 @@
       panel.addEventListener('click', function (evt) {
         if (evt.target === panel) { panel.close(); }
       });
-      panel.addEventListener('close', function () { body.innerHTML = ''; });
+      // 닫히면 목록이 패널에서 바뀐 것(멈춤·주기·고친 셀렉터)을 다시 읽게 알린다
+      panel.addEventListener('close', function () {
+        body.innerHTML = '';
+        document.body.dispatchEvent(new CustomEvent('panel-closed'));
+      });
 
       // 지우고 나면 패널이 보던 공고는 없다
       document.body.addEventListener('jobs-deleted', function () {

@@ -14,15 +14,18 @@ from app.api import (
     crawlers,
     jobs,
     review,
+    review_actions,
     review_filter,
     rules,
     settings,
     side,
     ui,
+    ui_ai_quick,
     ui_companies,
+    ui_cost,
     ui_crawlers,
-    ui_dashboard,
     ui_deliver,
+    ui_fields,
     ui_industries,
     ui_llm,
     ui_notify,
@@ -32,6 +35,8 @@ from app.api import (
     ui_runs,
     ui_settings,
     ui_side,
+    ui_site_add,
+    ui_sites,
     ui_storage,
     ui_taxonomy,
     ui_tests,
@@ -106,15 +111,19 @@ app.include_router(classify.router)
 app.include_router(side.router)
 # 화면. API 라우터 뒤에 붙인다 — `/api/...` 가 먼저 잡힌다
 app.include_router(ui.router)
-app.include_router(ui_dashboard.router)
+app.include_router(ui_cost.router)
+app.include_router(ui_fields.router)
 app.include_router(ui_crawlers.router)
 app.include_router(ui_tests.router)
 app.include_router(ui_workflows.router)
+app.include_router(ui_sites.router)
+app.include_router(ui_site_add.router)
 app.include_router(ui_runs.router)
 app.include_router(ui_rules.router)
 app.include_router(ui_rules_preview.router)
 app.include_router(review_filter.router)
 app.include_router(review.router)
+app.include_router(review_actions.router)
 app.include_router(ui_companies.router)
 app.include_router(ui_side.router)
 app.include_router(ui_deliver.router)
@@ -122,6 +131,7 @@ app.include_router(ui_settings.router)
 app.include_router(ui_notify.router)
 app.include_router(ui_storage.router)
 app.include_router(ui_llm.router)
+app.include_router(ui_ai_quick.router)
 app.include_router(ui_taxonomy.router)
 app.include_router(ui_industries.router)
 app.include_router(ui_prompt_rules.router)

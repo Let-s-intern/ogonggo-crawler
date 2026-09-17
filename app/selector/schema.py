@@ -194,6 +194,71 @@ def parse_selectors_allowing_empty(text: str) -> tuple[SelectorSet, list[str]]:
     return validate_selectors_allowing_empty(_load(text))
 
 
+def parse_generated(text: str) -> tuple[SelectorSet, list[str]]:
+    """모델이 낸 응답을 제자리로 옮긴 뒤 검증한다. 옮긴 것은 메모로 돌려준다.
+
+    손으로 저장하는 셀렉터(`parse_selectors`)에는 쓰지 않는다. 사람이 적은 자리는 사람이 고친다.
+    """
+    data, notes = relocate_misplaced(_load(text))
+    return validate_selectors(data), notes
+
+
+def parse_generated_allowing_empty(text: str) -> tuple[SelectorSet, list[str], list[str]]:
+    """`parse_generated` 의 빈 필드 허용판. (셀렉터, 빈 필드, 옮긴 메모).
+
+    키를 아예 빼고 답한 칸도 빈 칸으로 받는다. 롯데ON 실측에서 모델이 상세의 `qualifications` 같은
+    칸을 통째로 빼고 답했고, 키가 없다는 이유로 이 경로마저 예외를 던져 등록이 죽었다 (2026-09-17).
+    """
+    data, notes = relocate_misplaced(_load(text))
+    selectors, empty = validate_selectors_allowing_empty(_with_missing_keys(data))
+    return selectors, empty, notes
+
+
+def _with_missing_keys(data: Any) -> Any:
+    """두 묶음에 빠진 칸 이름을 빈 값으로 채운다. 묶음이 객체가 아니면 손대지 않는다."""
+    if not isinstance(data, Mapping):
+        return data
+    filled = dict(data)
+    for section, fields in (("list", LIST_FIELDS), ("detail", DETAIL_FIELDS)):
+        value = filled.get(section, {})
+        if not isinstance(value, Mapping):
+            continue
+        filled[section] = {**{name: "" for name in fields}, **value}
+    return filled
+
+
+def relocate_misplaced(data: Any) -> tuple[Any, list[str]]:
+    """목록 칸을 상세에, 상세 칸을 목록에 넣은 응답을 제자리로 옮긴다 (2026-09-17).
+
+    실제 등록 시험에서 DeepSeek 가 `link_template` 을 `detail` 안에 넣어 네이버·KT 등록이 통째로
+    거절됐다. 스키마에 없는 이름을 지어낸 것이 아니라 있는 칸을 옆 묶음에 둔 것이라, 뜻을 추측하지
+    않고 자리만 옮길 수 있다.
+
+    옮기는 것은 반대쪽 묶음에만 있는 이름이다. 제자리에 이미 값이 있으면 제자리 값을 두고 잘못 놓인
+    값은 버린다. 어느 묶음에도 없는 이름은 건드리지 않는다 — 검증이 그대로 거절한다.
+    """
+    if not isinstance(data, Mapping):
+        return data, []
+    moved = {section: dict(value) for section, value in data.items() if isinstance(value, Mapping)}
+    if "list" not in moved or "detail" not in moved:
+        return data, []
+    notes: list[str] = []
+    for source, target, fields in (
+        ("detail", "list", LIST_FIELDS),
+        ("list", "detail", DETAIL_FIELDS),
+    ):
+        own = LIST_FIELDS if source == "list" else DETAIL_FIELDS
+        for name in [key for key in moved[source] if key not in own and key in fields]:
+            value = moved[source].pop(name)
+            current = moved[target].get(name)
+            if isinstance(current, str) and current.strip():
+                notes.append(f"`{source}.{name}` 을 버렸다 — `{target}.{name}` 에 이미 값이 있다")
+                continue
+            moved[target][name] = value
+            notes.append(f"모델이 `{source}` 에 넣은 `{name}` 을 `{target}` 으로 옮겼다")
+    return {**data, **moved}, notes
+
+
 def _load(text: str) -> Any:
     try:
         return json.loads(text)

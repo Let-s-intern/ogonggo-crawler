@@ -1,0 +1,25 @@
+{# 표에서 고른 공고를 오공고로 보낸 결과 (`app/api/review_actions.py` 의 `jobs_send`). 확인 창 안에 뜬다 #}
+<div class="modal-body">
+  <div class="modal-head">
+    <h3 id="app-modal-title" class="text-base font-semibold text-slate-900">오공고로 보내기</h3>
+  </div>
+  <div class="modal-scroll" tabindex="-1" autofocus>
+    {% if result.reason %}
+    <p class="text-sm"><span class="state-bad">보내지 못했다</span> — {{ result.reason }}</p>
+    {% else %}
+    <p class="text-sm text-slate-700">
+      고른 공고 {{ picked }}건 중 <span class="state-ok">{{ result.sent }}건 보냄</span>,
+      <span class="{% if result.failed %}state-bad{% else %}state-idle{% endif %}">{{ result.failed }}건 실패</span>{% if picked - result.sent - result.failed > 0 %},
+      이미 보낸 {{ picked - result.sent - result.failed }}건은 건너뜀{% endif %}
+    </p>
+    {% if result.errors %}
+    <ul class="mt-3 list-disc space-y-1 pl-5 text-xs text-red-700">
+      {% for error in result.errors %}<li class="break-all">{{ error }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% endif %}
+  </div>
+  <div class="modal-foot">
+    <button type="button" data-modal-close class="ml-auto">닫기</button>
+  </div>
+</div>

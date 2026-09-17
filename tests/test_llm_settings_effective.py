@@ -63,7 +63,8 @@ async def test_분류가_DB_에_저장된_제공자와_모델로_나간다(
 
     await classify_ids(conn, pending_ids(conn), ClassifyProgress(), settings=base)
 
-    assert [call["model"] for call in recorders["qwen"].calls] == ["qwen3.8-flash"]
+    # 분류 호출과 회사·모집 기간 호출 둘 다 저장된 모델로 나간다
+    assert {call["model"] for call in recorders["qwen"].calls} == {"qwen3.8-flash"}
     assert recorders["gemini"].calls == []
 
 

@@ -1,11 +1,27 @@
 {# 공고 목록의 조회 조건. 어떤 조작이든 표 영역(#review-table)만 갈아 끼운다.
    `page` 를 폼에 두지 않는다 — 조건을 바꾸면 언제나 1페이지로 돌아가야 한다.
-   지운 뒤 표를 다시 부르는 것도 이 폼이 한다 (`jobs-deleted`) #}
+   지운 뒤 표를 다시 부르는 것도 이 폼이 한다 (`jobs-deleted`).
+
+   맨 앞 칩이 목록 보기다(오늘 들어옴·확인 필요·보냄·전체). 건수는 다른 조건을 걸지 않은 전체
+   기준이다 (`app/api/review_filter.py` 의 `view_counts`) #}
 {% from "macros.html" import wait %}
 <form id="review-filter-form" class="flex flex-wrap items-center gap-2"
       hx-get="/ui/review" hx-target="#review-table" hx-swap="innerHTML"
       hx-trigger="submit, change, jobs-deleted from:body"
       hx-disabled-elt="find button[type=submit]">
+  <fieldset class="m-0 flex flex-wrap gap-1 border-0 p-0">
+    <legend class="sr-only">목록 보기</legend>
+    {% for value, label in views.items() %}
+    <label class="view-chip m-0 cursor-pointer">
+      <input type="radio" name="view" value="{{ value }}" class="peer sr-only"
+             {% if value == default_view %}checked{% endif %}>
+      <span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 peer-checked:bg-slate-900 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-slate-400">
+        {{ label }} <span class="tabular-nums opacity-70">{{ view_counts[value] }}</span>
+      </span>
+    </label>
+    {% endfor %}
+  </fieldset>
+
   <label for="review-q" class="sr-only">검색 (제목·회사)</label>
   <input id="review-q" name="q" type="search" placeholder="회사명, 제목 검색" class="mt-0 w-64">
 
@@ -14,14 +30,6 @@
     <option value="">사이트 전체</option>
     {% for workflow in workflows %}
     <option value="{{ workflow.id }}">{{ workflow.name }}</option>
-    {% endfor %}
-  </select>
-
-  <label for="review-delivered" class="sr-only">오공고 전송</label>
-  <select id="review-delivered" name="delivered" class="mt-0">
-    <option value="">오공고 전체</option>
-    {% for value, label in delivery_states.items() %}
-    <option value="{{ value }}">{{ label }}</option>
     {% endfor %}
   </select>
 

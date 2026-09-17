@@ -1,0 +1,104 @@
+{# 사이트 추가 창 (`app/api/ui_site_add.py`). 틀은 base.html 의 모달이고 이 조각이 안을 채운다.
+
+   step: form(입력) → queued(걸었음. 창을 닫아도 돈다) / notfound(목록 줄의 `다시 찾기` 로 연다. 무엇이
+   안 됐는지와 공고 주소로 다시 찾기). 진행은 사이트 목록 맨 위에 보인다 (`site_list.html`) #}
+{% macro interval_select(selected, field_id) %}
+<select id="{{ field_id }}" name="interval_minutes">
+  {% for minutes, label in intervals %}<option value="{{ minutes }}" {% if minutes == selected %}selected{% endif %}>{{ label }}</option>{% endfor %}
+</select>
+{% endmacro %}
+<div class="modal-body">
+  <div class="modal-head flex items-center justify-between">
+    <h3 id="app-modal-title" class="text-base font-semibold text-slate-900">사이트 추가</h3>
+    <button type="button" data-modal-close class="mt-0">닫기</button>
+  </div>
+  <div class="modal-scroll space-y-4" tabindex="-1" autofocus>
+    {% if error %}<p class="notice notice-bad">{{ error }}</p>{% endif %}
+
+    {% if step == "form" %}
+    <p class="text-sm text-slate-600">채용공고 목록 페이지 주소만 넣으면 나머지는 자동으로 찾습니다. 공고 몇 건을 시험으로 가져와 되면 자동 수집까지 시작합니다. 창을 닫아도 계속 돌고, 여러 곳을 이어서 넣어도 됩니다</p>
+    <form class="space-y-3" hx-post="/ui/sites/new" hx-target="#app-modal-body" hx-swap="innerHTML"
+          hx-disabled-elt="find button">
+      <p class="my-0">
+        <label for="site-add-url" class="block">목록 페이지 주소</label>
+        <input id="site-add-url" name="list_url" type="url" required value="{{ list_url }}"
+               placeholder="https://careers.example.com/jobs" class="w-full">
+      </p>
+      <div class="flex flex-wrap gap-3">
+        <p class="my-0 min-w-0 flex-1">
+          <label for="site-add-company" class="block">회사 이름</label>
+          <input id="site-add-company" name="company" type="text" required value="{{ company }}"
+                 placeholder="예: 삼성" class="w-full">
+          <span class="text-xs text-slate-500">계열사 공고가 함께 올라오는 사이트면 그룹 이름을 적습니다</span>
+        </p>
+        <p class="my-0">
+          <label for="site-add-interval" class="block">수집 주기</label>
+          {{ interval_select(interval, "site-add-interval") }}
+        </p>
+      </div>
+      <p class="my-0">
+        <label for="site-add-detail" class="block">공고 하나의 주소 <span class="font-normal text-slate-500">(선택)</span></label>
+        <input id="site-add-detail" name="detail_url" type="url" value="{{ detail_url }}"
+               placeholder="https://careers.example.com/jobs/123" class="w-full">
+        <span class="text-xs text-slate-500">비워 두면 목록에서 찾습니다. 넣으면 그 페이지를 보고 상세 셀렉터를 만들어 더 잘 찾습니다</span>
+      </p>
+      <p class="my-0 flex justify-end"><button type="submit">추가</button></p>
+    </form>
+
+    {% elif step == "queued" %}
+    <div class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+      <span class="font-semibold">{{ add.company }}</span> 추가를 시작했어요. 1분쯤 걸리고, 진행은 사이트 목록 맨 위에 보입니다. 창을 닫아도 계속 돕니다
+    </div>
+    <p class="flex justify-end gap-2">
+      <button type="button" hx-get="/ui/sites/new" hx-target="#app-modal-body" hx-swap="innerHTML" class="mt-0">하나 더 추가</button>
+      <button type="button" data-modal-close class="mt-0">닫기</button>
+    </p>
+
+    {% elif step == "notfound" %}
+    <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+      <p class="font-semibold">{{ add.company }} — {{ add.problem or "끝까지 찾지 못했어요" }}</p>
+      <p class="mb-0 mt-1 break-all text-xs text-amber-700">{{ add.list_url }}{% if add.detail_url %}<br>공고 주소: {{ add.detail_url }}{% endif %}</p>
+      {% if add.technical and not add.steps %}
+      <details class="mb-0 mt-1 border-0 p-0"><summary class="text-xs font-normal text-amber-700">기술 정보</summary>
+        <p class="mt-1 break-all text-xs">{{ add.technical }}</p></details>
+      {% endif %}
+    </div>
+    {% if add.steps %}
+    <div>
+      <p class="mb-1 text-sm font-medium text-slate-900">무슨 일이 있었나</p>
+      <ol class="site-add-steps space-y-2">
+        {% for item in add.steps %}
+        <li class="rounded-md border px-3 py-2 text-sm {% if item.ok %}border-emerald-200 bg-emerald-50{% elif item.ok is none %}border-slate-200 bg-slate-50{% else %}border-red-200 bg-red-50{% endif %}">
+          <p class="m-0 font-medium {% if item.ok %}text-emerald-800{% elif item.ok is none %}text-slate-700{% else %}text-red-800{% endif %}">
+            {% if item.ok %}✓{% elif item.ok is none %}·{% else %}✕{% endif %} {{ loop.index }}. {{ item.title }}
+          </p>
+          {% if item.lines %}
+          <ul class="mb-0 mt-1 list-none space-y-0.5 pl-4 text-xs text-slate-700">
+            {% for line in item.lines %}<li class="break-all">{{ line }}</li>{% endfor %}
+          </ul>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+    {% endif %}
+
+    <div class="rounded-md border border-slate-200 p-3">
+      <p class="text-sm font-medium text-slate-900">공고 하나의 주소로 다시 찾기</p>
+      <p class="text-xs text-slate-500">사이트에서 공고 하나를 열고, 브라우저 주소창의 주소를 붙여 넣어 주세요. 그 주소를 보고 다시 만듭니다</p>
+      <form class="mt-2 space-y-2" hx-post="/ui/sites/new" hx-target="#app-modal-body" hx-swap="innerHTML"
+            hx-disabled-elt="find button">
+        <input type="hidden" name="list_url" value="{{ list_url }}">
+        <input type="hidden" name="company" value="{{ company }}">
+        <input type="hidden" name="interval_minutes" value="{{ interval }}">
+        <input type="hidden" name="replace_add_id" value="{{ add.id }}">
+        <input type="url" name="detail_url" required value="{{ detail_url }}" placeholder="https://…/공고 하나의 주소" class="w-full">
+        <p class="my-0 flex justify-end"><button type="submit" class="mt-0">다시 찾기</button></p>
+      </form>
+    </div>
+    <p class="text-xs text-slate-500">
+      그래도 안 되면 <a href="/tests" class="font-medium underline">시험 실행</a> 화면에서 셀렉터를 직접 고칠 수 있습니다{% if add.crawler_id %}. 방금 만든 것은 거기 "초안"으로 남아 있습니다{% endif %}
+    </p>
+    {% endif %}
+  </div>
+</div>

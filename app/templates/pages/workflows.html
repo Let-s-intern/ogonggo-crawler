@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 {% from "macros.html" import empty %}
-{% block title %}워크플로우{% endblock %}
-{% block heading %}워크플로우{% endblock %}
+{% block title %}사이트 목록{% endblock %}
+{% block heading %}사이트 목록{% endblock %}
 {% block content %}
-<section>
-  <p class="text-sm text-slate-600">
-    사이트마다 주기적으로 도는 수집이다. 새 워크플로우는
-    <a class="font-medium underline" href="/tests">테스트 실행</a> 화면에서 승격해 만든다.
-  </p>
-  <div id="workflow-list" hx-get="/ui/workflows" hx-trigger="load" hx-swap="innerHTML">
-    {{ empty("목록을 불러오는 중") }}
-  </div>
-</section>
+{# 사이트 한 줄 = 워크플로우 하나. 누르면 오른쪽 패널에서 보고 고친다 (`app/api/ui_sites.py`) #}
+<div class="mb-3 flex flex-wrap items-center gap-3">
+  <p class="text-sm text-slate-500">사이트마다 정해진 주기로 새 공고를 가져옵니다. 문제가 있는 사이트가 위에 옵니다</p>
+  <button type="button" data-modal-open hx-get="/ui/sites/new" hx-target="#app-modal-body" hx-swap="innerHTML"
+          class="ml-auto mt-0 border-slate-800 bg-slate-800 text-white hover:bg-slate-700">+ 사이트 추가</button>
+</div>
+<div id="site-list" class="card" hx-get="/ui/sites" hx-trigger="load, panel-closed from:body, site-added from:body" hx-swap="innerHTML">
+  <div class="px-4 py-3">{{ empty("목록을 불러오는 중") }}</div>
+</div>
 {% endblock %}

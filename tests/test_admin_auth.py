@@ -150,7 +150,7 @@ def test_korean_password_is_accepted(locked: TestClient) -> None:
     response = locked.post("/login", data={"password": "한글-비밀번호", "next": "/"})
 
     assert response.status_code == 303
-    assert locked.get("/").status_code == 200
+    assert locked.get("/review").status_code == 200
 
 
 def test_empty_password_is_treated_as_unset(locked: TestClient) -> None:
@@ -186,7 +186,7 @@ def test_correct_password_opens_the_lock(locked: TestClient) -> None:
     assert response.headers["location"] == "/settings"
     assert auth.COOKIE_NAME in response.cookies
     # 받은 쿠키로 잠긴 화면에 들어간다
-    assert locked.get("/").status_code == 200
+    assert locked.get("/review").status_code == 200
 
 
 def test_wrong_password_is_refused_without_saying_why(locked: TestClient) -> None:
@@ -206,7 +206,7 @@ def test_password_value_never_reaches_the_screen(locked: TestClient) -> None:
 def test_logout_takes_the_cookie_back(locked: TestClient) -> None:
     """먼저 정상으로 받은 쿠키가, 로그아웃 뒤에 지워지라는 지시로 돌아온다."""
     locked.post("/login", data={"password": auth.DEFAULT_PASSWORD, "next": "/"})
-    assert locked.get("/").status_code == 200
+    assert locked.get("/review").status_code == 200
 
     response = locked.post("/logout")
 
@@ -229,7 +229,7 @@ def test_login_refuses_an_outside_target(locked: TestClient) -> None:
 
 def test_default_password_is_announced_on_screen(client: TestClient) -> None:
     """공개 주소에서 기본값은 잠기지 않은 것과 같다. 운영자가 모른 채 두면 안 된다."""
-    assert "ADMIN_PASSWORD" in client.get("/").text
+    assert "ADMIN_PASSWORD" in client.get("/review").text
     # 로그인 화면은 아직 못 들어온 쪽이 본다
     client.cookies.clear()
     assert "ADMIN_PASSWORD" in client.get("/login").text

@@ -2,14 +2,26 @@
 {% from "macros.html" import empty %}
 {% block section %}
 <section>
-  <h3>AI 제공자</h3>
-  <p>
-    키는 제공자마다 한 벌이고, 모델은 제공자가 아니라 기능에 붙는다.
-    화면에서 바꾸면 <span class="font-semibold text-slate-900">다음 호출부터</span> 적용된다.
-    서버를 다시 띄우지 않는다.
-  </p>
-  <div id="llm-form" hx-get="/ui/llm" hx-trigger="load" hx-swap="innerHTML">
-    {{ empty("제공자 설정을 불러오는 중") }}
+  <h3>AI</h3>
+  <p>공고 본문에서 직군·자격요건 같은 칸을 채우고, 사이트 셀렉터를 만들 때 씁니다. 바꾸면 다음 호출부터 적용됩니다</p>
+  <div id="ai-quick" hx-get="/ui/llm/quick" hx-trigger="load" hx-swap="innerHTML">
+    {{ empty("설정을 불러오는 중") }}
+  </div>
+  {# 제공자·모델·기능별 지정·회사 정의는 여기 접는다. 운영 조합이 하나라 평소에는 열 일이 없다 #}
+  <details class="mt-4">
+    <summary>다른 AI 쓰기 <span class="font-normal text-slate-400">· 제공자, 모델, 기능마다 다르게 고르기</span></summary>
+    <div id="llm-form" class="mt-3" hx-get="/ui/llm" hx-trigger="load" hx-swap="innerHTML">
+      {{ empty("제공자 설정을 불러오는 중") }}
+    </div>
+  </details>
+</section>
+
+{# 비용 화면이 쓰는 모델 단가. 코드 표가 기본이고 여기서 넣은 값이 이긴다 (`app/llm/pricing.py`) #}
+<section id="prices">
+  <h3>모델 단가</h3>
+  <p>비용 화면이 이 단가로 계산합니다. 100만 토큰당 달러이고, 비워서 저장하면 직접 넣은 단가를 지웁니다</p>
+  <div id="price-table" hx-get="/ui/prices" hx-trigger="load" hx-swap="innerHTML">
+    {{ empty("단가를 불러오는 중") }}
   </div>
 </section>
 {% endblock %}

@@ -8,7 +8,7 @@
 {% block content %}
 <section>
   <p class="text-sm text-slate-600">
-    AI 가 공고마다 여기서 산업을 고른다. 끄면 새 분류에서 빠지고, 이미 분류된 공고는 그대로다.
+    AI 가 공고마다 여기서 산업을 고릅니다. 끄면 새 공고에서 고르지 않고, 이미 분류된 공고는 그대로입니다.
   </p>
   <div id="industry-list" hx-get="/ui/industries" hx-trigger="load" hx-swap="innerHTML">
     {{ empty("산업 분류를 불러오는 중") }}

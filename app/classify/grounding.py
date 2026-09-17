@@ -320,5 +320,13 @@ def ground(
             )
         if not kept.get(JOB_FIELD) and kept.get(JOB_ROLE):
             kept[JOB_ROLE] = ""
+        # 직무는 고른 직군 아래 목록 안에서만 받는다 (2026-09-17 결정). 다른 직군의 직무도 전체
+        # 소분류 목록에는 있어서 위 검사를 지난다
+        under = taxonomy_choices.get(f"{JOB_ROLE}:{kept.get(JOB_FIELD, '')}")
+        if kept.get(JOB_ROLE) and under is not None and kept[JOB_ROLE] not in under:
+            kept[JOB_ROLE] = ""
+            if JOB_ROLE not in dropped:
+                dropped.append(JOB_ROLE)
+            reasons[JOB_ROLE] = NOT_IN_LIST
 
     return Grounded(fields=kept, evidence=evidence, dropped=dropped, reasons=reasons)

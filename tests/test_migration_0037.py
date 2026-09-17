@@ -24,11 +24,16 @@ def _rules(conn: sqlite3.Connection) -> dict[str, tuple[int, str]]:
     }
 
 
+def _down_to_before_0037(conn: sqlite3.Connection) -> None:
+    """0037 과 그 뒤 마이그레이션을 되돌린다. 뒤에 마이그레이션이 더 붙어도 0037 을 되돌린다."""
+    db.migrate_down(conn, steps=len([v for v in db.applied_versions(conn) if v >= "0037"]))
+
+
 def test_분류_칸의_켜진_규칙만_끄고_되돌리면_그것만_켠다(tmp_path: pathlib.Path) -> None:
     conn = db.connect(tmp_path / "jobs.db")
     try:
         db.migrate_up(conn)
-        db.migrate_down(conn, steps=1)
+        _down_to_before_0037(conn)
         conn.execute(
             """
             INSERT INTO normalization_rules (field_name, rule_type, rule_config_json, enabled, note)
@@ -45,7 +50,7 @@ def test_분류_칸의_켜진_규칙만_끄고_되돌리면_그것만_켠다(tmp
             "employment_type": (0, ""),
         }
 
-        db.migrate_down(conn, steps=1)
+        _down_to_before_0037(conn)
         assert _rules(conn) == {
             "recruitment_end_at": (1, ""),
             "qualifications": (1, "자격요건 앞말 지우기"),
