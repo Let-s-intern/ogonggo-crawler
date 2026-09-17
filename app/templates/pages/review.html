@@ -61,6 +61,9 @@
       }
       var button = document.getElementById('review-delete-open');
       if (button) { button.disabled = whole ? total === '0' : picked === 0; }
+      // 보내기는 표에서 고른 것만 받는다. 조건 전체를 한꺼번에 보내는 길은 두지 않는다
+      var send = document.getElementById('review-send-open');
+      if (send) { send.disabled = whole || picked === 0; }
     }
 
     document.body.addEventListener('change', function (evt) {

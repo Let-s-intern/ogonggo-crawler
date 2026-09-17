@@ -26,7 +26,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.api import crawlers
+from app.api import crawlers, job_detail
 from app.api.review_filter import (
     DEADLINE_STATES,
     DUP_CRITERIA,
@@ -264,37 +264,73 @@ def review_filters_fragment(
     )
 
 
+def _panel_row(conn: sqlite3.Connection, normalized_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        f"""
+        SELECT n.*, w.name AS workflow_name, r.crawled_at AS crawled_at,
+               COALESCE(sub.logo_url, par.logo_url) AS logo_url,
+               {SENT_SQL} AS sent,
+               {FAILED_SQL} AS delivery_failed,
+               {UNREADY_SQL} AS unready,
+               {UNCLASSIFIED_SQL} AS unclassified,
+               {SHORT_BODY_SQL} AS short_body
+          FROM normalized_jobs n
+          JOIN raw_jobs r ON r.id = n.raw_job_id
+          JOIN workflows w ON w.id = r.workflow_id
+          LEFT JOIN companies sub ON sub.name = NULLIF(n.company_name, '')
+          LEFT JOIN companies par ON par.name = n.parent_company_name
+         WHERE n.id = ?
+        """,
+        (normalized_id,),
+    ).fetchone()
+
+
+def render_panel(
+    request: Request,
+    conn: sqlite3.Connection,
+    normalized_id: int,
+    *,
+    editing: bool = False,
+    message: str = "",
+) -> HTMLResponse:
+    """공고 한 건의 패널. 보기와 고치기가 같은 조각이다 (`app/api/job_detail.py`)."""
+    row = _panel_row(conn, normalized_id)
+    if row is None:
+        return render(request, "fragments/job_panel.html", job=None, normalized_id=normalized_id)
+    edited = job_detail.overrides(conn, int(row["raw_job_id"]), int(row["part"]))
+    classified = job_detail.classification(conn, row)
+    return render(
+        request,
+        "fragments/job_panel.html",
+        job=row,
+        normalized_id=normalized_id,
+        d_day=d_day(row["recruitment_end_at"]),
+        marks=row_marks(row),
+        sent=bool(row["sent"]),
+        delivered=job_detail.delivery(conn, str(row["source_url"])),
+        classified=classified,
+        parts=job_detail.parts_of(conn, int(row["raw_job_id"])),
+        sections=job_detail.SECTIONS,
+        sources={
+            field.name: job_detail.source_of(field.name, edited, classified is not None)
+            for field in job_detail.FIELDS
+        },
+        source_labels=job_detail.SOURCE_LABELS,
+        field_display=job_detail.display,
+        editing=editing,
+        message=message,
+    )
+
+
 @router.get("/ui/review/jobs/{normalized_id}/panel", response_class=HTMLResponse)
 def job_panel_fragment(
     request: Request,
     normalized_id: int,
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
 ) -> HTMLResponse:
-    """공고 한 건의 오른쪽 패널. 읽기 전용이다.
+    """공고 한 건의 오른쪽 패널.
 
     나눈 공고는 번호마다 따로 연다 — 정규화 행 id 로 찾으므로 형제 공고가 섞이지 않는다.
     로고는 자회사 로고가 먼저이고 없으면 모회사 로고다.
     """
-    row = conn.execute(
-        """
-        SELECT n.*, w.name AS workflow_name, r.crawled_at AS crawled_at,
-               COALESCE(sub.logo_url, par.logo_url) AS logo_url,
-               d.status AS delivery_status, d.sent_at AS sent_at
-          FROM normalized_jobs n
-          JOIN raw_jobs r ON r.id = n.raw_job_id
-          JOIN workflows w ON w.id = r.workflow_id
-          LEFT JOIN companies sub ON sub.name = NULLIF(n.company_name, '')
-          LEFT JOIN companies par ON par.name = n.parent_company_name
-          LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
-         WHERE n.id = ?
-        """,
-        (normalized_id,),
-    ).fetchone()
-    return render(
-        request,
-        "fragments/job_panel.html",
-        job=row,
-        normalized_id=normalized_id,
-        d_day=d_day(row["recruitment_end_at"]) if row is not None else None,
-        sent=row is not None and row["delivery_status"] == "sent",
-    )
+    return render_panel(request, conn, normalized_id)

@@ -198,9 +198,10 @@
       .chip-warn { @apply bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200; }
       .chip-idle { @apply bg-slate-100 text-slate-600; }
 
-      /* 오른쪽 패널. 목록 위에서 공고 한 건을 읽는다. 모달과 같은 <dialog> 이고 자리만 오른쪽이다 */
+      /* 오른쪽 패널. 목록 위에서 공고 한 건·사이트 하나를 읽고 고친다. 모달과 같은 <dialog> 이고
+         자리만 오른쪽이다. 칸을 두 줄로 놓아도 긴 본문이 읽히는 폭이다 */
       dialog.panel {
-        @apply m-0 ml-auto h-screen max-h-screen w-[min(44rem,100vw)] rounded-none border-0
+        @apply m-0 ml-auto h-screen max-h-screen w-[min(50rem,100vw)] rounded-none border-0
                border-l border-slate-200;
       }
     }

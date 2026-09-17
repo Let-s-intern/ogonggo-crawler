@@ -1,14 +1,14 @@
 {# 공고 한 건의 오른쪽 패널 (`app/api/review.py` 의 `job_panel_fragment`). 틀(<dialog id="app-panel">)은
    base.html 에 있고 이 조각이 안을 채운다.
 
-   오공고로 보내는 칸을 빈 칸까지 모두 보인다 — 무엇이 비어서 가는지 보여야 AI 규칙을 고칠 수 있다.
-   오공고 쪽은 보냈는지만 적는다. 들어간 뒤의 상태는 크롤러가 알 수 없다 (2026-09-15 결정) #}
-{% macro kv(label, text) %}
-<div class="min-w-0">
-  <dt class="mt-0 text-xs font-normal text-slate-500">{{ label }}</dt>
-  <dd class="mt-0.5 break-words text-sm font-medium text-slate-900">{% if text %}{{ text }}{% else %}<span class="font-normal text-slate-300">비어 있음</span>{% endif %}</dd>
-</div>
-{% endmacro %}
+   크롤러가 가진 칸을 빈 칸까지 모두 보이고, 값마다 어디서 왔는지(사이트·AI·직접 수정·자동) 적는다
+   (`app/api/job_detail.py`). 맨 아래에 수집·AI 분류·오공고 전송 요약이 나란히 있다.
+
+   `editing` 이면 칸이 입력이 되고 저장으로 끝난다. 고친 값은 사람 보정으로 남아 다시 분류해도
+   덮이지 않는다 #}
+{% from "macros.html" import notice_box %}
+{% set source_tone = {"edit": "bg-emerald-50 text-emerald-700", "ai": "bg-violet-50 text-violet-700",
+                      "site": "bg-sky-50 text-sky-700", "auto": "bg-slate-100 text-slate-500"} %}
 
 {% if job is none %}
 <div class="modal-body">
@@ -21,105 +21,167 @@
   </div>
 </div>
 {% else %}
-<div class="flex h-full flex-col">
-  <div class="flex items-start gap-3 border-b border-slate-200 px-5 py-4">
-    <div class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-slate-50">
-      {% if job.logo_url or job.cover_image_url %}
-      <img src="{{ job.logo_url or job.cover_image_url }}" alt="{{ job.company_name or job.parent_company_name }} 로고"
-           class="h-full w-full object-contain p-0.5">
-      {% endif %}
-    </div>
-    <div class="min-w-0 flex-1">
-      <p class="text-sm text-slate-600">
-        {{ job.company_name or job.parent_company_name or "회사 없음" }}
-        {% if job.parent_company_name and job.company_name and job.company_name != job.parent_company_name %}<span class="text-slate-400">· {{ job.parent_company_name }}</span>{% endif %}
-        <span class="text-slate-400">· {{ job.workflow_name }} 수집</span>
-      </p>
-      <h3 id="app-panel-title" class="mt-0.5 text-lg font-bold leading-snug text-slate-900">{{ job.title or "제목 없음" }}</h3>
-      <p class="mt-2 flex flex-wrap gap-1.5">
-        {% if d_day %}<span class="chip {% if d_day == '마감' %}chip-idle{% else %}chip-warn{% endif %}">{{ d_day }}</span>{% endif %}
-        {% if job.employment_type %}<span class="chip chip-idle">{{ job.employment_type | value_label("employment_type") }}</span>{% endif %}
-        {% if job.experience_type %}<span class="chip chip-idle">{{ job.experience_type | value_label("experience_type") }}</span>{% endif %}
-        {% if job.industry %}<span class="chip chip-idle">{{ job.industry }}</span>{% endif %}
-      </p>
-    </div>
-    <button type="button" data-panel-close class="mt-0">닫기</button>
-  </div>
-
-  <div class="flex-1 overflow-y-auto px-5 py-4">
-    {% if sent %}
-    <p class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-      <span class="font-semibold">오공고 전송함</span> · {{ job.sent_at | as_time }}
-    </p>
-    {% else %}
-    <p class="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-      <span class="font-semibold">오공고 전송 안 함</span>
-    </p>
-    {% endif %}
-
-    <p class="mt-5 text-xs font-semibold text-slate-500">오공고로 보내는 값</p>
-    <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-3 rounded-md border border-slate-200 p-4 sm:grid-cols-3">
-      {{ kv("직군", job.job_field) }}
-      {{ kv("직무", job.job_role) }}
-      {{ kv("산업", job.industry) }}
-      {{ kv("고용 형태", job.employment_type | value_label("employment_type") if job.employment_type else "") }}
-      {{ kv("경력", ((job.experience_type | value_label("experience_type")) ~ (" · " ~ job.experience_min_years ~ "년 이상" if job.experience_min_years else "")) if job.experience_type else "") }}
-      {{ kv("학력", job.education_level | value_label("education_level") if job.education_level else "") }}
-      {{ kv("근무 지역", job.region) }}
-      {{ kv("모집 인원", (job.recruitment_headcount ~ "명") if job.recruitment_headcount else "") }}
-      {{ kv("모집 유형", job.recruitment_type | value_label("recruitment_type") if job.recruitment_type else "") }}
-      {{ kv("모집 시작", (job.recruitment_start_at or "")[:16]) }}
-      {{ kv("모집 마감", (job.recruitment_end_at or "")[:16]) }}
-      {{ kv("지원 방법", job.application_method | value_label("application_method") if job.application_method else "") }}
-      {{ kv("채용 시 마감", job.closes_when_filled | value_label("closes_when_filled") if job.closes_when_filled else "") }}
-      {{ kv("자동 종료", job.auto_close_enabled | value_label("auto_close_enabled") if job.auto_close_enabled else "") }}
-      {{ kv("대표 이미지", "있음" if job.cover_image_url else "") }}
-    </dl>
-
-    {% set sections = [
-      ("회사·팀 소개", job.company_and_team_introduction),
-      ("주요 업무", job.responsibilities),
-      ("자격 요건", job.qualifications),
-      ("우대 사항", job.preferred_qualifications),
-      ("급여·처우", job.compensation),
-      ("복지·혜택", job.benefits),
-      ("채용 절차", job.hiring_process),
-      ("채용 안내사항", job.recruitment_notice),
-    ] %}
-    <div class="mt-5 space-y-4">
-      {% for label, text in sections %}
-      {% set clean = text | tidy_text %}
-      {% if clean %}
-      <div>
-        <p class="text-xs font-semibold text-slate-500">{{ label }}</p>
-        <p class="mt-1 whitespace-pre-line text-sm leading-relaxed text-slate-800">{{ clean }}</p>
+<form id="job-panel" class="flex h-full flex-col"
+      hx-post="/ui/review/jobs/{{ job.id }}/edit" hx-target="#app-panel-body" hx-swap="innerHTML"
+      hx-disabled-elt="find button">
+  <div class="border-b border-slate-200 px-6 py-4">
+    <div class="flex items-start gap-3">
+      <div class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-slate-50">
+        {% if job.logo_url or job.cover_image_url %}
+        <img src="{{ job.logo_url or job.cover_image_url }}" alt="{{ job.company_name or job.parent_company_name }} 로고"
+             class="h-full w-full object-contain p-0.5">
+        {% endif %}
       </div>
-      {% endif %}
-      {% endfor %}
+      <div class="min-w-0 flex-1">
+        <p class="text-xs text-slate-500">
+          {{ job.workflow_name }} 사이트 ·
+          {% if job.parent_company_name and job.company_name and job.company_name != job.parent_company_name %}{{ job.parent_company_name }} › {% endif %}{{ job.company_name or job.parent_company_name or "회사 없음" }}
+        </p>
+        <h3 id="app-panel-title" class="mt-0.5 text-lg font-bold leading-snug text-slate-900">{{ job.title or "제목 없음" }}</h3>
+        <p class="mt-1.5 flex flex-wrap gap-1">
+          {% for word, tone in marks %}<span class="chip chip-{{ tone }}">{{ word }}</span>{% endfor %}
+          {% if d_day %}<span class="chip {% if d_day == '마감' %}chip-idle{% else %}chip-warn{% endif %}">{{ d_day }}</span>{% endif %}
+        </p>
+      </div>
+      <button type="button" data-panel-close class="mt-0">닫기</button>
     </div>
-    {% set blank_sections = [] %}
-    {% for label, text in sections %}{% if not (text | tidy_text) %}{% set _ = blank_sections.append(label) %}{% endif %}{% endfor %}
-    {% if blank_sections %}
-    <p class="mt-4 text-xs text-slate-400">비어 있는 본문 칸: {{ blank_sections | join(", ") }}</p>
-    {% endif %}
 
-    {% if job.body %}
-    <details class="mt-4">
-      <summary>원문 본문 전체 보기</summary>
-      <p class="mt-2 whitespace-pre-line text-sm text-slate-600">{{ job.body | tidy_text }}</p>
-    </details>
+    {% if delivered and delivered.status == "failed" and not editing %}
+    <div class="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+      <span class="font-semibold">오공고가 거절했어요</span> · {{ delivered.last_error }}
+      <span class="block text-xs text-red-600">{{ delivered.attempts }}번 시도 · 마지막 시도 {{ delivered.updated_at | as_time }}</span>
+    </div>
     {% endif %}
-    <p class="mt-4 text-xs text-slate-400">수집 {{ job.crawled_at | as_time }} · 공고 {{ job.id }} · 수집 건 {{ job.raw_job_id }}</p>
+    {% if message %}{{ notice_box(message) }}{% endif %}
+
+    <div class="mt-3 flex flex-wrap items-center gap-2">
+      {% if editing %}
+      <button type="button" class="mt-0" hx-get="/ui/review/jobs/{{ job.id }}/panel"
+              hx-target="#app-panel-body" hx-swap="innerHTML">취소</button>
+      <button type="submit" class="btn-quiet mt-0">저장만</button>
+      {% if not sent %}
+      <button type="submit" name="send" value="1" class="ml-auto mt-0">저장하고 오공고로 보내기</button>
+      {% endif %}
+      {% else %}
+      <a href="{{ job.source_url }}" target="_blank" rel="noreferrer"
+         class="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50">원문 열기</a>
+      <button type="button" class="mt-0" hx-get="/ui/review/jobs/{{ job.id }}/edit"
+              hx-target="#app-panel-body" hx-swap="innerHTML">수정</button>
+      <button type="button" class="mt-0" hx-post="/ui/review/jobs/{{ job.id }}/reclassify"
+              hx-target="#app-panel-body" hx-swap="innerHTML"
+              title="본문을 AI 로 다시 읽어 칸을 채운다. 직접 고친 칸은 그대로 둔다">AI로 다시 채우기</button>
+      {% if not sent %}
+      <button type="button" class="ml-auto mt-0 {% if delivered and delivered.status == 'failed' %}border-red-700 bg-red-700 text-white hover:bg-red-600{% else %}border-slate-800 bg-slate-800 text-white hover:bg-slate-700{% endif %}"
+              hx-post="/ui/review/jobs/{{ job.id }}/send" hx-target="#app-panel-body" hx-swap="innerHTML">오공고로 보내기</button>
+      {% endif %}
+      {% endif %}
+    </div>
   </div>
 
-  <div class="flex items-center gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
-    <a href="{{ job.source_url }}" target="_blank" rel="noreferrer"
-       class="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50">원문 열기</a>
-    <button type="button" data-modal-open
-            hx-post="/ui/review/delete/confirm"
-            hx-vals='{"scope": "selected", "raw_job_id": "{{ job.raw_job_id }}"}'
-            hx-target="#app-modal-body" hx-swap="innerHTML"
-            class="ml-auto mt-0 border-red-300 bg-white text-red-700 hover:bg-red-50">삭제</button>
+  <div class="flex-1 overflow-y-auto">
+    {% if editing %}
+    <p class="bg-amber-50 px-6 py-2 text-xs text-amber-800">
+      직접 고친 값은 "직접 수정"으로 표시되고, AI로 다시 채워도 덮어쓰지 않습니다. 칸을 비우면 빈 값으로 고정됩니다
+    </p>
+    {% endif %}
+
+    {% for section, fields in sections %}
+    <section class="m-0 rounded-none border-0 border-b border-slate-100 bg-transparent px-6 py-4 shadow-none">
+      <h4 class="mb-1 mt-0 text-xs font-semibold text-slate-400">{{ section }}</h4>
+      <dl class="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
+        {% for field in fields %}
+        {% set raw = job[field.name] %}
+        {% set shown = field_display(field, raw) %}
+        {% set source = sources[field.name] %}
+        <div class="min-w-0 py-1.5 {% if field.kind == 'long' or field.name == 'title' %}sm:col-span-2{% endif %}">
+          <dt class="mt-0 text-xs font-normal text-slate-500">
+            {{ field.label }}
+            {% if shown and not editing %}<span class="ml-1 rounded px-1 text-[10px] font-medium {{ source_tone[source] }}">{{ source_labels[source] }}</span>{% endif %}
+          </dt>
+          <dd class="mt-0.5 break-words text-sm text-slate-900">
+            {% if editing and field.editable %}
+              {% if field.kind == "choice" %}
+              <select name="{{ field.name }}" class="mt-0 w-full {% if not shown %}border-amber-400 bg-amber-50{% endif %}">
+                <option value="">비어 있음</option>
+                {% for value, label in field.choices.items() %}
+                <option value="{{ value }}" {% if raw == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              {% elif field.kind == "long" %}
+              <textarea name="{{ field.name }}" rows="4" class="mt-0 w-full {% if not shown %}border-amber-400 bg-amber-50{% endif %}">{{ raw or "" }}</textarea>
+              {% else %}
+              <input type="text" name="{{ field.name }}" value="{{ raw or '' }}"
+                     class="mt-0 w-full {% if not shown %}border-amber-400 bg-amber-50{% endif %}">
+              {% endif %}
+            {% elif not shown %}
+              <span class="text-amber-600">비어 있음</span>
+            {% elif field.kind == "long" %}
+              <span class="block whitespace-pre-line leading-relaxed">{{ raw | tidy_text }}</span>
+            {% elif field.name == "cover_image_url" %}
+              <a href="{{ raw }}" target="_blank" rel="noreferrer" class="text-sky-700 hover:underline">이미지 열기</a>
+            {% else %}
+              {{ shown }}
+            {% endif %}
+          </dd>
+        </div>
+        {% endfor %}
+      </dl>
+    </section>
+    {% endfor %}
+
+    {% if not editing %}
+    <section class="m-0 rounded-none border-0 border-b border-slate-100 bg-transparent px-6 py-4 shadow-none">
+      <details class="m-0 border-0 p-0">
+        <summary class="text-xs font-semibold text-slate-400">원문 본문 전체 보기 · 사이트에서 가져온 그대로 · {{ (job.body or "") | length }}자</summary>
+        {% if job.body %}
+        <p class="mt-2 whitespace-pre-line rounded-md bg-slate-50 p-3 text-sm text-slate-600">{{ job.body | tidy_text }}</p>
+        {% else %}
+        <p class="mt-2 text-sm text-amber-600">본문이 비어 있다</p>
+        {% endif %}
+      </details>
+    </section>
+
+    <section class="m-0 grid grid-cols-1 gap-5 rounded-none border-0 bg-transparent px-6 py-4 text-sm shadow-none sm:grid-cols-3">
+      <div>
+        <h4 class="mb-2 mt-0 text-xs font-semibold text-slate-400">수집</h4>
+        <p class="my-0.5 text-slate-600">사이트: {{ job.workflow_name }}</p>
+        <p class="my-0.5 text-slate-600">수집: {{ job.crawled_at | as_time }}</p>
+        {% if parts > 1 %}<p class="my-0.5 text-slate-600">한 공고의 직무: {{ job.part }} / {{ parts }}</p>{% endif %}
+        <p class="my-0.5 truncate text-xs text-slate-400" title="{{ job.source_url }}">{{ job.source_url }}</p>
+      </div>
+      <div>
+        <h4 class="mb-2 mt-0 text-xs font-semibold text-slate-400">AI 분류</h4>
+        {% if classified %}
+        <p class="my-0.5 text-slate-600">모델: {{ classified.model }}</p>
+        <p class="my-0.5 text-slate-600">분류: {{ classified.classified_at | as_time }}</p>
+        <p class="my-0.5 text-slate-600">채운 칸: {{ classified.filled }} / {{ classified.total }}</p>
+        {% else %}
+        <p class="my-0.5 text-violet-700">아직 분류되지 않았어요</p>
+        {% endif %}
+      </div>
+      <div>
+        <h4 class="mb-2 mt-0 text-xs font-semibold text-slate-400">오공고 전송</h4>
+        {% if sent %}
+        <p class="my-0.5 font-medium text-emerald-700">보냄</p>
+        <p class="my-0.5 text-slate-600">보낸 시각: {{ delivered.sent_at | as_time }}</p>
+        {% if delivered.spring_job_id %}<p class="my-0.5 text-slate-600">오공고 공고 번호: {{ delivered.spring_job_id }}</p>{% endif %}
+        {% elif delivered %}
+        <p class="my-0.5 font-medium text-red-700">실패 · {{ delivered.attempts }}번 시도</p>
+        <p class="my-0.5 text-xs text-slate-500">{{ delivered.last_error }}</p>
+        {% else %}
+        <p class="my-0.5 text-slate-500">아직 보내지 않음</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <div class="px-6 pb-5">
+      <button type="button" data-modal-open
+              hx-post="/ui/review/delete/confirm"
+              hx-vals='{"scope": "selected", "raw_job_id": "{{ job.raw_job_id }}"}'
+              hx-target="#app-modal-body" hx-swap="innerHTML"
+              class="mt-0 border-0 bg-transparent px-0 text-xs font-normal text-slate-400 shadow-none hover:bg-transparent hover:text-red-600">이 공고 삭제</button>
+    </div>
+    {% endif %}
   </div>
-</div>
+</form>
 {% endif %}

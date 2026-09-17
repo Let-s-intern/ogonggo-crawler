@@ -14,6 +14,7 @@ from app.api import (
     crawlers,
     jobs,
     review,
+    review_actions,
     review_filter,
     rules,
     settings,
@@ -115,6 +116,7 @@ app.include_router(ui_rules.router)
 app.include_router(ui_rules_preview.router)
 app.include_router(review_filter.router)
 app.include_router(review.router)
+app.include_router(review_actions.router)
 app.include_router(ui_companies.router)
 app.include_router(ui_side.router)
 app.include_router(ui_deliver.router)

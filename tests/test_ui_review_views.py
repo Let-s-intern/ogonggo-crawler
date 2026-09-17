@@ -157,7 +157,7 @@ def titles(client: TestClient, **params: str) -> set[str]:
 
 
 def row_of(html: str, title: str) -> str:
-    start = html.index(title)
+    start = html.index(f">{title}</span>")
     return html[html.rindex("<tr>", 0, start) : html.index("</tr>", start)]
 
 

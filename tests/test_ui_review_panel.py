@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient
 
 from app import db
 from app.api import crawlers as crawlers_api
+from app.api.job_detail import FIELDS
 from app.classify.schema import VALUE_LABELS
 from app.main import app
 
@@ -164,33 +165,38 @@ def test_패널이_보내는_칸을_한글_이름으로_모두_보인다(client:
         "채용 시 마감",
         "자동 종료",
         "대표 이미지",
+        "최소 경력 연수",
+        "모회사",
     ):
-        assert f">{label}</dt>" in html
+        assert re.search(rf">\s*{label}\s*(<span|</dt>)", html), label
     assert VALUE_LABELS["employment_type"]["FULL_TIME"] in html
-    assert f"{VALUE_LABELS['experience_type']['EXPERIENCED']} · 5년 이상" in html
+    assert VALUE_LABELS["experience_type"]["EXPERIENCED"] in html
+    assert "5년 이상" in html
     assert VALUE_LABELS["education_level"]["BACHELOR"] in html
     assert VALUE_LABELS["application_method"]["EXTERNAL_PAGE"] in html
     assert "2026-08-12 00:00" in html
     assert "LLM 기반 AI 서비스 개발" in html
 
 
-def test_빈_칸은_비어_있음으로_보이고_빈_본문_칸을_적는다(client: TestClient) -> None:
+def test_빈_칸은_비어_있음으로_보인다(client: TestClient) -> None:
     full = client.get("/ui/review/jobs/1/panel").text
     blank = client.get("/ui/review/jobs/2/panel").text
 
-    assert "비어 있음" in full  # 근무 지역·모집 인원·대표 이미지
-    assert blank.count("비어 있음") == 15
-    assert "비어 있는 본문 칸:" in full
-    assert "급여·처우" in full[full.index("비어 있는 본문 칸:") :]
+    assert "비어 있음" in full  # 근무 지역·모집 인원·대표 이미지·급여·처우
+    # 제목만 찬 공고는 제목 말고 전부 비어 있다
+    assert blank.count(">비어 있음<") == len(FIELDS) - 1
+    assert "본문이 비어 있다" in blank
 
 
-def test_패널은_오공고로_보냈는지만_적는다(client: TestClient) -> None:
+def test_패널은_오공고로_보냈는지와_보낸_시각을_적는다(client: TestClient) -> None:
     sent = client.get("/ui/review/jobs/1/panel").text
     unsent = client.get("/ui/review/jobs/2/panel").text
 
-    assert "오공고 전송함" in sent
-    assert "2026-09-15 11:17:09" in sent  # UTC 02:17 을 표시 시간대로 그린다
-    assert "오공고 전송 안 함" in unsent
+    assert "보낸 시각: 2026-09-15 11:17:09" in sent  # UTC 02:17 을 표시 시간대로 그린다
+    assert "오공고 공고 번호: 2" in sent
+    assert "오공고로 보내기" not in sent
+    assert "아직 보내지 않음" in unsent
+    assert "오공고로 보내기" in unsent
     assert "검수" not in sent
 
 

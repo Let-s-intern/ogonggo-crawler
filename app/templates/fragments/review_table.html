@@ -86,6 +86,11 @@
       <input id="review-select-filtered" type="checkbox" name="all_filtered" value="1">
       조건에 걸린 {{ total }}건 전체 고르기
     </label>
+    <button type="button" id="review-send-open" data-modal-open disabled
+            hx-post="/ui/review/send" hx-include="#review-select-form"
+            hx-target="#app-modal-body" hx-swap="innerHTML"
+            class="mt-0 border-slate-800 bg-slate-800 text-white hover:bg-slate-700"
+            title="고른 공고를 지금 오공고로 보낸다. 이미 보낸 공고는 건너뛴다">고른 공고 오공고로 보내기</button>
     <button type="submit" id="review-delete-open" data-modal-open disabled
             class="mt-0 border-red-300 bg-white text-red-700 hover:bg-red-50"
             title="지우기 전에 몇 건이 사라지는지 확인 창에서 보여준다">고른 공고 지우기</button>

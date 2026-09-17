@@ -31,7 +31,7 @@ import logging
 import re
 import sqlite3
 import threading
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -257,6 +257,59 @@ async def deliver_pending(
             for row in rows:
                 await _deliver_one(conn, client, row, result)
         logger.info("오공고 전송: 등록 %s건, 실패 %s건", result.sent, result.failed)
+        return result
+    finally:
+        _running.release()
+
+
+async def deliver_ids(
+    conn: sqlite3.Connection,
+    normalized_ids: Sequence[int],
+    *,
+    settings: Settings | None = None,
+) -> DeliveryResult:
+    """운영자가 고른 공고를 지금 보낸다 — 공고 목록의 `오공고로 보내기` (2026-09-17, LC-3344).
+
+    사람이 골라 누른 것이라 켜기·끄기, 시도 상한, 마감 여부를 보지 않는다. 오공고가 마감을
+    거절하면 그 사유가 실패로 남는다. 이미 보낸 공고는 건너뛴다 — 오공고에는 고치는 경로가 없어
+    다시 보내도 409 로 같은 공고를 가리킬 뿐이다.
+    """
+    resolved = settings or get_settings()
+    config = store.read_config(conn)
+    key = resolved.ogonggo_internal_api_key.strip()
+    if not config.configured:
+        return DeliveryResult(reason="오공고 주소가 비어 있다. 설정 > 오공고 전송에서 넣는다")
+    if not key:
+        return DeliveryResult(reason="OGONGGO_INTERNAL_API_KEY 가 비어 있다. 크롤러 .env 에 넣는다")
+    wanted = list(dict.fromkeys(int(value) for value in normalized_ids))
+    if not wanted:
+        return DeliveryResult(reason="고른 공고가 없다")
+    if not _running.acquire(blocking=False):
+        return DeliveryResult(reason="이미 보내는 중이다. 잠시 뒤 다시 누른다")
+    try:
+        result = DeliveryResult()
+        marks = ",".join("?" for _ in wanted)
+        rows = conn.execute(
+            f"""
+            SELECT n.* FROM normalized_jobs n
+             WHERE n.id IN ({marks})
+               AND NOT EXISTS (SELECT 1 FROM spring_deliveries d
+                                WHERE d.source_url = n.source_url AND d.status = 'sent')
+             ORDER BY n.id
+            """,
+            wanted,
+        ).fetchall()
+        if not rows:
+            return result
+        async with httpx.AsyncClient(
+            base_url=config.url.strip().rstrip("/"),
+            headers={API_KEY_HEADER: key},
+            timeout=TIMEOUT_SECONDS,
+            transport=transport,
+        ) as client:
+            for row in rows:
+                await _deliver_one(conn, client, row, result)
+        logger.info("오공고 전송(골라 보냄): 등록 %s건, 실패 %s건", result.sent, result.failed)
         return result
     finally:
         _running.release()
