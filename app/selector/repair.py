@@ -71,8 +71,8 @@ from app.selector.generator import (
 from app.selector.schema import (
     SelectorSchemaError,
     SelectorSet,
-    parse_selectors,
-    parse_selectors_allowing_empty,
+    parse_generated,
+    parse_generated_allowing_empty,
 )
 from app.selector.verify import FieldMatch, VerificationReport, verify_selectors
 
@@ -526,7 +526,8 @@ async def _ask(
             client, model, prompt, attempt, kind="셀렉터 고치기", provider=provider
         )
         try:
-            return parse_selectors(last_text), attempt, usage, []
+            selectors, moved = parse_generated(last_text)
+            return selectors, attempt, usage, moved
         except SelectorSchemaError as exc:
             logger.warning(
                 "셀렉터 고치기 응답 거절 model=%s attempt=%d reason=%s message=%s",
@@ -535,9 +536,8 @@ async def _ask(
                 exc.reason,
                 exc,
             )
-            if exc.reason == "unknown_field":
-                # 스키마에 없는 필드를 지어냈다. 무엇이었을지 추측하지 않는다
-                raise SelectorRepairError(exc.reason, str(exc)) from exc
+            # 생성과 같은 규칙이다 — 스키마에 없는 이름도 한 번 더 묻고, 옆 묶음에 잘못 둔 칸은
+            # `parse_generated` 가 제자리로 옮긴다 (`app/selector/generator.py`)
             last_error = exc
 
     assert last_error is not None  # 루프는 최소 한 번 돈다
@@ -546,16 +546,20 @@ async def _ask(
     if last_error.reason == "missing_field":
         # 모양은 맞는데 어떤 자리가 비었다. 통째로 버리지 않는다 — 비어 있는 자리는 `_overlay`
         # 가 원래 값으로 되돌리므로, 고쳐진 필드만 얹고 나머지는 그대로 남는다
-        proposal, empty = parse_selectors_allowing_empty(last_text)
+        proposal, empty, moved = parse_generated_allowing_empty(last_text)
         return (
             proposal,
             MAX_ATTEMPTS,
             usage,
-            [f"모델이 비워 둔 필드: {', '.join(empty)}. 그 자리는 원래 셀렉터가 그대로 남는다"],
+            [
+                *moved,
+                f"모델이 비워 둔 필드: {', '.join(empty)}. 그 자리는 원래 셀렉터가 그대로 남는다",
+            ],
         )
 
+    reason = "unknown_field" if last_error.reason == "unknown_field" else "unparsable"
     raise SelectorRepairError(
-        "unparsable", f"{MAX_ATTEMPTS}회 모두 스키마에 맞지 않았다: {last_error}"
+        reason, f"{MAX_ATTEMPTS}회 모두 스키마에 맞지 않았다: {last_error}"
     ) from last_error
 
 

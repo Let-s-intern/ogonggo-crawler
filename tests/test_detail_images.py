@@ -338,3 +338,66 @@ async def test_이미지를_읽지_못한_공고도_적재되고_사유는_실�
     assert (result.new_count, result.fail_count) == (1, 0)
     rows = conn.execute("SELECT reason, message FROM crawl_run_failures").fetchall()
     assert [tuple(row) for row in rows] == [(None, "이미지를 읽지 못했다")]
+
+
+# KT 실측(2026-09-17): 본문 자리에 글자 없이 공고 이미지 한 장만 있다
+IMAGE_ONLY_HTML = (
+    "<html><body><main><p class='title'>공고</p>"
+    "<div class='body'><p><img src='/a.png'></p><p><br></p></div></main></body></html>"
+)
+
+
+class ImageOnlySource:
+    async def fetch(self, url: str) -> FetchResult:
+        return FetchResult(url=url, status_code=200, text=IMAGE_ONLY_HTML)
+
+
+def test_본문이_이미지뿐이면_필수_칸_실패로_버리지_않는다() -> None:
+    detail = parse_detail(IMAGE_ONLY_HTML, SELECTORS.detail)
+
+    assert detail.fields["body"].strip() == ""
+    assert detail.images == ("/a.png",)
+
+
+def test_본문도_이미지도_없으면_그대로_필수_칸_실패다() -> None:
+    from app.crawler.parser import FieldParseError
+
+    with pytest.raises(FieldParseError, match="body"):
+        parse_detail(
+            "<html><body><p class='title'>공고</p><div class='body'></div></body></html>",
+            SELECTORS.detail,
+        )
+
+
+async def test_본문이_이미지뿐이면_읽은_글이_본문이_된다() -> None:
+    fetcher = FakeFetcher({IMAGE_URL: png(100, 100)})
+    collector = HtmlDetailCollector(
+        ImageOnlySource(), SELECTORS.detail, fetcher=fetcher, reader=FakeReader()
+    )
+
+    result = await collector.collect(ListItem(index=0, title="공고", link=PAGE, date=""))
+
+    assert result.fields["body"] == READ_TEXT
+    assert result.source_text.endswith(f"{IMAGE_TEXT_MARK}\n{READ_TEXT}")
+
+
+async def test_이미지뿐인_본문을_읽지_못하면_이미지_읽기를_고치라고_적는다(
+    conn: sqlite3.Connection,
+) -> None:
+    fetcher = FakeFetcher({IMAGE_URL: png(100, 100)})
+    reader = FakeReader(error=LlmCallError("no_image_support", "이미지를 받지 않는다"))
+    detail = HtmlDetailCollector(
+        ImageOnlySource(), SELECTORS.detail, fetcher=fetcher, reader=reader
+    )
+    collectors = Collectors(
+        list_mode="static", detail_mode="static", list=OneItemList(), detail=detail
+    )
+    target = RunTarget(
+        list_url="https://example.test/jobs", selectors=SELECTORS, trigger=SCHEDULE, workflow_id=1
+    )
+
+    result = await run_once(conn, target, collectors=collectors, limit=1)
+
+    assert result.new_count == 0
+    rows = conn.execute("SELECT message FROM crawl_run_failures").fetchall()
+    assert any("본문이 이미지뿐인데 이미지를 읽지 못했다" in row["message"] for row in rows)

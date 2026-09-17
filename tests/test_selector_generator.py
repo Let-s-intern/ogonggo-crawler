@@ -143,8 +143,12 @@ async def test_malformed_twice_fails_to_the_operator() -> None:
     assert len(client.calls) == 2
 
 
-async def test_schema_violation_is_not_retried() -> None:
-    """모양이 아니라 내용의 문제다. 다시 물어도 같은 답이 온다."""
+async def test_unknown_field_is_asked_once_more_then_refused() -> None:
+    """스키마에 없는 이름은 뜻을 추측해 살리지 않는다. 한 번 더 묻고, 또 오면 거절한다 (2026-09-17).
+
+    DeepSeek 는 같은 프롬프트에도 답 모양이 흔들려, 한 번의 어긋남으로 등록을 통째로 버리면 등록이
+    거의 되지 않았다.
+    """
     payload = json.loads(VALID_RESPONSE)
     payload["list"]["links"] = "a"
     client = FakeClient(json.dumps(payload))
@@ -155,7 +159,37 @@ async def test_schema_violation_is_not_retried() -> None:
         )
 
     assert caught.value.reason == "unknown_field"
+    assert len(client.calls) == 2
+
+
+async def test_list_field_put_under_detail_is_moved_back() -> None:
+    """네이버·KT 실측: `link_template` 을 `detail` 에 넣었다. 있는 칸이라 자리만 옮긴다."""
+    payload = json.loads(VALID_RESPONSE)
+    payload["list"].pop("link_template", None)
+    payload["detail"]["link_template"] = "https://example.com/jobs/{id}"
+    client = FakeClient(json.dumps(payload))
+
+    result = await generate_from_html(
+        LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert result.selectors.list.link_template == "https://example.com/jobs/{id}"
     assert len(client.calls) == 1
+    assert any(
+        "`detail` 에 넣은 `link_template` 을 `list` 으로 옮겼다" in note for note in result.notes
+    )
+
+
+def test_misplaced_value_does_not_overwrite_the_right_place() -> None:
+    from app.selector.schema import relocate_misplaced
+
+    data, notes = relocate_misplaced(
+        {"list": {"link_template": "keep/{id}"}, "detail": {"link_template": "drop/{id}"}}
+    )
+
+    assert data["list"]["link_template"] == "keep/{id}"
+    assert "link_template" not in data["detail"]
+    assert notes == ["`detail.link_template` 을 버렸다 — `list.link_template` 에 이미 값이 있다"]
 
 
 async def test_usage_is_logged_with_model_tokens_and_latency(
@@ -207,3 +241,18 @@ async def test_api_key_never_reaches_the_prompt_or_log(caplog: pytest.LogCapture
 
     assert "테스트키" not in client.calls[0]["contents"]
     assert "테스트키" not in caplog.text
+
+
+async def test_missing_keys_become_empty_fields_instead_of_crashing() -> None:
+    """롯데ON 실측: 상세 칸 몇 개를 키째 빼고 두 번 답했다. 빈 칸으로 받아 운영자가 채우게 한다."""
+    payload = json.loads(VALID_RESPONSE)
+    for name in ("qualifications", "recruitment_end_at", "department", "body"):
+        payload["detail"].pop(name, None)
+    client = FakeClient(json.dumps(payload))
+
+    result = await generate_from_html(
+        LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert result.selectors.detail.body == ""
+    assert any("detail.body" in note for note in result.notes)
