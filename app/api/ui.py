@@ -52,11 +52,10 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 # 일은 "공고가 잘 들어왔는지 보기" 하나라 그것이 첫 화면이고, 나머지는 필요할 때만 연다.
 # 경로와 이름은 여기 한 곳에서만 정한다.
 #
-# 사이트 묶음의 세 화면은 두 번째 줄 탭으로 고른다. 목록·등록·시험이 사이트 화면 하나로 합쳐지면
-# (4·5단계) 이 줄은 사라진다.
-SITE_NAV: tuple[tuple[str, str], ...] = (
-    ("/workflows", "사이트 목록"),
-    ("/crawlers", "사이트 추가"),
+# 사이트 목록 밖의 사이트 화면. 위 메뉴는 `사이트` 가 켜지고 탭은 없다. 사이트 추가·고치기는 목록의
+# 창과 패널이 하고(LC-3344 4·5단계), 이 둘은 거기서 링크로만 연다 — 셀렉터를 손으로 다루는 자리다
+SITE_PAGES: tuple[tuple[str, str], ...] = (
+    ("/crawlers", "크롤러 직접 편집"),
     ("/tests", "시험 실행"),
 )
 
@@ -108,7 +107,7 @@ NAV: tuple[tuple[str, str], ...] = (
 
 def _top_of(path: str) -> str:
     """이 주소가 켜는 위 메뉴의 주소. 어느 묶음에도 없으면 주소 그대로다."""
-    if any(member == path for member, _ in SITE_NAV):
+    if path == "/workflows" or any(member == path for member, _ in SITE_PAGES):
         return "/workflows"
     if any(member == path for member, _ in SETTINGS_NAV):
         return "/settings"
@@ -126,18 +125,19 @@ def render(request: Request, name: str, /, **context: Any) -> HTMLResponse:
 def render_page(request: Request, name: str, /, **context: Any) -> HTMLResponse:
     """페이지 하나를 렌더한다. 네비게이션과 현재 위치는 여기서 채운다.
 
-    위 메뉴는 지금 주소가 속한 묶음의 대표 주소로 켜진다(`active`). 사이트 묶음이면 두 번째 줄
-    탭(`group_nav`)이, 설정 묶음이면 왼쪽 목록(`side_nav`)이 함께 나오고, 둘 다 지금 주소
-    (`current`)가 켜진다.
+    위 메뉴는 지금 주소가 속한 묶음의 대표 주소로 켜진다(`active`). 설정 묶음이면 왼쪽
+    목록(`side_nav`)이 함께 나오고 지금 주소(`current`)가 켜진다.
     """
     path = request.url.path
     top = _top_of(path)
     context.setdefault("nav", NAV)
     context.setdefault("active", top)
-    context.setdefault("group_nav", SITE_NAV if top == "/workflows" else None)
     context.setdefault("side_nav", SETTINGS_SECTIONS if top == "/settings" else None)
     context.setdefault("current", path)
-    context.setdefault("current_label", dict((*NAV, *SITE_NAV, *SETTINGS_NAV)).get(path, ""))
+    context.setdefault(
+        "current_label",
+        dict((*NAV, ("/workflows", "사이트 목록"), *SITE_PAGES, *SETTINGS_NAV)).get(path, ""),
+    )
     return templates.TemplateResponse(request, name, context)
 
 

@@ -232,26 +232,6 @@
                 class="mt-0 border-slate-300 bg-white text-slate-600 hover:bg-slate-50">로그아웃</button>
       </form>
     </div>
-    {# 사이트 묶음의 탭. 사이트 화면 하나로 합쳐지기 전까지만 있다 (`app/api/ui.py` 의 `SITE_NAV`) #}
-    {% if group_nav %}
-    <div class="border-t border-slate-100">
-      <nav aria-label="하위 메뉴" class="mx-auto max-w-7xl px-6">
-        <ul class="flex flex-wrap gap-x-5">
-          {% for path, label in group_nav %}
-          <li>
-            {% if path == current %}
-            <a href="{{ path }}" aria-current="page"
-               class="-mb-px block border-b-2 border-slate-900 py-2.5 text-sm font-semibold text-slate-900">{{ label }}</a>
-            {% else %}
-            <a href="{{ path }}"
-               class="-mb-px block border-b-2 border-transparent py-2.5 text-sm font-medium text-slate-500 hover:border-slate-300 hover:text-slate-900">{{ label }}</a>
-            {% endif %}
-          </li>
-          {% endfor %}
-        </ul>
-      </nav>
-    </div>
-    {% endif %}
   </header>
 
   {# 기본 비밀번호로 떠 있는 동안 지우지 않는다. 공개 주소에서 이 상태는 잠기지 않은 것과

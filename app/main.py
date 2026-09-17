@@ -24,7 +24,6 @@ from app.api import (
     ui_companies,
     ui_cost,
     ui_crawlers,
-    ui_dashboard,
     ui_deliver,
     ui_fields,
     ui_industries,
@@ -112,7 +111,6 @@ app.include_router(classify.router)
 app.include_router(side.router)
 # 화면. API 라우터 뒤에 붙인다 — `/api/...` 가 먼저 잡힌다
 app.include_router(ui.router)
-app.include_router(ui_dashboard.router)
 app.include_router(ui_cost.router)
 app.include_router(ui_fields.router)
 app.include_router(ui_crawlers.router)
