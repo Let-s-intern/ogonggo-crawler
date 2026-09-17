@@ -1,0 +1,40 @@
+# EC2 배포용. GitHub Actions(`.github/workflows/release.yml` 의 deploy 잡)가 이 파일을 서버에 복사하고
+# GHCR 에서 이번 커밋의 이미지를 받아 띄운다. 서버에서 빌드하지 않는다.
+#
+# 렛츠커리어 dev 서버와 같은 방식이다 — 러너가 SSH 키로 서버에 들어가 pull 하고 다시 띄운다.
+#
+# 서버에 두는 것
+#   ~/ogonggo-crawler/docker-compose.ec2.yml  이 파일. 배포마다 덮어쓴다
+#   ~/ogonggo-crawler/.env                    레포 시크릿 CRAWLER_ENV 를 배포마다 그대로 쓴다
+#   crawler-data 볼륨                          수집 데이터(SQLite). 컨테이너를 지워도 남는다
+services:
+  api:
+    # 배포 잡이 `CRAWLER_IMAGE=ghcr.io/...:sha-xxxxxxx` 로 넘긴다. 태그가 매번 달라야 옛 이미지를
+    # 다시 쓰지 않는다
+    image: ${CRAWLER_IMAGE:?CRAWLER_IMAGE 가 없다}
+    restart: unless-stopped
+    # ADMIN_PASSWORD, CRAWL_USER_AGENT, OGONGGO_INTERNAL_API_KEY, AI 키 같은 값은 여기 적지 않는다
+    env_file: .env
+    environment:
+      # 볼륨 마운트 지점과 같은 경로여야 한다
+      DATABASE_PATH: /data/jobs.db
+    volumes:
+      - crawler-data:/data
+    # 어드민 화면을 http://탄력적IP 로 연다. 보안 그룹에서 80 을 연다
+    ports:
+      - "80:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    # 로그가 디스크를 채우지 않게 자른다
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+volumes:
+  crawler-data:
