@@ -448,16 +448,19 @@ def settle_fields(fields: dict[str, str | None]) -> dict[str, str | None]:
     - 모집 인원은 처음 나오는 1 이상의 숫자다. `0명`·`O명`·`00명` 처럼 가린 표기는 비운다.
       분류는 적힌 글자를 그대로 옮기고, 숫자로 읽는 것은 여기서 한다 — 사람이 `3명` 으로 고쳐도
       같은 모양이 된다
-    - 최소 경력 연수는 경력 공고(`EXPERIENCED`)에만 남긴다
+    - 최소 경력 연수는 신입(`NEWCOMER`)·인턴(`INTERN`) 공고면 0 이다 (2026-09-18 결정). 경력
+      공고(`EXPERIENCED`)는 원문에서 읽은 숫자를 남기고, 그 밖에는 비운다
     - 모집 유형과 자동 종료는 마감일로 정한다. 마감일이 있으면 기간 채용이고 마감일에 닫힌다.
       오공고는 상시 채용에 마감일이 있으면 받지 않는다
     """
     fields["recruitment_headcount"] = _headcount(fields.get("recruitment_headcount"))
-    years = fields.get("experience_min_years") or ""
-    if fields.get("experience_type") != "EXPERIENCED" or not _YEARS.fullmatch(years.strip()):
-        fields["experience_min_years"] = None
+    years = (fields.get("experience_min_years") or "").strip()
+    if fields.get("experience_type") == "NEWCOMER" or fields.get("employment_type") == "INTERN":
+        fields["experience_min_years"] = "0"
+    elif fields.get("experience_type") == "EXPERIENCED" and _YEARS.fullmatch(years):
+        fields["experience_min_years"] = str(int(years))
     else:
-        fields["experience_min_years"] = str(int(years.strip()))
+        fields["experience_min_years"] = None
     period = bool(fields.get(END))
     fields["recruitment_type"] = "PERIOD" if period else "ALWAYS_OPEN"
     fields["auto_close_enabled"] = "true" if period else "false"
