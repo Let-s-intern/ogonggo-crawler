@@ -211,6 +211,13 @@
         {% else %}
         <p class="my-0.5 text-slate-500">아직 보내지 않음</p>
         {% endif %}
+        {% if not sent %}
+        {% if auto_missing %}
+        <p class="my-0.5 text-xs text-amber-700">자동 전송 대기 — 빈 칸: {{ auto_missing | join(", ") }}</p>
+        {% else %}
+        <p class="my-0.5 text-xs text-slate-500">칸이 다 차 있어 분류 뒤 자동 전송 대상이에요</p>
+        {% endif %}
+        {% endif %}
       </div>
     </section>
 

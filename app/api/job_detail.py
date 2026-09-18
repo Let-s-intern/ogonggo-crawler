@@ -25,6 +25,7 @@ from typing import Any
 
 from app import industries, taxonomy
 from app.classify.schema import FALLBACK_FIELDS, STORED_CLASSIFY_FIELDS, VALUE_LABELS
+from app.deliver import spring
 from app.normalize.engine import OVERRIDABLE_FIELDS
 from app.normalize.rules import RULE_FIELDS
 
@@ -185,6 +186,12 @@ def ai_filled_fields(raw: dict[str, object], job: Any) -> frozenset[str]:
     return frozenset(
         name for name in FALLBACK_FIELDS if not str(raw.get(name) or "").strip() and job[name]
     )
+
+
+def auto_missing_labels(job: Any) -> list[str]:
+    """자동 전송을 막는 빈 칸의 화면 이름 (`app/deliver/spring.py` 의 `AUTO_FIELDS`)."""
+    labels = {field.name: field.label for field in FIELDS}
+    return [labels.get(name, name) for name in spring.auto_missing(job)]
 
 
 @dataclass(frozen=True)
