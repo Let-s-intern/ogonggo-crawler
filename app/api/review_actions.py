@@ -168,11 +168,23 @@ async def job_reclassify(
         return render_panel(
             request, conn, normalized_id, message=f"지금은 다시 채울 수 없다: {busy}"
         )
+    before = dict(job)
     progress = await classify_ids(conn, [int(job["raw_job_id"])], ClassifyProgress())
-    if progress.processed:
-        message = "AI 로 다시 채웠다"
-    else:
-        message = "AI 로 다시 채우지 못했다: " + ("; ".join(progress.errors) or "사유 없음")
+    if not progress.processed:
+        message = "AI로 다시 채우지 못했어요: " + ("; ".join(progress.errors) or "사유 없음")
+        return render_panel(request, conn, normalized_id, message=message)
+    after = _job(conn, normalized_id)
+    # 무엇이 바뀌었는지 적는다. "다시 채웠다" 만으로는 누른 보람이 있었는지 알 수 없다
+    changed = [
+        field.label
+        for field in job_detail.FIELDS
+        if after is not None and (before.get(field.name) or "") != (after[field.name] or "")
+    ]
+    message = (
+        f"AI로 다시 채웠어요. 바뀐 칸: {', '.join(changed)}"
+        if changed
+        else "AI로 다시 읽었지만 바뀐 칸은 없어요"
+    )
     return render_panel(request, conn, normalized_id, message=message)
 
 
