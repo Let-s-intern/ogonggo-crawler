@@ -77,6 +77,8 @@ from app.classify.schema import (
     JOB_FIELD,
     JOB_ROLE,
     JUDGE_CHOICES,
+    JUDGE_FIELDS,
+    NUMBER_FIELDS,
     VALUE_LABELS,
     Classification,
     ClassifySchemaError,
@@ -145,7 +147,10 @@ _PROMPT = """아래는 채용공고의 제목과 본문이다. 줄마다 앞에 
 - 모든 직무에 똑같이 해당하는 내용(공통 자격요건, 복지, 전형 절차, 회사 소개 등)은 common 에
   한 번만 담는다. 공고마다 common 이 붙으므로 같은 내용을 postings 에 되풀이하지 않는다.
 - 한 직무에만 해당하는 내용은 그 직무의 posting 에 담는다.
-- position_name 과 판정하는 칸은 posting 마다 그 직무를 보고 답한다. common 에는 없다.
+- **아래 칸은 반드시 postings 안의 각 posting 에만 적는다. common 에도, 응답 맨 위에도 적지
+  않는다.** 모든 직무가 같은 값이어도 posting 마다 되풀이해 적는다. 이 칸들의 `_evidence` 도
+  같다.
+  {posting_only}
 - 직무가 하나인 공고는 전부 그 posting 에 담고 common 을 비워 둬도 된다.
 
 # 뽑는 칸 — 어느 줄의 어느 부분인지를 조각으로 답한다
@@ -513,6 +518,26 @@ def build_outline_prompt(
     return prompt, notes
 
 
+def posting_only_names(
+    taxonomy_tree: Sequence[tuple[str, tuple[str, ...]]] = (), industries: Sequence[str] = ()
+) -> tuple[str, ...]:
+    """posting 에만 적는 칸 이름. 프롬프트가 이름을 하나씩 짚어 말한다.
+
+    "판정하는 칸은 common 에 없다" 로만 적었을 때 DeepSeek 가 판정 칸을 common 에 넣어 답이
+    통째로 거절되고, 두 번 다 그러면 산업·직군·직무가 빈 채 남았다 (2026-09-18 실측, 픽스처 6건 중
+    2건). 뭉뚱그린 말보다 칸 이름을 적는 편이 덜 어긴다. 직무 분류와 산업은 그 표가 켜져 있을
+    때만 응답에 있어서 그때만 적는다 (`build_classification_model`)
+    """
+    names: list[str] = ["position_name", *JUDGE_FIELDS, *NUMBER_FIELDS]
+    if taxonomy_tree:
+        names.append(JOB_FIELD)
+        if any(minors for _, minors in taxonomy_tree):
+            names.append(JOB_ROLE)
+    if industries:
+        names.append(INDUSTRY)
+    return tuple(names)
+
+
 def _classification_prompt(
     *,
     title: str,
@@ -533,6 +558,7 @@ def _classification_prompt(
         for name, values in JUDGE_CHOICES.items()
     }
     return _PROMPT.format(
+        posting_only=", ".join(posting_only_names(taxonomy_tree, industries)),
         body=body,
         title=title,
         current_values_block=current_values_block,
@@ -841,6 +867,20 @@ async def _classify_parts(
     return results, notes, usages, total_attempts
 
 
+def _retry_block(error: ClassifySchemaError) -> str:
+    """다시 물을 때 프롬프트 끝에 붙이는 한 단락. 앞 답이 왜 거절됐는지 그대로 알린다.
+
+    같은 프롬프트를 그대로 다시 보내면 모델은 무엇이 틀렸는지 모른 채 다시 답한다. 거절 사유를
+    붙이면 같은 실수를 되풀이할 까닭이 줄어든다 (2026-09-18)
+    """
+    return (
+        "\n# 앞 답이 거절됐다 — 같은 실수를 하지 않는다\n\n"
+        f"거절 사유: {error}\n"
+        "스키마에 있는 칸만, 정해진 자리에만 적는다. posting 에만 적는 칸을 common 이나 응답 맨\n"
+        "위에 적지 않는다. 스키마에 없는 칸을 새로 만들지 않는다.\n"
+    )
+
+
 @dataclass(frozen=True)
 class _Asker:
     """공고 하나를 나누는 동안 같은 클라이언트·모델·제공자로 묻는다. 긴 공고는 여러 번 묻는다."""
@@ -866,8 +906,9 @@ class _Asker:
         """
         last_error: ClassifySchemaError | None = None
         for attempt in range(1, MAX_ATTEMPTS + 1):
+            asked = prompt if last_error is None else prompt + _retry_block(last_error)
             text, usage = await _call(
-                self.client, self.model, prompt, attempt, self.provider, schema, instruction, kind
+                self.client, self.model, asked, attempt, self.provider, schema, instruction, kind
             )
             if self.on_call is not None:
                 self.on_call(usage)
