@@ -312,6 +312,8 @@ def render_panel(
         marks=row_marks(row),
         sent=bool(row["sent"]),
         delivered=job_detail.delivery(conn, str(row["source_url"])),
+        # 자동 전송을 막는 빈 칸. 보냈으면 볼 필요가 없다
+        auto_missing=[] if row["sent"] else job_detail.auto_missing_labels(row),
         classified=classified,
         parts=job_detail.parts_of(conn, int(row["raw_job_id"])),
         sections=job_detail.SECTIONS,

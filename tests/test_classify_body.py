@@ -367,7 +367,8 @@ def test_grounding_keeps_an_empty_column_empty_without_calling_it_invented() -> 
     grounded = ground({name: "" for name in CLASSIFY_FIELDS}, "본문")
 
     assert grounded.dropped == []
-    assert set(grounded.fields) == set(CLASSIFY_FIELDS)
+    # 공고 제목은 짓는 칸이라 근거 검사 없이 함께 나간다 (2026-09-18)
+    assert set(grounded.fields) == {*CLASSIFY_FIELDS, "posting_title"}
 
 
 def test_the_three_kinds_of_columns_add_up() -> None:

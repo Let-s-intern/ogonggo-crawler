@@ -151,6 +151,10 @@ class Posting(BaseModel):
     application_method: Literal["EXTERNAL_PAGE", "EMAIL"]
     application_method_evidence: str = ""
 
+    # 0041. 이 공고의 제목. 사이트 제목을 바탕으로 짓되 직무 이름이 반드시 들어간다. 옮기는 칸이
+    # 아니라 짓는 칸이라 원문에 돌려 보지 않는다 (2026-09-18 결정)
+    posting_title: str = ""
+
     # 뽑는 칸. 모델은 글자를 쓰지 않고 몇 번 줄의 어느 부분인지를 조각으로 답한다. 저장은
     # 원문에서 잘라 온 글자다 (`app/classify/pieces.py`). `position_name` 만 0 번 줄(제목)에서 온다
     position_name: list[LinePiece] = Field(default_factory=list)
@@ -344,6 +348,10 @@ JOB_FIELD: Final = "job_field"
 JOB_ROLE: Final = "job_role"
 TAXONOMY_FIELDS: tuple[str, ...] = (JOB_FIELD, JOB_ROLE)
 
+# AI 가 지은 공고 제목 (`migrations/0041_classification_posting_title.sql`). `normalized_jobs` 에는
+# 이 이름의 칸이 없고 정규화가 `title` 로 옮긴다 — 그래서 `STORED_CLASSIFY_FIELDS` 에 넣지 않는다
+POSTING_TITLE: Final = "posting_title"
+
 # 산업. `industries`(운영 DB 표)에서 공고마다 고르는 판정 칸이다 (`migrations/0034_industries.sql`).
 # 직무 분류와 같은 이유로 정적 모델에 없고 `build_classification_model()` 이 더한다
 INDUSTRY: Final = "industry"
@@ -461,6 +469,10 @@ def validate_classification(
     값은 나중에 왜 그 칸에 그 값이 들어갔는지 아무도 설명하지 못한다. 맨 위든 `common` 안이든
     공고 안이든 같다.
 
+    예외는 **이름은 스키마에 있고 자리만 틀린 칸**이다. posting 에만 오는 칸(`position_name`,
+    판정 칸, 직무 분류, 산업)이 `common` 이나 맨 위에 오면 각 공고로 옮겨 받는다 — 짐작할 뜻이
+    없다 (`_split_misplaced`, 2026-09-18).
+
     `response_model` 은 기본값이 정적 모델(`Classification`)이지만, 직무 분류가 있는 호출은
     `build_classification_model()` 이 만든 모델을 넘긴다 — 그 두 칸은 호출마다 있을 수도 없을
     수도 있어 고정 튜플에 넣을 수 없다(`TAXONOMY_FIELDS` 설명).
@@ -472,9 +484,24 @@ def validate_classification(
         raise ClassifySchemaError("unparsable", f"응답이 객체가 아니다: {type(data).__name__}")
     response_fields = tuple(response_model.model_fields)
     posting_fields = tuple(posting_model_of(response_model).model_fields)
+    # posting 에만 오는 글자 칸이 공통 자리(common, 응답 맨 위)에 왔으면 떼어 둔다
+    posting_only = tuple(
+        name
+        for name in posting_fields
+        if name not in EXTRACT_FIELDS and name not in response_fields
+    )
+    top_misplaced, data = _split_misplaced(data, posting_only)
     _reject_unknown(data, response_fields, "")
 
-    common_raw = _object(COMMON, data.get(COMMON))
+    common_misplaced, common_raw = _split_misplaced(_object(COMMON, data.get(COMMON)), posting_only)
+    misplaced = {**top_misplaced, **common_misplaced}
+    # 뽑는 칸 중 posting 에만 오는 것(`position_name`)도 common 에 오면 조각째 옮긴다
+    misplaced_pieces = {
+        name: _pieces(f"{COMMON}.{name}", common_raw.pop(name))
+        for name in [
+            key for key in common_raw if key in EXTRACT_FIELDS and key not in COMMON_FIELDS
+        ]
+    }
     _reject_unknown(common_raw, COMMON_FIELDS, f"{COMMON} ")
     common = {name: _pieces(f"{COMMON}.{name}", common_raw.get(name)) for name in COMMON_FIELDS}
 
@@ -502,12 +529,41 @@ def validate_classification(
                 fields[name] = _text(f"{where}.{name}", raw.get(name))
         postings.append(ParsedPosting(fields=fields, pieces=pieces))
 
+    if misplaced or any(misplaced_pieces.values()):
+        # 공고가 하나도 없으면 옮겨 붙일 곳이 없다. 빈 공고 하나를 만들어 거기 담는다 — 나중에
+        # 빈 공고 하나를 만드는 자리(`app/classify/classifier.py` 의 `_result_of`)와 같은 모양이다
+        if not postings:
+            postings.append(ParsedPosting(fields={name: "" for name in posting_only}, pieces={}))
+        # 공고 안에 값이 있으면 그 값이 먼저다. 직무마다 다를 수 있는 칸이다
+        for posting in postings:
+            for name, value in misplaced.items():
+                if not posting.fields.get(name, ""):
+                    posting.fields[name] = value
+            for name, found in misplaced_pieces.items():
+                if found and not posting.pieces.get(name):
+                    posting.pieces[name] = list(found)
+
     top = {
         name: _text(name, data.get(name))
         for name in response_fields
         if name not in (COMMON, POSTINGS)
     }
     return ParsedClassification(fields=top, common=common, postings=postings)
+
+
+def _split_misplaced(
+    data: Mapping[str, Any], posting_only: tuple[str, ...]
+) -> tuple[dict[str, str], dict[str, Any]]:
+    """공통 자리에 온 posting 전용 칸을 떼어 낸다. (떼어 낸 값, 나머지) 를 돌려준다.
+
+    DeepSeek 는 스키마를 강제해도 판정 칸·직무 분류·산업을 common 에 넣는다. 거절하고 다시
+    물어도 두 번 다 그러면 분류가 통째로 저장되지 않아 산업·직군·직무가 빈다 (2026-09-18 실측,
+    픽스처 6건 중 2건). 칸 이름은 맞고 자리만 틀린 것이라 뜻을 짐작할 것이 없다 — 각 공고로 옮겨
+    받는다. 스키마에 없는 이름(`other`, `org_name`)은 여기서 떼지 않아 그대로 거절된다.
+    """
+    moved = {str(key): _text(str(key), value) for key, value in data.items() if key in posting_only}
+    rest = {key: value for key, value in data.items() if key not in posting_only}
+    return {name: value for name, value in moved.items() if value}, rest
 
 
 def _reject_unknown(data: Mapping[str, Any], allowed: tuple[str, ...], where: str) -> None:

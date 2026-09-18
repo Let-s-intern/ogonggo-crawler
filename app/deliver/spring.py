@@ -14,6 +14,10 @@
 
 - 오공고가 반드시 받는 칸(회사명·제목·고용 형태·경력 구분·학력·모집 유형·원문 주소)이 빈 공고. 대개
   아직 분류하지 않은 공고이고, 분류가 끝나면 다음 전송에 들어간다
+- **자동 전송은 더 깐깐하다** (2026-09-18 결정). 공고 화면의 기본 정보·모집 조건 칸이 다 차야 보낸다
+  (`AUTO_FIELDS`). 최소 경력 연수와 모집 인원은 원문에 없는 일이 많아 보지 않는다. 모회사는 없는
+  회사가 많아 보지 않고, 모집 마감은 기간 채용일 때만 본다 — 상시 채용에는 마감일이 없다. 칸이 빈
+  공고는 사람이 채우거나 골라 보내기로 보낸다. 골라 보내기와 `지금 보내기` 는 필수 칸만 본다
 - 아직 보내지 않았는데 마감 일시가 이미 지난 공고
 - 세 번 실패한 공고. 마지막 거절 사유는 전달 화면에 남는다
 
@@ -175,9 +179,68 @@ READY_SQL = """(trim(coalesce(n.title, '')) != ''
            AND n.recruitment_type IS NOT NULL)"""
 _READY = READY_SQL
 
+# 자동 전송이 차 있기를 바라는 칸. 공고 화면(`app/api/job_detail.py`)의 기본 정보·모집 조건에서
+# 최소 경력 연수·모집 인원·모회사를 뺀 것이다. 회사는 자회사나 모회사 중 하나, 모집 마감은 기간
+# 채용만 본다
+AUTO_FIELDS: tuple[str, ...] = (
+    "company_name",
+    "title",
+    "industry",
+    "job_field",
+    "job_role",
+    "cover_image_url",
+    "employment_type",
+    "experience_type",
+    "education_level",
+    "region",
+    "recruitment_type",
+    "application_method",
+    "recruitment_start_at",
+    "recruitment_end_at",
+    "closes_when_filled",
+    "auto_close_enabled",
+)
+_COMPANY = "company_name"
+_END = "recruitment_end_at"
 
-def pending(conn: sqlite3.Connection, limit: int, now: str) -> list[sqlite3.Row]:
+
+def _filled_sql(name: str) -> str:
+    if name == _COMPANY:
+        return "trim(coalesce(n.company_name, '') || coalesce(n.parent_company_name, '')) != ''"
+    if name == _END:
+        return "(n.recruitment_type != 'PERIOD' OR trim(coalesce(n.recruitment_end_at, '')) != '')"
+    return f"trim(coalesce(n.{name}, '')) != ''"
+
+
+# 자동 전송 조건. 필수 칸 조건에 `AUTO_FIELDS` 가 다 찼는지를 더한다
+COMPLETE_SQL = "(" + " AND ".join([READY_SQL, *(_filled_sql(name) for name in AUTO_FIELDS)]) + ")"
+
+
+def auto_missing(job: Mapping[str, Any] | sqlite3.Row) -> list[str]:
+    """자동 전송을 막는 빈 칸 이름. `COMPLETE_SQL` 과 같은 판정을 파이썬으로 한다. 화면이 읽는다."""
+
+    def filled(name: str) -> bool:
+        return bool(str(job[name] or "").strip())
+
+    empty: list[str] = []
+    for name in AUTO_FIELDS:
+        if name == _COMPANY:
+            ok = filled("company_name") or filled("parent_company_name")
+        elif name == _END:
+            ok = job["recruitment_type"] != "PERIOD" or filled(_END)
+        else:
+            ok = filled(name)
+        if not ok:
+            empty.append(name)
+    return empty
+
+
+def pending(
+    conn: sqlite3.Connection, limit: int, now: str, *, complete: bool = True
+) -> list[sqlite3.Row]:
     """보낼 공고. 아직 보내지 않은 것이 먼저이고, 실패한 것은 `MAX_ATTEMPTS` 전까지 다시 고른다.
+
+    `complete` 면 자동 전송 조건(`COMPLETE_SQL`)을, 아니면 필수 칸만(`READY_SQL`) 본다.
 
     필수 칸이 빈 공고는 여기서 빼 1회 상한을 차지하지 않게 한다 — 분류 전 공고가 수백 건 쌓여 있으면
     그것들이 매번 앞자리를 먹는다. 목록 밖 값처럼 SQL 로 가를 수 없는 것은 보내기 전에 걸러 실패로
@@ -187,7 +250,7 @@ def pending(conn: sqlite3.Connection, limit: int, now: str) -> list[sqlite3.Row]
         f"""
         SELECT n.* FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
-         WHERE {_UNSENT} AND {_OPEN} AND {_READY}
+         WHERE {_UNSENT} AND {_OPEN} AND {COMPLETE_SQL if complete else _READY}
          ORDER BY d.source_url IS NOT NULL, n.id
          LIMIT ?
         """,
@@ -196,12 +259,12 @@ def pending(conn: sqlite3.Connection, limit: int, now: str) -> list[sqlite3.Row]
 
 
 def pending_count(conn: sqlite3.Connection, now: str) -> int:
-    """보낼 차례를 기다리는 공고 수. `pending` 과 같은 조건이다. 대시보드가 읽는다."""
+    """자동 전송을 기다리는 공고 수. 자동 전송의 `pending` 과 같은 조건이다. 대시보드가 읽는다."""
     row = conn.execute(
         f"""
         SELECT count(*) AS n FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
-         WHERE {_UNSENT} AND {_OPEN} AND {_READY}
+         WHERE {_UNSENT} AND {_OPEN} AND {COMPLETE_SQL}
         """,
         (MAX_ATTEMPTS, now),
     ).fetchone()
@@ -245,7 +308,8 @@ async def deliver_pending(
         return DeliveryResult(reason="이미 보내는 중이다")
     try:
         result = DeliveryResult()
-        rows = pending(conn, config.batch_size, _now(resolved))
+        # 자동 전송(분류 뒤)은 칸이 다 찬 공고만, 사람이 누른 `지금 보내기` 는 필수 칸만 본다
+        rows = pending(conn, config.batch_size, _now(resolved), complete=not force)
         if not rows:
             return result
         async with httpx.AsyncClient(

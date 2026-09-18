@@ -1,9 +1,9 @@
 {# 사이트 하나의 오른쪽 패널 (`app/api/ui_sites.py` 의 `site_panel_fragment`).
 
-   위에서부터 문제(있을 때) → 조작과 설정(워크플로우 카드 그대로) → 고치기 → 최근 수집 순이다.
+   위에서부터 문제(있을 때) → 주소 → 조작과 설정(워크플로우 카드 그대로) → 고치기 → 최근 수집 순이다.
    고치기는 시험 수집 → AI 로 고치기(단서) → 고친 셀렉터 저장 → 다시 실행이고, 그 조각은 시험 실행
    화면과 같다 (`fragments/test_result.html`, `fragments/test_repair.html`) #}
-{% from "macros.html" import wait %}
+{% from "macros.html" import notice_box, wait %}
 {% if card is none %}
 <div class="modal-body">
   <div class="modal-head flex items-center justify-between">
@@ -40,6 +40,20 @@
     </div>
     {% endif %}
 
+    {# 목록 주소와 예시 공고 주소. 저장만 하고 셀렉터는 아래 "다시 찾기" 가 다시 만든다 #}
+    <form class="space-y-2 rounded-md border border-slate-200 p-3 text-sm" hx-post="/ui/sites/{{ item.id }}/urls"
+          hx-target="#app-panel-body" hx-swap="innerHTML" hx-disabled-elt="find button">
+      <h4 class="mb-0 mt-0 text-sm font-semibold text-slate-900">주소</h4>
+      <label for="site-list-url" class="block">목록 주소</label>
+      <input id="site-list-url" type="url" name="list_url" required value="{{ item.list_url }}" class="mt-0 w-full">
+      <label for="site-detail-url" class="block">예시 공고 주소 <span class="font-normal text-slate-500">(선택)</span></label>
+      <input id="site-detail-url" type="url" name="detail_url" value="{{ detail_url }}"
+             placeholder="사이트에서 공고 하나를 눌러 열었을 때 주소창의 주소" class="mt-0 w-full">
+      <p class="text-xs text-slate-500">예시 공고 주소는 목록에서 공고 상세로 들어가는 길을 AI가 찾을 때 씁니다</p>
+      {% if url_error %}<p class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">{{ url_error }}</p>{% elif url_message %}{{ notice_box(url_message) }}{% endif %}
+      <button type="submit" class="mt-0">주소 저장</button>
+    </form>
+
     {% include "fragments/workflow_card.html" %}
 
     <div>
@@ -60,13 +74,13 @@
           </form>
         </li>
         <li class="rounded-md border border-slate-200 p-3">
-          <p class="font-medium text-slate-900">2. 공고 하나의 주소로 알려 주기</p>
-          <p class="text-xs text-slate-500">상세 페이지로 못 들어갈 때 씁니다. 사이트에서 공고 하나를 열고 주소창의 주소를 붙여 넣으면 셀렉터를 다시 만듭니다</p>
+          <p class="font-medium text-slate-900">2. 예시 공고 주소로 다시 찾기</p>
+          <p class="text-xs text-slate-500">상세 페이지로 못 들어갈 때 씁니다. 사이트에서 공고 하나를 열고 주소창의 주소를 붙여 넣으면 셀렉터를 다시 만듭니다. 넣은 주소는 예시 공고 주소로 저장됩니다</p>
           <form class="mt-2 flex flex-wrap gap-2" hx-post="/ui/sites/{{ item.id }}/detail-url" hx-target="#test-repair"
                 hx-swap="innerHTML" hx-disabled-elt="find button" hx-indicator="#site-detail-wait">
-            <input type="url" name="detail_url" required placeholder="https://…/공고 하나의 주소" class="mt-0 min-w-0 flex-1">
+            <input type="url" name="detail_url" required value="{{ detail_url }}" placeholder="https://…/예시 공고 주소" class="mt-0 min-w-0 flex-1">
             <button type="submit" class="btn-quiet mt-0">다시 찾기</button>
-            {{ wait("공고 주소로 셀렉터를 만드는 중", "site-detail-wait") }}
+            {{ wait("예시 공고 주소로 셀렉터를 만드는 중", "site-detail-wait") }}
           </form>
         </li>
       </ol>

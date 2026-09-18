@@ -66,6 +66,7 @@ from app.classify.schema import (
     JUDGE_CHOICES,
     JUDGE_FIELDS,
     NUMBER_FIELDS,
+    POSTING_TITLE,
 )
 
 # 비교에서 지우는 글자. 공백, 글머리표, 구두점, 괄호, 따옴표다. 뜻을 나르는 글자는 남는다
@@ -285,6 +286,9 @@ def ground(
             reasons[name] = NOT_IN_SOURCE
             continue
         kept[name] = value
+
+    # 공고 제목은 짓는 칸이라 원문에 돌려 보지 않는다. 한 줄로만 맞춘다 (2026-09-18 결정)
+    kept[POSTING_TITLE] = " ".join(fields.get(POSTING_TITLE, "").split())
 
     for name in JUDGE_FIELDS:
         _ground_judged_field(

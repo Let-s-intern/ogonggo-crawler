@@ -188,3 +188,66 @@ def test_공고_주소로_만든_셀렉터는_저장하지_않고_편집기에_�
     assert "h1.new-title" in html
     saved = conn.execute("SELECT selectors_json FROM crawlers WHERE id = 2").fetchone()
     assert saved["selectors_json"] == "{}"
+    # 넣은 주소는 예시 공고 주소로 남는다. 다음에 패널을 열면 보인다
+    detail = conn.execute("SELECT detail_url FROM crawlers WHERE id = 2").fetchone()
+    assert detail["detail_url"] == "https://careers.example.com/jobs/10"
+
+
+def test_패널은_저장된_목록_주소와_예시_공고_주소를_채워_보인다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    conn.execute(
+        "UPDATE crawlers SET detail_url = 'https://careers.example.com/jobs/7' WHERE id = 2"
+    )
+    conn.commit()
+
+    html = client.get("/ui/sites/2/panel").text
+
+    assert "예시 공고 주소" in html
+    assert "공고 하나의 주소" not in html
+    assert f'value="{LIST_URL}/2"' in html
+    assert 'value="https://careers.example.com/jobs/7"' in html
+    assert 'hx-post="/ui/sites/2/urls"' in html
+
+
+def test_목록_주소와_예시_공고_주소를_고쳐_저장한다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    html = client.post(
+        "/ui/sites/2/urls",
+        data={
+            "list_url": "https://careers.example.com/new-list",
+            "detail_url": "https://careers.example.com/jobs/8",
+        },
+    ).text
+
+    assert "주소를 저장했어요" in html
+    assert 'value="https://careers.example.com/new-list"' in html
+    row = conn.execute(
+        "SELECT list_url, detail_url, selectors_json FROM crawlers WHERE id = 2"
+    ).fetchone()
+    assert row["list_url"] == "https://careers.example.com/new-list"
+    assert row["detail_url"] == "https://careers.example.com/jobs/8"
+    assert row["selectors_json"] == "{}"  # 셀렉터는 건드리지 않는다
+
+
+def test_예시_공고_주소는_비워_저장할_수_있다(client: TestClient, conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "UPDATE crawlers SET detail_url = 'https://careers.example.com/jobs/7' WHERE id = 2"
+    )
+    conn.commit()
+
+    client.post("/ui/sites/2/urls", data={"list_url": f"{LIST_URL}/2", "detail_url": ""})
+
+    assert conn.execute("SELECT detail_url FROM crawlers WHERE id = 2").fetchone()[0] is None
+
+
+def test_주소가_http_가_아니면_저장하지_않는다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    html = client.post("/ui/sites/2/urls", data={"list_url": "not a url", "detail_url": ""}).text
+
+    assert "목록 주소는 http://" in html
+    assert (
+        conn.execute("SELECT list_url FROM crawlers WHERE id = 2").fetchone()[0] == f"{LIST_URL}/2"
+    )

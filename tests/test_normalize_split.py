@@ -78,6 +78,34 @@ def test_나눈_공고는_제목에_직무_이름이_주소에_번호가_붙는�
     ]
 
 
+def test_AI가_지은_제목이_있으면_그것이_제목이다(conn: sqlite3.Connection) -> None:
+    """2026-09-18 결정. 직무 이름이 들어간 제목을 분류가 짓는다. 못 지은 공고는 전처럼 붙인다."""
+    classify_as(conn, TWO_ROLES)
+    conn.execute(
+        "UPDATE job_classifications SET posting_title = '로봇 SW 개발 경력사원 채용' WHERE part = 1"
+    )
+
+    rewrite_one(conn, 1, load_rules(conn))
+
+    assert normalized(conn, "part, title, source_url") == [
+        (1, "로봇 SW 개발 경력사원 채용", f"{URL}#1"),
+        (2, f"{TITLE} - 비전 AI 연구", f"{URL}#2"),
+    ]
+
+
+def test_사람이_고친_제목은_AI_제목_위에_덮인다(conn: sqlite3.Connection) -> None:
+    classify_as(conn, [(1, None, "로봇 제어")])
+    conn.execute("UPDATE job_classifications SET posting_title = 'AI 제목'")
+    conn.execute(
+        "INSERT INTO job_field_overrides (raw_job_id, part, field_name, value)"
+        " VALUES (1, 1, 'title', '사람 제목')"
+    )
+
+    rewrite_one(conn, 1, load_rules(conn))
+
+    assert normalized(conn, "title") == [("사람 제목",)]
+
+
 def test_나누지_않은_공고는_제목과_주소가_그대로다(conn: sqlite3.Connection) -> None:
     classify_as(conn, [(1, None, "로봇 제어")])
 

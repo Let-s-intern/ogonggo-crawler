@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from app.classify.pieces import from_ranges, to_ranges
-from app.classify.schema import COLLECTED_REVIEW_FIELDS, STORED_CLASSIFY_FIELDS
+from app.classify.schema import COLLECTED_REVIEW_FIELDS, POSTING_TITLE, STORED_CLASSIFY_FIELDS
 
 # `raw_jobs.raw_data_json` 에서 원문·본문·제목을 꺼내는 자리. JSON 함수는 SQLite 3.38+ 에 있다
 _BODY = "json_extract(r.raw_data_json, '$.body')"
@@ -310,14 +310,14 @@ def read_classification(conn: sqlite3.Connection, raw_job_id: int, part: int = 1
     빈 dict 와 "전부 빈 문자열인 dict" 는 뜻이 다르다. 앞은 아직 돌지 않은 것이고 뒤는
     돌았는데 본문이 아무것도 주지 않은 것이다.
     """
+    names = (*STORED_CLASSIFY_FIELDS, POSTING_TITLE)
     row = conn.execute(
-        f"SELECT {', '.join(STORED_CLASSIFY_FIELDS)} FROM job_classifications"
-        " WHERE raw_job_id = ? AND part = ?",
+        f"SELECT {', '.join(names)} FROM job_classifications WHERE raw_job_id = ? AND part = ?",
         (raw_job_id, part),
     ).fetchone()
     if row is None:
         return {}
-    return {name: str(row[name] or "") for name in STORED_CLASSIFY_FIELDS}
+    return {name: str(row[name] or "") for name in names}
 
 
 def read_evidence(conn: sqlite3.Connection, raw_job_id: int, part: int = 1) -> dict[str, str]:
@@ -366,6 +366,7 @@ def save_classification(
     """
     columns = (
         *STORED_CLASSIFY_FIELDS,
+        POSTING_TITLE,
         "dropped_fields",
         "model",
         "evidence_json",
@@ -374,7 +375,7 @@ def save_classification(
         "rules_version",
     )
     values: list[str | int | None] = [
-        fields.get(name, "").strip() or None for name in STORED_CLASSIFY_FIELDS
+        fields.get(name, "").strip() or None for name in (*STORED_CLASSIFY_FIELDS, POSTING_TITLE)
     ]
     values.append(", ".join(dropped))
     values.append(model)

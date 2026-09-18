@@ -178,7 +178,7 @@ def test_사이트_목록의_추가_버튼이_창을_연다(client: TestClient) 
     assert 'hx-get="/ui/sites/new"' in body
     assert 'name="list_url"' in form and 'name="company"' in form
     assert 'name="interval_minutes"' in form
-    # 공고 하나의 주소도 처음부터 넣을 수 있다 (2026-09-17)
+    # 예시 공고 주소도 처음부터 넣을 수 있다 (2026-09-17)
     assert 'name="detail_url"' in form
 
 
@@ -274,7 +274,7 @@ def test_안_되면_목록에_쉬운_말_사유와_다시_찾기가_남는다(
     assert 'hx-get="/ui/sites/new/1"' in listing
     assert 'hx-trigger="every 3s"' not in listing
     retry = client.get("/ui/sites/new/1").text
-    assert "공고 하나의 주소로 다시 찾기" in retry
+    assert "예시 공고 주소로 다시 찾기" in retry
     # 단계마다 무엇을 봤는지 보인다. 셀렉터·상세 길은 됐고 시험 수집에서 막혔다
     assert "무슨 일이 있었나" in retry
     assert "✓ 1. 목록을 읽고 셀렉터 만들기" in retry

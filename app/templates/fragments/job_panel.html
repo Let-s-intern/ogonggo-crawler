@@ -6,7 +6,7 @@
 
    `editing` 이면 칸이 입력이 되고 저장으로 끝난다. 고친 값은 사람 보정으로 남아 다시 분류해도
    덮이지 않는다 #}
-{% from "macros.html" import notice_box %}
+{% from "macros.html" import notice_box, wait %}
 {% set source_tone = {"edit": "bg-emerald-50 text-emerald-700", "ai": "bg-violet-50 text-violet-700",
                       "site": "bg-sky-50 text-sky-700", "auto": "bg-slate-100 text-slate-500"} %}
 
@@ -54,7 +54,8 @@
     {% endif %}
     {% if message %}{{ notice_box(message) }}{% endif %}
 
-    <div class="mt-3 flex flex-wrap items-center gap-2">
+    {# 다시 채우기·보내기는 AI·오공고를 부르느라 10초 넘게 걸린다. 도는 동안 단추를 막고 무엇을 하는지 적는다 #}
+    <div id="job-actions" class="mt-3 flex flex-wrap items-center gap-2">
       {% if editing %}
       <button type="button" class="mt-0" hx-get="/ui/review/jobs/{{ job.id }}/panel"
               hx-target="#app-panel-body" hx-swap="innerHTML">취소</button>
@@ -69,13 +70,21 @@
               hx-target="#app-panel-body" hx-swap="innerHTML">수정</button>
       <button type="button" class="mt-0" hx-post="/ui/review/jobs/{{ job.id }}/reclassify"
               hx-target="#app-panel-body" hx-swap="innerHTML"
+              hx-disabled-elt="#job-actions button" hx-indicator="#job-reclassify-wait"
               title="본문을 AI 로 다시 읽어 칸을 채운다. 직접 고친 칸은 그대로 둔다">AI로 다시 채우기</button>
       {% if not sent %}
       <button type="button" class="ml-auto mt-0 {% if delivered and delivered.status == 'failed' %}border-red-700 bg-red-700 text-white hover:bg-red-600{% else %}border-slate-800 bg-slate-800 text-white hover:bg-slate-700{% endif %}"
-              hx-post="/ui/review/jobs/{{ job.id }}/send" hx-target="#app-panel-body" hx-swap="innerHTML">오공고로 보내기</button>
+              hx-post="/ui/review/jobs/{{ job.id }}/send" hx-target="#app-panel-body" hx-swap="innerHTML"
+              hx-disabled-elt="#job-actions button" hx-indicator="#job-send-wait">오공고로 보내기</button>
       {% endif %}
       {% endif %}
     </div>
+    {% if not editing %}
+    <p class="my-0">
+      {{ wait("AI가 공고를 다시 읽고 있어요. 20초쯤 걸려요", "job-reclassify-wait") }}
+      {{ wait("오공고로 보내는 중이에요", "job-send-wait") }}
+    </p>
+    {% endif %}
   </div>
 
   <div class="flex-1 overflow-y-auto">
@@ -201,6 +210,13 @@
         <p class="my-0.5 text-xs text-slate-500">{{ delivered.last_error }}</p>
         {% else %}
         <p class="my-0.5 text-slate-500">아직 보내지 않음</p>
+        {% endif %}
+        {% if not sent %}
+        {% if auto_missing %}
+        <p class="my-0.5 text-xs text-amber-700">자동 전송 대기 — 빈 칸: {{ auto_missing | join(", ") }}</p>
+        {% else %}
+        <p class="my-0.5 text-xs text-slate-500">칸이 다 차 있어 분류 뒤 자동 전송 대상이에요</p>
+        {% endif %}
         {% endif %}
       </div>
     </section>
