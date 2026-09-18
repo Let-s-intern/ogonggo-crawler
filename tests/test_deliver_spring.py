@@ -52,7 +52,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
 
 
 def add_job(conn: sqlite3.Connection, seq: int, **values: Any) -> str:
-    """보낼 수 있는 정규화 행 하나. 원문 주소를 돌려준다."""
+    """자동 전송할 수 있는 정규화 행 하나. 기본 정보·모집 조건이 다 차 있다. 원문 주소를 준다."""
     source_url = f"https://x/{seq}"
     conn.execute(
         "INSERT INTO raw_jobs (id, workflow_id, source_url, raw_data_json, content_hash)"
@@ -69,6 +69,15 @@ def add_job(conn: sqlite3.Connection, seq: int, **values: Any) -> str:
         "education_level": "BACHELOR",
         "recruitment_type": "PERIOD",
         "recruitment_end_at": FUTURE,
+        "industry": "IT·정보통신업",
+        "job_field": "IT·개발",
+        "job_role": "서버·백엔드",
+        "cover_image_url": "https://x/logo.png",
+        "region": "서울",
+        "application_method": "EXTERNAL_PAGE",
+        "recruitment_start_at": "2026-09-01 00:00:00",
+        "closes_when_filled": "false",
+        "auto_close_enabled": "true",
         **values,
     }
     conn.execute(
@@ -261,12 +270,82 @@ async def test_꺼져_있거나_키가_없으면_보내지_않고_지금_보내�
     assert len(seen) == 1
 
 
+async def test_자동_전송은_기본_정보와_모집_조건이_다_찬_공고만_보낸다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-09-18 결정. 최소 경력 연수·모집 인원·모회사는 비어도 되고, 상시 채용은 마감일이 없다."""
+    add_job(conn, 1, industry=None)
+    add_job(conn, 2, region="")
+    optional_empty = add_job(conn, 3, experience_min_years=None, recruitment_headcount=None)
+    always_open = add_job(conn, 4, recruitment_type="ALWAYS_OPEN", recruitment_end_at=None)
+    seen = mock(lambda request: created(1), monkeypatch)
+
+    result = await spring.deliver_pending(conn, settings=SETTINGS)
+
+    assert result.sent == 2
+    assert [json.loads(request.content)["sourceUrl"] for request in seen] == [
+        optional_empty,
+        always_open,
+    ]
+
+
+async def test_지금_보내기는_필수_칸만_본다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    add_job(conn, 1, industry=None, region=None)
+    mock(lambda request: created(1), monkeypatch)
+
+    automatic = await spring.deliver_pending(conn, settings=SETTINGS)
+    forced = await spring.deliver_pending(conn, settings=SETTINGS, force=True)
+
+    assert (automatic.sent, forced.sent) == (0, 1)
+
+
+def test_자동_전송을_막는_빈_칸을_가린다() -> None:
+    full = job_row(**{**{name: "값" for name in spring.AUTO_FIELDS}, "recruitment_type": "PERIOD"})
+    assert spring.auto_missing(full) == []
+    assert spring.auto_missing({**full, "industry": None, "region": " "}) == ["industry", "region"]
+    # 회사는 모회사만 있어도 된다. 상시 채용은 마감일이 없어도 된다
+    assert (
+        spring.auto_missing({**full, "company_name": None, "parent_company_name": "모회사"}) == []
+    )
+    assert (
+        spring.auto_missing({**full, "recruitment_type": "ALWAYS_OPEN", "recruitment_end_at": None})
+        == []
+    )
+    assert spring.auto_missing({**full, "recruitment_end_at": None}) == ["recruitment_end_at"]
+
+
+async def test_분류_배치가_끝나면_칸이_빈_공고는_자동으로_보내지_않는다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """산업·직군·근무 지역 같은 칸이 빈 공고다. 필수 칸이 다 찼어도 자동으로는 보내지 않는다."""
+    conn.execute("DELETE FROM workflows")
+    conn.execute("DELETE FROM crawlers")
+    _seed(conn, count=1)
+    seen = mock(lambda request: created(9), monkeypatch)
+    text = response(
+        responsibilities="제휴사 데이터 연동 구조 기획",
+        employment_type="FULL_TIME",
+        experience_type="EXPERIENCED",
+        education_level="BACHELOR",
+        closes_when_filled="false",
+        application_method="EXTERNAL_PAGE",
+    )
+
+    await classify_pending(conn, ClassifyProgress(), client=FakeClient(text), settings=SETTINGS)
+
+    assert seen == []
+
+
 async def test_분류_배치가_끝나면_보낸다(
     conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     conn.execute("DELETE FROM workflows")
     conn.execute("DELETE FROM crawlers")
     _seed(conn, count=1)
+    # 분류 배치 끝의 전송 경로만 본다. 칸이 다 찼는지는 위 테스트들이 본다
+    monkeypatch.setattr(spring, "COMPLETE_SQL", spring.READY_SQL)
     seen = mock(lambda request: created(9), monkeypatch)
     text = response(
         responsibilities="제휴사 데이터 연동 구조 기획",
