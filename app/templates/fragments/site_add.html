@@ -37,10 +37,10 @@
         </p>
       </div>
       <p class="my-0">
-        <label for="site-add-detail" class="block">공고 하나의 주소 <span class="font-normal text-slate-500">(선택)</span></label>
+        <label for="site-add-detail" class="block">예시 공고 주소 <span class="font-normal text-slate-500">(선택)</span></label>
         <input id="site-add-detail" name="detail_url" type="url" value="{{ detail_url }}"
                placeholder="https://careers.example.com/jobs/123" class="w-full">
-        <span class="text-xs text-slate-500">비워 두면 목록에서 찾습니다. 넣으면 그 페이지를 보고 상세 셀렉터를 만들어 더 잘 찾습니다</span>
+        <span class="text-xs text-slate-500">사이트에서 공고 하나를 눌러 열었을 때 주소창의 주소입니다. 비워 두면 목록에서 찾고, 넣으면 그 페이지를 보고 상세를 더 잘 찾습니다</span>
       </p>
       <p class="my-0 flex justify-end"><button type="submit">추가</button></p>
     </form>
@@ -84,7 +84,7 @@
     {% endif %}
 
     <div class="rounded-md border border-slate-200 p-3">
-      <p class="text-sm font-medium text-slate-900">공고 하나의 주소로 다시 찾기</p>
+      <p class="text-sm font-medium text-slate-900">예시 공고 주소로 다시 찾기</p>
       <p class="text-xs text-slate-500">사이트에서 공고 하나를 열고, 브라우저 주소창의 주소를 붙여 넣어 주세요. 그 주소를 보고 다시 만듭니다</p>
       <form class="mt-2 space-y-2" hx-post="/ui/sites/new" hx-target="#app-modal-body" hx-swap="innerHTML"
             hx-disabled-elt="find button">
@@ -92,7 +92,7 @@
         <input type="hidden" name="company" value="{{ company }}">
         <input type="hidden" name="interval_minutes" value="{{ interval }}">
         <input type="hidden" name="replace_add_id" value="{{ add.id }}">
-        <input type="url" name="detail_url" required value="{{ detail_url }}" placeholder="https://…/공고 하나의 주소" class="w-full">
+        <input type="url" name="detail_url" required value="{{ detail_url }}" placeholder="https://…/예시 공고 주소" class="w-full">
         <p class="my-0 flex justify-end"><button type="submit" class="mt-0">다시 찾기</button></p>
       </form>
     </div>

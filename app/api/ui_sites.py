@@ -8,7 +8,13 @@
 실행과 AI 수정(`app/api/ui_tests.py`)을 그대로 부른다. 화면 전용 경로가 갈라지면 화면에서 되는 일이
 스케줄러에서 안 되는 상태가 생긴다.
 
-## 공고 하나의 주소로 다시 찾기
+## 주소 고치기
+
+패널 맨 위에 목록 주소와 예시 공고 주소를 저장된 값으로 채워 보이고, 고쳐 저장할 수 있다 (2026-09-18
+결정). 예전에는 등록할 때 넣은 예시 공고 주소를 다시 볼 곳이 없었고 목록 주소는 고칠 수 없었다.
+저장만 한다 — 셀렉터를 다시 만드는 것은 아래 "다시 찾기" 다.
+
+## 예시 공고 주소로 다시 찾기
 
 목록에서 상세로 가는 길을 못 찾는 사이트가 있다(`detail_unreachable`). 운영자가 사이트에서 공고
 하나를 열어 그 주소를 주면, 목록 주소와 그 주소로 셀렉터를 다시 만든다 — 등록할 때 상세 URL 을
@@ -128,6 +134,21 @@ def site_panel_fragment(
     card = next((card for card in _cards(conn, scheduler) if card.item.id == workflow_id), None)
     if card is None:
         return render(request, "fragments/site_panel.html", card=None, workflow_id=workflow_id)
+    return _panel(request, conn, card, workflow_id)
+
+
+def _panel(
+    request: Request,
+    conn: sqlite3.Connection,
+    card: CardView,
+    workflow_id: int,
+    *,
+    message: str = "",
+    error: str = "",
+) -> HTMLResponse:
+    row = conn.execute(
+        "SELECT detail_url FROM crawlers WHERE id = ?", (card.item.crawler_id,)
+    ).fetchone()
     return render(
         request,
         "fragments/site_panel.html",
@@ -135,7 +156,54 @@ def site_panel_fragment(
         workflow_id=workflow_id,
         problem=_problem(conn, card),
         runs=_recent_runs(conn, workflow_id),
+        detail_url=str(row["detail_url"] or "") if row else "",
+        url_message=message,
+        url_error=error,
     )
+
+
+def _is_http(url: str) -> bool:
+    return url.startswith(("http://", "https://"))
+
+
+@router.post("/ui/sites/{workflow_id}/urls", response_class=HTMLResponse)
+def urls_fragment(
+    request: Request,
+    workflow_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(workflows.get_connection)],
+    scheduler: Annotated[WorkflowScheduler, Depends(workflows.get_workflow_scheduler)],
+    list_url: Annotated[str, Form()] = "",
+    detail_url: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """목록 주소와 예시 공고 주소를 저장한다. 셀렉터는 건드리지 않는다."""
+    card = next((card for card in _cards(conn, scheduler) if card.item.id == workflow_id), None)
+    if card is None:
+        return render(request, "fragments/site_panel.html", card=None, workflow_id=workflow_id)
+    list_url, detail_url = list_url.strip(), detail_url.strip()
+    if not _is_http(list_url):
+        return _panel(
+            request,
+            conn,
+            card,
+            workflow_id,
+            error="목록 주소는 http:// 나 https:// 로 시작해야 해요",
+        )
+    if detail_url and not _is_http(detail_url):
+        return _panel(
+            request,
+            conn,
+            card,
+            workflow_id,
+            error="예시 공고 주소는 비우거나 http:// 나 https:// 로 시작해야 해요",
+        )
+    conn.execute(
+        "UPDATE crawlers SET list_url = ?, detail_url = ? WHERE id = ?",
+        (list_url, detail_url or None, card.item.crawler_id),
+    )
+    conn.commit()
+    logger.info("사이트 %s: 주소를 고쳤다 list=%s detail=%s", workflow_id, list_url, detail_url)
+    card = next(card for card in _cards(conn, scheduler) if card.item.id == workflow_id)
+    return _panel(request, conn, card, workflow_id, message="주소를 저장했어요")
 
 
 @router.post("/ui/sites/{workflow_id}/detail-url", response_class=HTMLResponse)
@@ -145,7 +213,10 @@ async def detail_url_fragment(
     conn: Annotated[sqlite3.Connection, Depends(workflows.get_connection)],
     detail_url: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    """공고 하나의 주소로 셀렉터를 다시 만든다. 저장하지 않고 편집기에 올린다."""
+    """예시 공고 주소로 셀렉터를 다시 만든다. 셀렉터는 저장하지 않고 편집기에 올린다.
+
+    넣은 주소는 예시 공고 주소로 저장한다 — 다음에 패널을 열었을 때 무엇을 넣었는지 보인다.
+    """
     row = conn.execute(
         "SELECT w.crawler_id, c.list_url, c.list_mode FROM workflows w"
         " JOIN crawlers c ON c.id = w.crawler_id WHERE w.id = ?",
@@ -169,6 +240,8 @@ async def detail_url_fragment(
                 "message": "공고 주소는 http:// 나 https:// 로 시작해야 한다",
             },
         )
+    conn.execute("UPDATE crawlers SET detail_url = ? WHERE id = ?", (url, crawler_id))
+    conn.commit()
     generate = crawlers.get_generator(conn)
     # 목록을 렌더로 가져오는 사이트는 상세도 렌더로 만든다. API 로 받는 목록은 셀렉터가 없어
     # 경로를 정하게 비워 둔다
@@ -187,7 +260,7 @@ async def detail_url_fragment(
         )
     failed = list(result.verification.failed)
     notice = (
-        "공고 주소로 셀렉터를 다시 만들었다. 아직 저장하지 않았다 — 아래 편집기에서 저장한 뒤 "
+        "예시 공고 주소로 셀렉터를 다시 만들었다. 아직 저장하지 않았다 — 아래 편집기에서 저장한 뒤 "
         "다시 실행해 확인한다"
     )
     if failed:
