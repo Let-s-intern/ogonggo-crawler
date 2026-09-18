@@ -36,6 +36,7 @@ from app.classify.schema import (
     INDUSTRY,
     JUDGE_FIELDS,
     NUMBER_FIELDS,
+    POSTING_TITLE,
     TAXONOMY_FIELDS,
 )
 
@@ -44,9 +45,11 @@ EXTRACT = "뽑는 칸"
 JUDGE = "판정 칸"
 TAXONOMY = "직무 분류"
 INDUSTRIES = "산업 분류"
+TITLE = "공고 제목"
 
 # 칸 이름, 화면 이름, 종류. 순서가 화면과 프롬프트의 순서다
 RULE_FIELDS: tuple[tuple[str, str, str], ...] = (
+    ("posting_title", "공고 제목 (오공고에 올라가는 제목)", TITLE),
     ("position_name", "직무 이름 (나눈 공고의 제목에 붙는다)", EXTRACT),
     ("responsibilities", "주요 업무", EXTRACT),
     ("qualifications", "자격 요건", EXTRACT),
@@ -81,6 +84,7 @@ assert set(names_of(EXTRACT)) == set(EXTRACT_FIELDS)
 assert set(names_of(JUDGE)) == {*JUDGE_FIELDS, *NUMBER_FIELDS}
 assert set(names_of(TAXONOMY)) == set(TAXONOMY_FIELDS)
 assert names_of(INDUSTRIES) == (INDUSTRY,)
+assert names_of(TITLE) == (POSTING_TITLE,)
 
 # 적을 수 있는 길이. 규칙은 공고마다 프롬프트에 실려 토큰이 되고, 긴 프롬프트는 모델이 뒤를 흘린다
 MAX_COMMON_CHARS = 4000
@@ -154,6 +158,28 @@ DEFAULT_RULES = RuleSet(
         "대한 안내만 recruitment_notice 에 담는다."
     ),
     fields={
+        "posting_title": FieldRule(
+            "오공고에 올라갈 이 공고의 제목이다. 사이트 제목([0])을 바탕으로 짓고 **이 posting "
+            "의 직무 이름이 반드시 들어가게 한다.** 사이트 제목에 직무 이름이 이미 있으면 거의 "
+            "그대로 쓴다. 없으면(`신입사원 모집`, `경력사원 채용`) 본문에서 이 posting 이 뽑는 "
+            "직무를 읽어 넣는다. 직무마다 나눈 공고는 그 직무 이름을 넣는다. 본문에도 직무 "
+            "이름이 없으면 고른 job_role 을 넣는다. 사이트 제목에 있는 모집 구분"
+            "(신입·경력·인턴)과 연도는 살리고, `[공고]`·`(~9/30)`·`D-12` 같은 게시판 표시는 "
+            "뺀다. 한 줄, 60자 안이다.",
+            (
+                Example(
+                    "2026년 하반기 CJ제일제당 신입사원 모집 / 본문 직무: 마케팅",
+                    "2026년 하반기 CJ제일제당 마케팅 신입사원 모집",
+                ),
+                Example(
+                    "경력사원 채용(M&A, 유선 고객상담, 콘텐츠 PD) / 이 posting: 콘텐츠 PD",
+                    "콘텐츠 PD 경력사원 채용",
+                ),
+                Example(
+                    "[정보보안센터] IT보안 담당자 경력채용", "[정보보안센터] IT보안 담당자 경력채용"
+                ),
+            ),
+        ),
         "position_name": FieldRule(
             "직무. **직무가 하나인 공고는 제목([0])에서만 가져온다.** 그 공고가 어떤 일을 "
             "할 사람을 뽑는지 제목이 말하는 부분이다. 회사명·연도·`경력사원 채용`·`영입` 같은 "

@@ -63,6 +63,7 @@ from app.classify.prompt_rules import (
     INDUSTRIES,
     JUDGE,
     TAXONOMY,
+    TITLE,
     RuleSet,
     names_of,
     render_common,
@@ -79,6 +80,7 @@ from app.classify.schema import (
     JUDGE_CHOICES,
     JUDGE_FIELDS,
     NUMBER_FIELDS,
+    POSTING_TITLE,
     VALUE_LABELS,
     Classification,
     ClassifySchemaError,
@@ -187,7 +189,12 @@ _PROMPT = """아래는 채용공고의 제목과 본문이다. 줄마다 앞에 
 - 목록이 없는 칸(`experience_min_years`)은 원문에 근거가 있을 때만 채우고 근거 문장을 반드시
   적는다. 근거 문장이 없는 값은 버려진다.
 - 회사명·모집 시작일·마감일은 위 칸 어디에도 넣지 않는다. 그 셋을 원문과 견주는 자리는
-  값이 이미 있을 때만 아래에 따로 나온다. 제목도 `position_name` 말고는 어느 칸에도 넣지 않는다.
+  값이 이미 있을 때만 아래에 따로 나온다. 제목도 `position_name` 과 `posting_title` 말고는 어느
+  칸에도 넣지 않는다.
+
+# 공고 제목 — posting 마다 짓는다
+
+{title_rules}
 {taxonomy_block}{industry_block}{current_values_block}
 [제목]
 {title}
@@ -528,7 +535,7 @@ def posting_only_names(
     2건). 뭉뚱그린 말보다 칸 이름을 적는 편이 덜 어긴다. 직무 분류와 산업은 그 표가 켜져 있을
     때만 응답에 있어서 그때만 적는다 (`build_classification_model`)
     """
-    names: list[str] = ["position_name", *JUDGE_FIELDS, *NUMBER_FIELDS]
+    names: list[str] = [POSTING_TITLE, "position_name", *JUDGE_FIELDS, *NUMBER_FIELDS]
     if taxonomy_tree:
         names.append(JOB_FIELD)
         if any(minors for _, minors in taxonomy_tree):
@@ -568,6 +575,7 @@ def _classification_prompt(
         extract_rules=render_fields(rules, names_of(EXTRACT)),
         common_rules=render_common(rules),
         judge_rules=render_fields(rules, names_of(JUDGE), choices),
+        title_rules=render_fields(rules, names_of(TITLE)),
     )
 
 

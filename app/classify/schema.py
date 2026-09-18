@@ -151,6 +151,10 @@ class Posting(BaseModel):
     application_method: Literal["EXTERNAL_PAGE", "EMAIL"]
     application_method_evidence: str = ""
 
+    # 0041. 이 공고의 제목. 사이트 제목을 바탕으로 짓되 직무 이름이 반드시 들어간다. 옮기는 칸이
+    # 아니라 짓는 칸이라 원문에 돌려 보지 않는다 (2026-09-18 결정)
+    posting_title: str = ""
+
     # 뽑는 칸. 모델은 글자를 쓰지 않고 몇 번 줄의 어느 부분인지를 조각으로 답한다. 저장은
     # 원문에서 잘라 온 글자다 (`app/classify/pieces.py`). `position_name` 만 0 번 줄(제목)에서 온다
     position_name: list[LinePiece] = Field(default_factory=list)
@@ -343,6 +347,10 @@ assert set(COMMON_FIELDS) == set(EXTRACT_FIELDS) - {"position_name"}
 JOB_FIELD: Final = "job_field"
 JOB_ROLE: Final = "job_role"
 TAXONOMY_FIELDS: tuple[str, ...] = (JOB_FIELD, JOB_ROLE)
+
+# AI 가 지은 공고 제목 (`migrations/0041_classification_posting_title.sql`). `normalized_jobs` 에는
+# 이 이름의 칸이 없고 정규화가 `title` 로 옮긴다 — 그래서 `STORED_CLASSIFY_FIELDS` 에 넣지 않는다
+POSTING_TITLE: Final = "posting_title"
 
 # 산업. `industries`(운영 DB 표)에서 공고마다 고르는 판정 칸이다 (`migrations/0034_industries.sql`).
 # 직무 분류와 같은 이유로 정적 모델에 없고 `build_classification_model()` 이 더한다

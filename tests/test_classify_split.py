@@ -280,3 +280,14 @@ async def test_다시_물을_때_앞_답이_거절된_이유를_붙인다() -> N
     assert "앞 답이 거절됐다" not in first
     assert "앞 답이 거절됐다" in second
     assert "other" in second
+
+
+async def test_공고_제목은_근거_검사_없이_한_줄로_받는다() -> None:
+    """짓는 칸이라 원문에 없는 글자여도 버리지 않는다 (2026-09-18)."""
+    payload = json.loads(SPLIT)
+    payload["postings"][0]["posting_title"] = "로봇 SW 개발\n경력사원 채용"
+
+    result = await classify(json.dumps(payload, ensure_ascii=False))
+
+    assert result.postings[0].fields["posting_title"] == "로봇 SW 개발 경력사원 채용"
+    assert "posting_title" not in result.postings[0].dropped
