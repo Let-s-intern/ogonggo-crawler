@@ -124,8 +124,8 @@ async def test_공고를_내지_않으면_공통_칸으로_공고_하나를_만�
 @pytest.mark.parametrize(
     "payload",
     [
-        # 직무 이름은 공고마다 다르다. 공통 묶음에 올 자리가 없다
-        {"common": {"position_name": []}, "postings": []},
+        # 이름부터 스키마에 없다. 자리만 틀린 칸과 달리 옮길 곳이 없다
+        {"common": {"other": []}, "postings": []},
         {"postings": [{"salary": "협의"}]},
     ],
 )
@@ -217,3 +217,66 @@ def test_분류_행이_여럿인_공고도_범위에서_한_번만_나온다(con
 
     assert store.scope_ids(conn, store.EMPTY_FIELDS) == [1]
     assert store.scope_count(conn, store.EMPTY_FIELDS) == 1
+
+
+async def test_공통_묶음에_온_판정_칸은_공고마다_옮겨_받는다() -> None:
+    """DeepSeek 가 판정 칸을 common 에 넣는다 (2026-09-18). 이름은 맞고 자리만 틀렸다.
+
+    공고 안에 값이 있으면 그 값이 먼저다 — 직무마다 다를 수 있는 칸이다.
+    """
+    payload = json.loads(SPLIT)
+    payload["common"]["employment_type"] = "FULL_TIME"
+    payload["common"]["experience_type"] = "NEWCOMER"
+
+    result = await classify(json.dumps(payload, ensure_ascii=False))
+
+    assert [posting.fields["employment_type"] for posting in result.postings] == [
+        "FULL_TIME",
+        "FULL_TIME",
+    ]
+    # 첫 공고는 자기 값(EXPERIENCED)을 냈고, 둘째는 비워 둬서 공통 값을 받는다
+    assert [posting.fields["experience_type"] for posting in result.postings] == [
+        "EXPERIENCED",
+        "NEWCOMER",
+    ]
+
+
+async def test_응답_맨_위에_온_판정_칸도_옮겨_받는다() -> None:
+    payload = json.loads(SPLIT)
+    payload["employment_type"] = "FULL_TIME"
+
+    result = await classify(json.dumps(payload, ensure_ascii=False))
+
+    assert {posting.fields["employment_type"] for posting in result.postings} == {"FULL_TIME"}
+
+
+async def test_공고가_없고_공통_묶음에만_칸이_있으면_공고_하나로_받는다() -> None:
+    """공고를 내지 않고 전부 common 에 담은 답이다. 직무 이름도 조각째 옮긴다."""
+    payload = {
+        "common": {
+            **common_body(benefits=pieces("사내 식당 운영", 4)),
+            "position_name": pieces("로봇 SW 개발", 5),
+            "employment_type": "FULL_TIME",
+        },
+        "postings": [],
+    }
+
+    result = await classify(json.dumps(payload, ensure_ascii=False))
+
+    assert len(result.postings) == 1
+    assert result.postings[0].fields["position_name"] == "로봇 SW 개발"
+    assert result.postings[0].fields["employment_type"] == "FULL_TIME"
+    assert result.postings[0].fields["benefits"] == "사내 식당 운영"
+
+
+async def test_다시_물을_때_앞_답이_거절된_이유를_붙인다() -> None:
+    """같은 프롬프트를 그대로 다시 보내면 모델은 무엇이 틀렸는지 모른다."""
+    broken = json.dumps({"common": {"other": []}, "postings": []})
+    client = FakeClient(broken, SPLIT)
+
+    await classify_body(BODY, title=TITLE, settings=settings_with_key(), client=client)
+
+    first, second = (call["contents"] for call in client.calls)
+    assert "앞 답이 거절됐다" not in first
+    assert "앞 답이 거절됐다" in second
+    assert "other" in second
