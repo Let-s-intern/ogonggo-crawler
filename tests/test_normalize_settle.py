@@ -62,13 +62,31 @@ def test_최소_경력_연수는_경력_공고에만_남는다() -> None:
         settled(experience_type="EXPERIENCED", experience_min_years="03")["experience_min_years"]
         == "3"
     )
-    for experience_type in ("NEWCOMER", "BOTH", "IRRELEVANT", None):
+    for experience_type in ("BOTH", "IRRELEVANT", None):
         fields = settled(experience_type=experience_type, experience_min_years="3")
         assert fields["experience_min_years"] is None, experience_type
     # 사람이 숫자가 아닌 글자로 고쳐도 그대로 내보내지 않는다
     assert (
         settled(experience_type="EXPERIENCED", experience_min_years="3년")["experience_min_years"]
         is None
+    )
+
+
+def test_신입이나_인턴_공고의_최소_경력_연수는_0이다() -> None:
+    """2026-09-18 결정. AI 가 무엇을 적었든 0 이다."""
+    assert settled(experience_type="NEWCOMER")["experience_min_years"] == "0"
+    assert (
+        settled(experience_type="NEWCOMER", experience_min_years="3")["experience_min_years"] == "0"
+    )
+    assert (
+        settled(employment_type="INTERN", experience_type="IRRELEVANT")["experience_min_years"]
+        == "0"
+    )
+    assert (
+        settled(employment_type="INTERN", experience_type="EXPERIENCED", experience_min_years="2")[
+            "experience_min_years"
+        ]
+        == "0"
     )
 
 

@@ -203,7 +203,8 @@ DEFAULT_RULES = RuleSet(
         ),
         "experience_min_years": FieldRule(
             "최소 경력 연수. experience_type 이 EXPERIENCED 이고 원문에 최소 연수가 적혀 있을 "
-            "때만 숫자만 적는다. 그 밖에는 빈 문자열이다.",
+            "때만 숫자만 적는다. 그 밖에는 빈 문자열이다. 신입·인턴 공고의 0 은 저장할 때 "
+            "정해지므로 적지 않는다.",
             (Example("관련 경력 3년 이상", "3"),),
         ),
         "education_level": FieldRule(
