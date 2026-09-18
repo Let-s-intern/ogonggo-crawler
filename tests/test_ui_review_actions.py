@@ -11,6 +11,7 @@
 | 패널의 보내기와 표의 골라 보내기가 오공고에 등록한다 | 실패한 공고를 손으로 보낼 길이 없다 |
 | 이미 보낸 공고는 다시 보내지 않는다 | 같은 공고를 두 번 등록하려 든다 |
 | AI 로 다시 채우지 못하면 사유를 적는다 | 눌러도 아무 일이 없는 것처럼 보인다 |
+| 다시 채우는 동안 대기 문구를 띄우고, 끝나면 바뀐 칸을 적는다 | 되고 있는지 모른다 |
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import json
 import pathlib
 import sqlite3
 from collections.abc import Iterator
+from typing import Any
 
 import httpx
 import pytest
@@ -26,6 +28,7 @@ from fastapi.testclient import TestClient
 
 from app import db
 from app.api import crawlers as crawlers_api
+from app.api import review_actions
 from app.config import Settings
 from app.deliver import spring
 from app.deliver.settings import DeliverConfig, write_config
@@ -228,4 +231,24 @@ def test_AI로_다시_채우지_못하면_사유를_적는다(client: TestClient
     """테스트 환경에는 AI 키가 없다. 호출 전에 실패하고, 그 사유가 패널에 남는다."""
     html = client.post("/ui/review/jobs/1/reclassify").text
 
-    assert "AI 로 다시 채우지 못했다" in html
+    assert "AI로 다시 채우지 못했어요" in html
+
+
+def test_AI로_다시_채우기는_도는_동안_단추를_막고_끝나면_바뀐_칸을_적는다(
+    client: TestClient, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    panel = client.get("/ui/review/jobs/1/panel").text
+    assert 'hx-indicator="#job-reclassify-wait"' in panel
+    assert 'hx-disabled-elt="#job-actions button"' in panel
+    assert "AI가 공고를 다시 읽고 있어요" in panel
+
+    async def fake_classify(conn: sqlite3.Connection, ids: list[int], progress: Any) -> Any:
+        conn.execute("UPDATE normalized_jobs SET company_name = '에이피알' WHERE id = 1")
+        progress.processed = 1
+        return progress
+
+    monkeypatch.setattr(review_actions, "classify_ids", fake_classify)
+
+    html = client.post("/ui/review/jobs/1/reclassify").text
+
+    assert "AI로 다시 채웠어요. 바뀐 칸: 회사" in html
