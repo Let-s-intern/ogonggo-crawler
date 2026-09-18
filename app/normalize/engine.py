@@ -104,7 +104,7 @@ from datetime import date, datetime, time
 from bs4 import BeautifulSoup
 
 from app import companies
-from app.classify.schema import FALLBACK_FIELDS, STORED_CLASSIFY_FIELDS
+from app.classify.schema import FALLBACK_FIELDS, POSTING_TITLE, STORED_CLASSIFY_FIELDS
 from app.classify.store import read_classification, read_parts
 
 # 어디서 줄이 바뀌어야 하는지는 HTML 이 정하고, 그 목록은 저기 하나뿐이다. 여기에 같은
@@ -504,9 +504,10 @@ def normalized_values(
     최초 정규화와 재정규화가 같은 값을 내려면 두 경로가 이 함수 하나를 지나야 한다. 순서를
     각자 조립하면 한쪽에서만 보정이 빠지고, 그 차이는 재정규화를 돌린 뒤에야 드러난다.
 
-    나눈 공고는 제목 뒤에 직무 이름을 붙이고(`원래 제목 - 직무 이름`) 주소 뒤에 번호를
-    붙인다(`...#2`) (2026-09-11 결정). 주소가 같으면 소비 측이 같은 공고로 보고 뒤의 것을
-    버린다. 사람이 고친 제목은 그 위에 덮인다.
+    제목은 분류가 지은 제목(`posting_title`, 직무 이름이 들어 있다)이 있으면 그것이다 (2026-09-18
+    결정). 없으면 사이트 제목이고, 나눈 공고는 그 뒤에 직무 이름을 붙인다(`원래 제목 - 직무 이름`).
+    나눈 공고는 주소 뒤에 번호를 붙인다(`...#2`) (2026-09-11 결정). 주소가 같으면 소비 측이 같은
+    공고로 보고 뒤의 것을 버린다. 사람이 고친 제목은 그 위에 덮인다.
 
     직무가 조직 아래 나뉜 공고는 직무 이름에 조직 이름 줄이 함께 온다(`HS사업본부` / `기계`).
     제목에는 한 줄로 이어 넣는다 — 줄바꿈이 든 제목은 목록에서 잘려 보인다. 직무 이름은 분류가
@@ -514,19 +515,21 @@ def normalized_values(
     """
     part = part or PostingPart()
     source_url, data = read_raw(conn, raw_job_id)
+    classification = read_classification(conn, raw_job_id, part.number)
     fields = normalize_fields(
         data,
         rules,
         read_parent_company(conn, raw_job_id),
-        read_classification(conn, raw_job_id, part.number),
+        classification,
     )
-    fill_fallbacks(
-        fields,
-        read_classification(conn, raw_job_id, part.number),
-        _collected_on(conn, raw_job_id),
-    )
+    fill_fallbacks(fields, classification, _collected_on(conn, raw_job_id))
     if part.split:
         source_url = f"{source_url}#{part.number}"
+    ai_title = classification.get(POSTING_TITLE, "").strip()
+    if ai_title:
+        # 분류가 직무 이름을 넣어 지은 제목이 먼저다 (2026-09-18 결정)
+        fields["title"] = ai_title
+    elif part.split:
         role = " ".join(part.role.split())
         if role:
             title = fields.get("title")
