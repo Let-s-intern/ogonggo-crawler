@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app import db
+from app import db, industries, taxonomy
 from app.api import (
     auth,
     classify,
@@ -62,6 +62,22 @@ if _log_ring_handler not in _app_logger.handlers:
     _app_logger.addHandler(_log_ring_handler)
 
 
+def _seed_empty_tables(conn: sqlite3.Connection) -> None:
+    """직무 분류표와 산업 분류표가 비어 있으면 씨앗을 넣는다.
+
+    두 표가 비면 분류가 직군·직무·산업을 묻지 않고 빈 채로 저장한다. 에러도 없어서 새로 띄운
+    서버에서 세 칸이 조용히 빈다 (2026-09-18 확인). 불러오기 단추를 누르기 전에 수집이 돌면 그
+    공고들은 분류가 끝난 것으로 남아 다시 돌지 않는다. 표에 한 줄이라도 있으면 `load_seed` 가
+    아무것도 하지 않는다 — 운영자가 고친 표는 건드리지 않는다.
+    """
+    majors, minors = taxonomy.load_seed(conn, ui_taxonomy.SEED_PATH)
+    if majors:
+        logger.info("직무 분류표가 비어 있어 씨앗을 넣었다: 대분류 %d, 소분류 %d", majors, minors)
+    added = industries.load_seed(conn, ui_industries.SEED_PATH)
+    if added:
+        logger.info("산업 분류표가 비어 있어 씨앗을 넣었다: %d개", added)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """기동 시 `workflows` 테이블에서 잡을 등록한다. 스키마 적용은 CLI 가 한다."""
@@ -84,6 +100,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                 "지난 프로세스가 남긴 미완 부가 실행 %d건을 timeout 으로 닫았다", side_orphans
             )
         try:
+            _seed_empty_tables(conn)
             get_scheduler().start(conn)
         except sqlite3.OperationalError:
             # 스키마가 아직 없는 DB 다. 등록할 워크플로우도 없다.
