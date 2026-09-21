@@ -37,6 +37,7 @@ from app.classify.schema import (
     JUDGE_FIELDS,
     NUMBER_FIELDS,
     POSTING_TITLE,
+    REGION,
     TAXONOMY_FIELDS,
 )
 
@@ -55,7 +56,6 @@ RULE_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("qualifications", "자격 요건", EXTRACT),
     ("preferred_qualifications", "우대 사항", EXTRACT),
     ("hiring_process", "채용 절차", EXTRACT),
-    ("region", "근무 지역", EXTRACT),
     ("company_and_team_introduction", "회사·팀 소개", EXTRACT),
     ("compensation", "급여·처우", EXTRACT),
     ("benefits", "복지·혜택", EXTRACT),
@@ -67,6 +67,8 @@ RULE_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("education_level", "요구 학력", JUDGE),
     ("closes_when_filled", "채용 시 마감", JUDGE),
     ("application_method", "지원 방법", JUDGE),
+    # 2026-09-21 부터 옮기는 칸이 아니라 큰 지역 목록에서 고르는 칸이다 (`app/regions.py`)
+    ("region", "근무 지역", JUDGE),
     ("job_field", "직군", TAXONOMY),
     ("job_role", "직무", TAXONOMY),
     ("industry", "산업", INDUSTRIES),
@@ -81,7 +83,7 @@ def names_of(kind: str) -> tuple[str, ...]:
 
 # 분류가 채우는 칸마다 규칙이 있어야 한다. 칸이 늘었는데 여기 없으면 모델이 그 칸을 모른다
 assert set(names_of(EXTRACT)) == set(EXTRACT_FIELDS)
-assert set(names_of(JUDGE)) == {*JUDGE_FIELDS, *NUMBER_FIELDS}
+assert set(names_of(JUDGE)) == {*JUDGE_FIELDS, *NUMBER_FIELDS, REGION}
 assert set(names_of(TAXONOMY)) == set(TAXONOMY_FIELDS)
 assert names_of(INDUSTRIES) == (INDUSTRY,)
 assert names_of(TITLE) == (POSTING_TITLE,)
@@ -195,7 +197,18 @@ DEFAULT_RULES = RuleSet(
         "qualifications": FieldRule("자격요건·지원자격"),
         "preferred_qualifications": FieldRule("우대사항"),
         "hiring_process": FieldRule("전형 절차"),
-        "region": FieldRule("근무지"),
+        "region": FieldRule(
+            "근무지. 이 직무를 실제로 일하는 곳이 속한 큰 지역을 목록에서 고른다. **여러 곳이면 "
+            "모두 고른다.** 구·시·군이나 사업장 이름만 적혀 있으면 그곳이 속한 큰 지역을 고른다. "
+            "나라 밖이면 `해외` 다. 근무지가 원문에 없으면 빈 목록으로 둔다 — 이 칸만은 비워도 "
+            "된다. 회사 주소나 본사 소개에만 나온 지역은 근무지가 아니다",
+            (
+                Example("근무지: 성남시 분당구(판교)", "경기"),
+                Example("울산 본사 및 분당 GRC", "울산, 경기"),
+                Example("근무지 : 부산 해운대구 센텀", "부산"),
+                Example("베트남 하노이 법인", "해외"),
+            ),
+        ),
         "company_and_team_introduction": FieldRule(
             "회사·팀 소개. **공고에 `회사 소개`·`팀 소개`·`회사 및 팀 소개` 같은 소제목으로 "
             "된 구역이 있을 때만** 그 구역의 내용을 가져온다. 그런 구역이 없으면 빈 목록으로 "

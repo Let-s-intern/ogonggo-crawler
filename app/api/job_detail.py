@@ -23,7 +23,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
-from app import industries, taxonomy
+from app import industries, regions, taxonomy
 from app.classify.schema import FALLBACK_FIELDS, STORED_CLASSIFY_FIELDS, VALUE_LABELS
 from app.deliver import spring
 from app.normalize.engine import OVERRIDABLE_FIELDS
@@ -86,6 +86,7 @@ SECTIONS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("experience_type", "경력", KIND_CHOICE),
             Field("experience_min_years", "최소 경력 연수"),
             Field("education_level", "학력", KIND_CHOICE),
+            # 큰 지역 목록에서 쉼표로 여러 개다. 목록 밖 이름은 `ListChoices.check` 가 막는다
             Field("region", "근무 지역"),
             Field("recruitment_type", "모집 유형", KIND_CHOICE),
             Field("recruitment_headcount", "모집 인원"),
@@ -202,8 +203,17 @@ class ListChoices:
     job_roles: dict[str, tuple[str, ...]]
     industries: tuple[str, ...]
 
-    def check(self, job_field: str, job_role: str, industry: str) -> str:
-        """목록 밖 값이면 무엇이 틀렸는지 한 줄, 맞으면 빈 문자열. 빈 값은 맞다."""
+    def check(self, job_field: str, job_role: str, industry: str, region: str = "") -> str:
+        """목록 밖 값이면 무엇이 틀렸는지 한 줄, 맞으면 빈 문자열. 빈 값은 맞다.
+
+        근무 지역은 큰 지역 목록에서 쉼표로 여러 개다 (`app/regions.py`).
+        """
+        outside = [name for name in regions.split(region) if name not in regions.names()]
+        if outside:
+            return (
+                f"근무 지역 '{', '.join(outside)}' 은 지역 목록에 없다. "
+                f"{', '.join(regions.names())} 중에서 쉼표로 적는다"
+            )
         if job_field and job_field not in self.job_fields:
             return f"직군 '{job_field}' 은 직무 분류에 없다"
         if job_role and job_role not in self.job_roles.get(job_field, ()):

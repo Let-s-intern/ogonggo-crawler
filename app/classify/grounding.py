@@ -58,7 +58,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from app import taxonomy
+from app import regions, taxonomy
 from app.classify.schema import (
     EXTRACT_FIELDS,
     INDUSTRY,
@@ -68,6 +68,7 @@ from app.classify.schema import (
     JUDGE_FIELDS,
     NUMBER_FIELDS,
     POSTING_TITLE,
+    REGION,
 )
 
 # 비교에서 지우는 글자. 공백, 글머리표, 구두점, 괄호, 따옴표다. 뜻을 나르는 글자는 남는다
@@ -216,6 +217,32 @@ def _ground_judged_field(
         evidence[name] = quote
 
 
+def _ground_regions(
+    fields: Mapping[str, str],
+    source: str,
+    *,
+    kept: dict[str, str],
+    dropped: list[str],
+    reasons: dict[str, str],
+    evidence: dict[str, str],
+) -> None:
+    """근무지. 큰 지역 목록 안의 이름만 남기고 목록 순서로 잇는다 (2026-09-21 결정).
+
+    스키마의 enum 이 이미 막지만, 스키마를 통과하지 않는 경로(예전처럼 원문 조각으로 답한 응답,
+    손으로 넣은 응답)가 남아 있다. 목록 밖 이름이 하나라도 있으면 버린 기록을 남기고, 목록 안
+    이름은 그대로 둔다 — 여러 곳 중 하나가 틀렸다고 나머지를 버리지 않는다.
+    """
+    picked = regions.split(fields.get(REGION, ""))
+    kept[REGION] = regions.join(picked)
+    if any(name not in regions.names() for name in picked):
+        dropped.append(REGION)
+        reasons[REGION] = NOT_IN_LIST
+    if kept[REGION]:
+        quote = _quote_in(fields, REGION, source)
+        if quote:
+            evidence[REGION] = quote
+
+
 def _ground_number_field(
     name: str,
     fields: Mapping[str, str],
@@ -309,6 +336,8 @@ def ground(
         _ground_number_field(
             name, fields, source, kept=kept, dropped=dropped, reasons=reasons, evidence=evidence
         )
+
+    _ground_regions(fields, source, kept=kept, dropped=dropped, reasons=reasons, evidence=evidence)
 
     if taxonomy_choices:
         for name in (JOB_FIELD, JOB_ROLE, INDUSTRY):

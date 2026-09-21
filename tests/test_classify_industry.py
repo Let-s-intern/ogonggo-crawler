@@ -26,7 +26,7 @@ from app import db, industries
 from app.classify.batch import ClassifyProgress, classify_pending
 from app.classify.classifier import classify_body
 from app.classify.grounding import NOT_IN_LIST
-from app.classify.schema import Classification, build_classification_model, posting_model_of
+from app.classify.schema import build_classification_model, posting_model_of
 from app.classify.store import read_classification
 from tests.classify_fakes import response_body
 from tests.test_classify_run import _seed, settings_with_key
@@ -88,9 +88,13 @@ def test_산업_표가_비면_산업을_묻지_않는다(tmp_path: pathlib.Path)
     connection = db.connect(tmp_path / "empty.db")
     db.migrate_up(connection)
     try:
-        assert build_classification_model(connection) is Classification
+        posting = posting_model_of(build_classification_model(connection))
     finally:
         connection.close()
+
+    assert "industry" not in posting.model_fields
+    # 근무지는 표와 상관없이 늘 묻는다 (`app/regions.py`)
+    assert "region" in posting.model_fields
 
 
 async def test_프롬프트에_산업_목록과_규칙이_실린다(conn: sqlite3.Connection) -> None:

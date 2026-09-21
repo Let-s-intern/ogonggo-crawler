@@ -45,6 +45,7 @@ BODY = "◆ 업무내용\n제휴사 데이터 연동 구조 기획\n\n◆ 지원
 
 # 원문에만 있는 줄. 본문 셀렉터 바깥의 이름표 값이고, 실제로 SK·롯데그룹·네이버·카카오·
 # 우아한형제들의 조상 1단계가 담은 것이 이것이다 (`.claude/site-recipes/source-text-container.md`)
+# 뽑는 칸의 예시다. 근무지는 2026-09-21 부터 목록에서 고르는 칸이라 복지 칸에 둔다
 ONLY_IN_SOURCE = "근무지 성남시 분당구 판교로 235"
 
 # 판정 칸의 근거도 본문 밖에 있을 수 있다. 고용형태가 이름표에만 적힌 사이트가 그렇다
@@ -129,18 +130,18 @@ async def test_실행이_보내는_값도_원문과_본문으로_갈린다(conn:
 
 def test_본문_밖에만_있는_값은_원문에_돌려_보면_산다() -> None:
     """9.2 의 요점이다. 원문으로 물어 놓고 본문에 돌려 보면 이 칸이 버려진다."""
-    kept = ground({"region": ONLY_IN_SOURCE}, SOURCE, "공고 1")
+    kept = ground({"benefits": ONLY_IN_SOURCE}, SOURCE, "공고 1")
 
-    assert kept.fields["region"] == ONLY_IN_SOURCE
+    assert kept.fields["benefits"] == ONLY_IN_SOURCE
     assert kept.dropped == []
 
 
 def test_같은_값을_본문에_돌려_보면_버려진다() -> None:
     """두 값이 어긋났을 때 무엇을 잃는지 고정한다."""
-    dropped = ground({"region": ONLY_IN_SOURCE}, BODY, "공고 1")
+    dropped = ground({"benefits": ONLY_IN_SOURCE}, BODY, "공고 1")
 
-    assert dropped.fields["region"] == ""
-    assert dropped.reasons["region"] == NOT_IN_SOURCE
+    assert dropped.fields["benefits"] == ""
+    assert dropped.reasons["benefits"] == NOT_IN_SOURCE
 
 
 def test_판정_칸의_근거_문장도_원문에서_찾는다() -> None:
@@ -167,7 +168,7 @@ def test_판정_칸의_근거_문장도_원문에서_찾는다() -> None:
 async def test_실행이_원문에서_뽑은_칸을_버리지_않는다(conn: sqlite3.Connection) -> None:
     """읽는 값과 돌려 보는 값이 갈리면 여기서 잡힌다. 같은 응답을 두 건에 준다."""
     답 = response(
-        region=ONLY_IN_SOURCE,
+        benefits=ONLY_IN_SOURCE,
         employment_type="FULL_TIME",
         employment_type_evidence=EVIDENCE_IN_SOURCE,
     )
@@ -177,14 +178,14 @@ async def test_실행이_원문에서_뽑은_칸을_버리지_않는다(conn: sq
     )
 
     원문_있는_건 = read_classification(conn, 1)
-    assert 원문_있는_건["region"] == ONLY_IN_SOURCE
+    assert 원문_있는_건["benefits"] == ONLY_IN_SOURCE
     assert 원문_있는_건["employment_type"] == "FULL_TIME"
     assert read_evidence(conn, 1)["employment_type"] == EVIDENCE_IN_SOURCE
 
     # 원문이 없는 건은 지금까지와 같다. 본문에 없는 뽑는 칸은 여전히 버려진다. 판정 값은 남고
     # 근거만 빠진다
     본문뿐인_건 = read_classification(conn, 2)
-    assert 본문뿐인_건["region"] == ""
+    assert 본문뿐인_건["benefits"] == ""
     assert 본문뿐인_건["employment_type"] == "FULL_TIME"
     assert "employment_type" not in read_evidence(conn, 2)
 

@@ -139,7 +139,8 @@ async def test_긴_공고는_짜임을_다시_묻지_않고_보냈던_줄을_그
     # 나머지 하나는 사이트에서 못 읽은 회사·모집 기간을 묻는 호출이다 (`app/classify/basics.py`)
     calls = [c for c in client.calls if c["config"]["response_schema"] is not Basics]
     assert len(calls) == 2
-    assert all(call["config"]["response_schema"] is Classification for call in calls)
+    # 근무지가 늘 더해져 정적 모델을 이은 모델이다 (`build_classification_model`)
+    assert all(issubclass(call["config"]["response_schema"], Classification) for call in calls)
     assert "[3] [기계]" in client.calls[0]["contents"]
     assert "[5] [HR]" not in client.calls[0]["contents"]
     assert rows(conn, LONG, "part, part_role, part_lines, responsibilities") == [
