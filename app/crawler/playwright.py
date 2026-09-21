@@ -112,6 +112,11 @@ _BROWSER_HEADERS: frozenset[str] = frozenset(
         "te",
         "upgrade-insecure-requests",
         "user-agent",
+        # 오류 추적 도구가 요청마다 새로 붙이는 값. 동원 목록 API 요청에 `sentry-trace` 가 있었다
+        "baggage",
+        "sentry-trace",
+        "traceparent",
+        "tracestate",
     }
 )
 # 이 접두사로 시작하는 것도 브라우저가 붙인 것이다

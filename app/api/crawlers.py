@@ -81,6 +81,7 @@ from app.selector.generator import (
     generate_for_urls,
     generate_from_html,
 )
+from app.selector.path_proposal import llm_asker
 from app.selector.repair import RepairOutcome, SelectorRepairError, repair_for_urls
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
 from app.selector.verify import VerificationReport
@@ -519,20 +520,27 @@ def get_repairer(
     return repair
 
 
-def get_discoverer() -> DiscoverFn:
+def get_discoverer(
+    conn: Annotated[sqlite3.Connection | None, Depends(get_connection)] = None,
+) -> DiscoverFn:
     """기본 경로 판정. 테스트는 이 의존성을 갈아끼운다.
 
     브라우저는 필요한 순간에만 뜬다. 목록을 정적으로 받아 항목에 상세 주소까지 있으면
     `discover_detail_path()` 가 `open_probe` 를 한 번도 부르지 않고, 그때 Chromium 은
     실행되지 않는다 (`.claude/rules/crawling.md`).
+
+    판정이 막히면 셀렉터를 만든 AI 에게 목록 경로를 묻는다 (`app/selector/path_proposal.py`).
+    설정은 여기서 한 번 읽고 연결은 붙잡지 않는다 — 사이트 추가는 요청이 끝난 뒤에 돌아서,
+    요청의 연결을 쥐고 있으면 닫힌 연결로 부르게 된다 (`app/api/ui_site_add.py`).
     """
+    ask = llm_asker(llm_settings.settings_for(conn, SELECTOR_GENERATE))
 
     async def discover(list_url: str, selectors: SelectorSet) -> Discovery:
         fetcher = get_fetcher()
         renderer = Renderer(fetcher)
         try:
             return await discover_detail_path(
-                list_url, selectors, fetcher=fetcher, open_probe=renderer.open_probe
+                list_url, selectors, fetcher=fetcher, open_probe=renderer.open_probe, ask=ask
             )
         finally:
             # 브라우저를 띄운 적이 없으면 아무 일도 하지 않는다
@@ -634,6 +642,9 @@ async def create_crawler(
     discovery = await _discover_path(
         discover, payload.list_url, result.selectors, result.render_mode
     )
+    if discovery.ai_usage is not None:
+        # 판정이 막혀 AI 에게 경로를 물었다. 등록의 한 부분이라 셀렉터 생성과 같은 칸에 센다
+        record_call(conn, feature=SELECTOR_GENERATE, usage=discovery.ai_usage)
     # 판정에 성공했을 때만 그 경로를 저장한다. 실패하면 셀렉터를 만든 경로 그대로 두고,
     # 무엇이 안 됐는지는 화면에 적힌다.
     #

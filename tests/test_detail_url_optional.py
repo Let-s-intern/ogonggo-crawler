@@ -327,3 +327,35 @@ def test_공고_한_건만_열었으면_실패여도_그_페이지로_상세를_
     assert row["detail_url"] == opened
     # 열어 본 결과대로다. 판정이 실패했다고 셀렉터를 만든 경로로 되돌리지 않는다
     assert row["detail_mode"] == "static"
+
+
+def test_판정이_AI_에게_물었으면_그_비용을_남긴다(
+    client: TestClient, conn: sqlite3.Connection, called_with: list[tuple[str, str]]
+) -> None:
+    """버린 제안에도 돈은 나갔다. 셀렉터 생성과 같은 칸에 센다 — 등록의 한 부분이다."""
+    spent = Usage(
+        provider="deepseek",
+        model="deepseek-flash",
+        input_tokens=2400,
+        output_tokens=650,
+        total_tokens=3050,
+        latency_ms=2900,
+    )
+
+    async def discover(list_url: str, selectors: SelectorSet) -> Discovery:
+        return Discovery(
+            list_mode="api",
+            detail_mode="static",
+            detail=document_path(f"{list_url}1/", "그 주소는 정적으로도 열렸다"),
+            evidence="AI 제안을 확인해 채택했다",
+            list_count=10,
+            ai_usage=spent,
+        )
+
+    app.dependency_overrides[crawlers_api.get_discoverer] = lambda: discover
+    client.post("/api/crawlers", json={"list_url": LIST_URL})
+
+    rows = conn.execute(
+        "SELECT feature, model, total_tokens FROM llm_calls WHERE model = 'deepseek-flash'"
+    ).fetchall()
+    assert [tuple(row) for row in rows] == [("selector_generate", "deepseek-flash", 3050)]

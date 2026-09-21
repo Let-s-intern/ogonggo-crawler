@@ -21,7 +21,9 @@ from app.crawler.collect import API
 from app.crawler.failures import LIST_EMPTY
 from app.crawler.fetcher import Fetcher
 from app.crawler.playwright import PLAYWRIGHT, STATIC, ProbeSession, RequestLog
+from app.llm.base import Usage
 from app.selector.discovery import discover_detail_path
+from app.selector.path_proposal import PathAnswer
 from app.selector.schema import parse_selectors
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
@@ -1057,3 +1059,237 @@ async def test_robots_가_막은_목록_API_는_헤더_문제라고_하지_않�
     assert "robots.txt 가 막은 경로다" in discovery.evidence
     assert "헤더 문제가 아니다" in discovery.evidence
     assert "헤더가 필요하다" not in discovery.evidence
+
+
+# 판정이 막힌 자리에서 AI 에게 묻는 것. 모델 대신 정해 둔 답을 돌려준다
+AI_USAGE = Usage(
+    provider="deepseek",
+    model="deepseek-flash",
+    input_tokens=2400,
+    output_tokens=650,
+    total_tokens=3050,
+    latency_ms=2900,
+)
+
+
+def asking(reply: PathAnswer, asked: list[str]) -> Any:
+    async def ask(prompt: str) -> tuple[PathAnswer, Usage | None]:
+        asked.append(prompt)
+        return reply, AI_USAGE
+
+    return ask
+
+
+def never_ask(prompt: str) -> Any:
+    raise AssertionError("규칙으로 풀린 판정에서 AI 를 불렀다")
+
+
+def path_answer(**overrides: Any) -> PathAnswer:
+    values: dict[str, Any] = {
+        "found": True,
+        "url": "https://example.test/api/job-list?countPerPage=100",
+        "method": "GET",
+        "body_json": "",
+        "items_path": "data",
+        "title_field": "name",
+        "date_field": "",
+        "date_is_deadline": False,
+        "company_field": "",
+        "id_field": "sn",
+        "link_template": "https://example.test/job_posting/{id}",
+        "headers": [],
+        "reason": "page 를 빼고 한 번에 받는다",
+    }
+    values.update(overrides)
+    return PathAnswer(**values)
+
+
+@pytest.mark.asyncio
+async def test_규칙으로_막히면_AI_제안을_확인해_채택한다() -> None:
+    """동원. 브라우저가 부른 `page=1` 은 robots 가 막고, 빼고 부르면 된다."""
+    opened: list[str] = []
+    asked: list[str] = []
+    paged_url = "https://example.test/api/job-list?page=1"
+    whole_url = "https://example.test/api/job-list?countPerPage=100"
+    body = json.dumps(
+        {
+            "data": [
+                {"sn": "rCL5Co3V", "name": "전기 견적 경력직 모집"},
+                {"sn": "RdAkTmTg", "name": "기계 견적 경력직 모집"},
+            ]
+        },
+        ensure_ascii=False,
+    )
+    emitter = StubEmitter()
+    log = RequestLog()
+    log.attach(emitter)
+    emitter.emit(paged_url, body)
+    await log.drain()
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nDisallow: /*?*page=\n")
+        return handler_for({LIST_URL: SHELL, BARE_DETAIL_URL: BARE_DETAIL, whole_url: body})(
+            request
+        )
+
+    client = fetcher_for(handle)
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKLESS_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(bare_session(log), opened),
+            ask=asking(path_answer(), asked),
+        )
+    finally:
+        await client.aclose()
+
+    assert len(asked) == 1
+    # robots 와 누른 공고 주소가 AI 에게 보인다. 그것이 판단의 근거다
+    assert "Disallow: /*?*page=" in asked[0]
+    assert BARE_DETAIL_URL in asked[0]
+    assert discovery.ok is True
+    assert discovery.list_mode == API
+    assert discovery.detail_mode == STATIC
+    assert discovery.list is not None
+    assert discovery.list.config().url == whole_url
+    assert discovery.ai_usage == AI_USAGE
+    assert "AI 제안을 확인해 채택했다" in discovery.evidence
+
+
+@pytest.mark.asyncio
+async def test_AI_제안이_확인되지_않으면_실패는_그대로다() -> None:
+    """제안한 주소가 목록을 주지 않는다. 지어낸 설정은 저장되지 않는다."""
+    opened: list[str] = []
+    asked: list[str] = []
+    emitter = StubEmitter()
+    log = RequestLog()
+    log.attach(emitter)
+    emitter.emit(
+        "https://example.test/api/job-list?page=1",
+        json.dumps({"data": [{"sn": "rCL5Co3V", "name": "전기 견적 경력직 모집"}]}),
+    )
+    await log.drain()
+
+    client = fetcher_for(handler_for({LIST_URL: SHELL, BARE_DETAIL_URL: BARE_DETAIL}))
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKLESS_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(bare_session(log), opened),
+            ask=asking(path_answer(), asked),
+        )
+    finally:
+        await client.aclose()
+
+    assert discovery.failure == DETAIL_UNREACHABLE
+    assert "확인되지 않아 버렸다" in discovery.evidence
+    # 버린 제안에도 돈은 나갔다. 기록은 남아야 한다
+    assert discovery.ai_usage == AI_USAGE
+
+
+@pytest.mark.asyncio
+async def test_목록_API_에서_마감일을_못_읽으면_AI_에게_묻는다() -> None:
+    """HD현대. 목록 API 는 규칙으로 채택됐지만 마감일 칸을 사람이 정해야 했다."""
+    opened: list[str] = []
+    asked: list[str] = []
+    body = json.dumps(
+        {
+            "data": {
+                "list": [
+                    {"jobId": "1002099", "name": "보건관리자 채용", "endDate": "2099-12-31"},
+                    {"jobId": "1002100", "name": "네트워크 엔지니어", "endDate": "2099-12-30"},
+                ]
+            }
+        },
+        ensure_ascii=False,
+    )
+    emitter = StubEmitter()
+    log = RequestLog()
+    log.attach(emitter)
+    emitter.emit(LIST_API_URL, body)
+    await log.drain()
+
+    client = fetcher_for(
+        handler_for(
+            {
+                LIST_URL: SHELL,
+                LIST_API_URL: body,
+                "https://example.test/jobs/1002099": (
+                    "<html><body><h1>보건관리자 채용</h1></body></html>"
+                ),
+            }
+        )
+    )
+    reply = path_answer(
+        url=LIST_API_URL,
+        items_path="data.list",
+        date_field="endDate",
+        date_is_deadline=True,
+        id_field="jobId",
+        link_template="https://example.test/jobs/{id}",
+    )
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKED_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(session_for(RENDERED_WITH_LINKS, [StubElement()], log), opened),
+            ask=asking(reply, asked),
+        )
+    finally:
+        await client.aclose()
+
+    assert len(asked) == 1
+    assert discovery.list is not None
+    config = discovery.list.config()
+    assert config.fields["date"] == "endDate"
+    assert config.date_is_deadline is True
+    # 마감일을 채웠으니 운영자에게 채우라는 말은 남지 않는다
+    assert "date_is_deadline` 을 적는다" not in discovery.evidence
+
+
+@pytest.mark.asyncio
+async def test_규칙으로_풀린_판정은_AI_를_부르지_않는다() -> None:
+    opened: list[str] = []
+    client = fetcher_for(handler_for({LIST_URL: STATIC_LIST}))
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKED_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(session_for(RENDERED_WITH_LINKS, [StubElement()]), opened),
+            ask=never_ask,
+        )
+    finally:
+        await client.aclose()
+
+    assert discovery.ok is True
+    assert discovery.ai_usage is None
+
+
+@pytest.mark.asyncio
+async def test_관찰한_JSON_응답이_없으면_AI_에게_묻지_않는다() -> None:
+    """근거도 확인할 기준도 없는 호출이다. 돈만 나간다."""
+    opened: list[str] = []
+    client = fetcher_for(handler_for({LIST_URL: SHELL, BARE_DETAIL_URL: BARE_DETAIL}))
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKLESS_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(bare_session(), opened),
+            ask=never_ask,
+        )
+    finally:
+        await client.aclose()
+
+    assert discovery.failure == DETAIL_UNREACHABLE
+    assert discovery.ai_usage is None
