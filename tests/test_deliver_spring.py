@@ -119,7 +119,7 @@ def job_row(**values: Any) -> dict[str, Any]:
         " recruitment_type recruitment_headcount recruitment_start_at recruitment_end_at"
         " closes_when_filled auto_close_enabled company_and_team_introduction responsibilities"
         " qualifications preferred_qualifications compensation benefits hiring_process"
-        " recruitment_notice application_method source_url"
+        " recruitment_notice application_method application_email inquiry_email source_url"
     ).split()
     return {**dict.fromkeys(columns), **values}
 
@@ -143,6 +143,7 @@ def test_정규화_행을_오공고_요청_칸으로_옮긴다() -> None:
             responsibilities="회로를 설계합니다",
             benefits="  ",
             application_method="EMAIL",
+            application_email="recruit@ogonggo.com",
             source_url="https://x/1#2",
         )
     )
@@ -155,6 +156,8 @@ def test_정규화_행을_오공고_요청_칸으로_옮긴다() -> None:
     assert (body["closesWhenFilled"], body["autoCloseEnabled"]) == (True, False)
     assert body["benefits"] is None
     assert body["applicationMethod"] == "EMAIL"
+    # 0043. 빈 칸은 null 이다
+    assert (body["applicationEmail"], body["inquiryEmail"]) == ("recruit@ogonggo.com", None)
     assert body["sourceUrl"] == "https://x/1#2"
     assert "body" not in body
     assert spring.missing(body) == []

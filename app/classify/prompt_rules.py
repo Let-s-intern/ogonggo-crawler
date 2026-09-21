@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.classify.schema import (
+    EMAIL_FIELDS,
     EXTRACT_FIELDS,
     INDUSTRY,
     JUDGE_FIELDS,
@@ -69,6 +70,9 @@ RULE_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("application_method", "지원 방법", JUDGE),
     # 2026-09-21 부터 옮기는 칸이 아니라 큰 지역 목록에서 고르는 칸이다 (`app/regions.py`)
     ("region", "근무 지역", JUDGE),
+    # 0043. 원문의 이메일 주소를 그대로 옮긴다
+    ("application_email", "지원 접수 이메일", JUDGE),
+    ("inquiry_email", "채용 문의 이메일", JUDGE),
     ("job_field", "직군", TAXONOMY),
     ("job_role", "직무", TAXONOMY),
     ("industry", "산업", INDUSTRIES),
@@ -83,7 +87,7 @@ def names_of(kind: str) -> tuple[str, ...]:
 
 # 분류가 채우는 칸마다 규칙이 있어야 한다. 칸이 늘었는데 여기 없으면 모델이 그 칸을 모른다
 assert set(names_of(EXTRACT)) == set(EXTRACT_FIELDS)
-assert set(names_of(JUDGE)) == {*JUDGE_FIELDS, *NUMBER_FIELDS, REGION}
+assert set(names_of(JUDGE)) == {*JUDGE_FIELDS, *NUMBER_FIELDS, REGION, *EMAIL_FIELDS}
 assert set(names_of(TAXONOMY)) == set(TAXONOMY_FIELDS)
 assert names_of(INDUSTRIES) == (INDUSTRY,)
 assert names_of(TITLE) == (POSTING_TITLE,)
@@ -210,6 +214,17 @@ DEFAULT_RULES = RuleSet(
                 Example("베트남 하노이 법인", "해외"),
                 Example("근무지 : 본사(양재동) / 전국 현장", "전국"),
             ),
+        ),
+        "application_email": FieldRule(
+            "지원서를 이메일로 받는다고 적힌 이메일 주소. 원문에 적힌 주소를 글자 그대로 옮긴다. "
+            "주소만 적고 앞말(`이메일:`)은 적지 않는다. 지원 접수 주소가 따로 없으면 빈 글자로 "
+            "둔다 — 문의용 주소를 여기 옮기지 않는다. 근거 문장은 적지 않아도 된다",
+            (Example("이력서를 recruit@company.com 으로 제출해 주세요", "recruit@company.com"),),
+        ),
+        "inquiry_email": FieldRule(
+            "채용 문의를 받는다고 적힌 이메일 주소. 원문에 적힌 주소를 글자 그대로 옮긴다. 주소만 "
+            "적는다. 문의 주소가 따로 없으면 빈 글자로 둔다. 근거 문장은 적지 않아도 된다",
+            (Example("채용 관련 문의: hr@company.com", "hr@company.com"),),
         ),
         "company_and_team_introduction": FieldRule(
             "회사·팀 소개. **공고에 `회사 소개`·`팀 소개`·`회사 및 팀 소개` 같은 소제목으로 "

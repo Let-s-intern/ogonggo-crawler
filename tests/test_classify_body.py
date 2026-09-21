@@ -35,6 +35,7 @@ from app.classify.grounding import (
 )
 from app.classify.schema import (
     CLASSIFY_FIELDS,
+    EMAIL_FIELDS,
     EXTRACT_FIELDS,
     JUDGE_CHOICES,
     JUDGE_FIELDS,
@@ -375,9 +376,10 @@ def test_grounding_keeps_an_empty_column_empty_without_calling_it_invented() -> 
 def test_the_three_kinds_of_columns_add_up() -> None:
     """칸이 늘거나 옮겨 다니면 여기서 걸린다."""
     # 근무지는 목록에서 여러 개를 고르는 칸이라 어느 쪽에도 속하지 않는다 (2026-09-21)
-    assert set(EXTRACT_FIELDS) | set(JUDGE_FIELDS) | set(NUMBER_FIELDS) | {REGION} == set(
-        CLASSIFY_FIELDS
-    )
+    # 이메일 두 칸도 원문 주소를 옮기되 조각이 아니라 주소 하나라 따로 둔다 (0043)
+    assert set(EXTRACT_FIELDS) | set(JUDGE_FIELDS) | set(NUMBER_FIELDS) | {REGION} | set(
+        EMAIL_FIELDS
+    ) == set(CLASSIFY_FIELDS)
     assert REGION not in {*EXTRACT_FIELDS, *JUDGE_FIELDS, *NUMBER_FIELDS}
     assert not set(EXTRACT_FIELDS) & set(JUDGE_FIELDS)
     assert not set(NUMBER_FIELDS) & (set(EXTRACT_FIELDS) | set(JUDGE_FIELDS))

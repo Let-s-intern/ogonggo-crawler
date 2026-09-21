@@ -117,6 +117,9 @@ EXPECTED_COLUMNS = {
         "industry",
         # 0035 가 더한 대표 이미지. 회사 로고, 없으면 og:image 다
         "cover_image_url",
+        # 0043. 지원 접수·채용 문의 이메일
+        "application_email",
+        "inquiry_email",
     },
     "normalization_rules": {
         "id",
@@ -298,6 +301,7 @@ ALL_VERSIONS = [
     "0040",
     "0041",
     "0042",
+    "0043",
 ]
 
 

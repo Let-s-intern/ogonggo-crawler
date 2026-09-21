@@ -74,6 +74,7 @@ from app.classify.schema import (
     CLASSIFY_FIELDS,
     COLLECTED_REVIEW_FIELDS,
     COLLECTED_REVIEW_LABELS,
+    EMAIL_FIELDS,
     EXTRACT_FIELDS,
     INDUSTRY,
     JOB_FIELD,
@@ -537,7 +538,14 @@ def posting_only_names(
     2건). 뭉뚱그린 말보다 칸 이름을 적는 편이 덜 어긴다. 직무 분류와 산업은 그 표가 켜져 있을
     때만 응답에 있어서 그때만 적는다 (`build_classification_model`)
     """
-    names: list[str] = [POSTING_TITLE, "position_name", *JUDGE_FIELDS, *NUMBER_FIELDS, REGION]
+    names: list[str] = [
+        POSTING_TITLE,
+        "position_name",
+        *JUDGE_FIELDS,
+        *NUMBER_FIELDS,
+        REGION,
+        *EMAIL_FIELDS,
+    ]
     if taxonomy_tree:
         names.append(JOB_FIELD)
         if any(minors for _, minors in taxonomy_tree):

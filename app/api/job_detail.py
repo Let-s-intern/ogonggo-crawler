@@ -91,6 +91,9 @@ SECTIONS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("recruitment_type", "모집 유형", KIND_CHOICE),
             Field("recruitment_headcount", "모집 인원"),
             Field("application_method", "지원 방법", KIND_CHOICE),
+            # 0043. 분류가 원문의 주소를 옮긴다. 오공고가 이메일 형식을 다시 검사한다
+            Field("application_email", "지원 접수 이메일"),
+            Field("inquiry_email", "채용 문의 이메일"),
             Field("recruitment_start_at", "모집 시작", KIND_DATE),
             Field("recruitment_end_at", "모집 마감", KIND_DATE),
             Field("closes_when_filled", "채용 시 마감", KIND_CHOICE),
@@ -131,6 +134,8 @@ SPRING_NAMES: dict[str, str] = {
     "recruitment_type": "recruitmentType",
     "recruitment_headcount": "recruitmentHeadcount",
     "application_method": "applicationMethod",
+    "application_email": "applicationEmail",
+    "inquiry_email": "inquiryEmail",
     "recruitment_start_at": "recruitmentStartAt",
     "recruitment_end_at": "recruitmentEndAt",
     "closes_when_filled": "closesWhenFilled",

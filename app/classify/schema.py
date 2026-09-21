@@ -145,6 +145,11 @@ class Posting(BaseModel):
     region: list[str] = Field(default_factory=list)
     region_evidence: str = ""
 
+    # 0043. 공고에 적힌 이메일 주소를 그대로 옮긴다. 원문에 그 주소가 있을 때만 남는다 — 주소 자체가
+    # 근거라 근거 문장을 따로 받지 않는다 (`app/classify/grounding.py`). 오공고가 받는 칸이다
+    application_email: str = ""
+    inquiry_email: str = ""
+
     # 0028. 지원 자격이 요구하는 최소 학력. 우대사항에만 있는 학력은 고르지 않는다
     education_level: Literal["ANY", "HIGH_SCHOOL", "ASSOCIATE", "BACHELOR", "MASTER", "DOCTORATE"]
     education_level_evidence: str = ""
@@ -261,6 +266,9 @@ NUMBER_FIELDS: tuple[str, ...] = ("experience_min_years",)
 # 근무지. 목록에서 여러 개를 고르는 칸이라 판정 칸(하나를 고른다)과 따로 둔다 (`app/regions.py`)
 REGION: Final = "region"
 
+# 0043. 지원 접수·채용 문의 이메일. 원문의 주소를 그대로 옮기고, 원문에 있을 때만 남는다
+EMAIL_FIELDS: tuple[str, ...] = ("application_email", "inquiry_email")
+
 # 칸마다 저장하는 이름과 화면 이름. 모델이 고르는 칸과 정규화가 정하는 칸이 함께 있다
 VALUE_LABELS: Final[dict[str, dict[str, str]]] = {
     "employment_type": EMPLOYMENT_TYPES,
@@ -330,7 +338,13 @@ EXTRACT_FIELDS: tuple[str, ...] = (
 FALLBACK_FIELDS: tuple[str, ...] = ("company_name", "recruitment_start_at", "recruitment_end_at")
 
 # 분류가 채우는 칸. `normalized_jobs` 의 같은 이름 컬럼으로 간다
-CLASSIFY_FIELDS: tuple[str, ...] = (*JUDGE_FIELDS, *NUMBER_FIELDS, REGION, *EXTRACT_FIELDS)
+CLASSIFY_FIELDS: tuple[str, ...] = (
+    *JUDGE_FIELDS,
+    *NUMBER_FIELDS,
+    REGION,
+    *EMAIL_FIELDS,
+    *EXTRACT_FIELDS,
+)
 
 # 응답 맨 위에 올 수 있는 이름 전부
 RESPONSE_FIELDS: tuple[str, ...] = tuple(Classification.model_fields)

@@ -60,6 +60,7 @@ from dataclasses import dataclass, field
 
 from app import regions, taxonomy
 from app.classify.schema import (
+    EMAIL_FIELDS,
     EXTRACT_FIELDS,
     INDUSTRY,
     JOB_FIELD,
@@ -76,6 +77,9 @@ _NOISE = re.compile(r"[\s·•·◦○●□■▪▶▷–—\-*_.,;:!?()\[\]{}
 
 # 이보다 짧아지는 줄은 검사 대상이 아니다
 _MIN_LENGTH = 2
+
+# 이메일 칸이 받는 모양. 오공고가 `@Email` 로 다시 검사한다
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
 
 # 숫자 칸이 받는 모양. 경력 연수는 두 자리를 넘지 않는다
 _NUMBER = re.compile(r"\d{1,2}")
@@ -95,6 +99,7 @@ NOT_IN_LIST = "목록 밖이다"
 ETC_FILLED = " — 기타로 뒀다"
 NO_EVIDENCE = "근거 문장이 제목에도 보낸 글에도 없다"
 NOT_A_NUMBER = "숫자가 아니다"
+NOT_AN_EMAIL = "이메일 주소가 아니다"
 
 
 @dataclass(frozen=True)
@@ -243,6 +248,38 @@ def _ground_regions(
             evidence[REGION] = quote
 
 
+def _ground_emails(
+    fields: Mapping[str, str],
+    source: str,
+    *,
+    kept: dict[str, str],
+    dropped: list[str],
+    reasons: dict[str, str],
+) -> None:
+    """지원 접수·채용 문의 이메일. 이메일 모양이고 원문에 그 주소가 있을 때만 남긴다 (0043).
+
+    주소 자체가 근거라 근거 문장을 따로 받지 않는다. 대신 원문에 없는 주소는 지어낸 것이다 —
+    오공고가 그 주소로 지원서를 보내라고 안내하므로 틀린 주소 하나가 지원자를 엉뚱한 곳으로 보낸다.
+    모델이 `이메일: recruit@x.com` 처럼 앞말까지 적어도 주소만 떼어 남긴다.
+    """
+    lowered = source.lower()
+    for name in EMAIL_FIELDS:
+        value = fields.get(name, "").strip()
+        kept[name] = ""
+        if not value:
+            continue
+        found = _EMAIL.search(value)
+        if found is None:
+            dropped.append(name)
+            reasons[name] = NOT_AN_EMAIL
+            continue
+        if found.group(0).lower() not in lowered:
+            dropped.append(name)
+            reasons[name] = NOT_IN_SOURCE
+            continue
+        kept[name] = found.group(0)
+
+
 def _ground_number_field(
     name: str,
     fields: Mapping[str, str],
@@ -338,6 +375,7 @@ def ground(
         )
 
     _ground_regions(fields, source, kept=kept, dropped=dropped, reasons=reasons, evidence=evidence)
+    _ground_emails(fields, source, kept=kept, dropped=dropped, reasons=reasons)
 
     if taxonomy_choices:
         for name in (JOB_FIELD, JOB_ROLE, INDUSTRY):
