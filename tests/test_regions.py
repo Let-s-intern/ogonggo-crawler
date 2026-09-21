@@ -22,6 +22,7 @@ from tests.classify_fakes import response_body
 from tests.test_ui_review_actions import client, conn, overrides  # noqa: F401
 
 EXPECTED = (
+    "전국",
     "서울",
     "경기",
     "인천",
@@ -43,8 +44,8 @@ EXPECTED = (
 )
 
 
-def test_큰_지역_열여덟_개에서_고른다() -> None:
-    """필터의 `전체` 는 선택지라 값이 아니다. 구·시·군은 고르는 값이 아니다."""
+def test_전국과_큰_지역_열여덟_개에서_고른다() -> None:
+    """필터의 `전체` 는 선택지라 값이 아니다. 구·시·군도 아니다. `전국` 은 코드가 더한다."""
     assert regions.names() == EXPECTED
 
 
@@ -53,6 +54,12 @@ def test_여러_곳은_목록_순서로_잇고_겹친_것과_목록_밖은_버�
     assert regions.join(["경기", "울산", "경기", "판교"]) == "경기, 울산"
     assert regions.split("경기, 울산") == ["경기", "울산"]
     assert regions.join([]) == ""
+
+
+def test_전국을_고르면_전국_하나다() -> None:
+    """`본사(양재동) / 전국 현장` 은 `서울, 전국` 이 아니다. 전국이 나머지를 다 포함한다."""
+    assert regions.join(["서울", "전국"]) == "전국"
+    assert ground({"region": "서울, 전국"}, "본문", "제목").fields["region"] == "전국"
 
 
 def test_근거_검사는_목록_안_이름만_남긴다() -> None:
@@ -95,7 +102,8 @@ def test_프롬프트는_판정_칸_구역에_근무지_목록을_적는다() ->
 
     judge = prompt.split("# 판정하는 칸")[1].split("# 공고 제목")[0]
     assert "- region:" in judge
-    assert "서울 / 경기 / 인천" in judge
+    assert "전국 / 서울 / 경기 / 인천" in judge
+    assert "`근무지 : 본사(양재동) / 전국 현장` → `전국`" in judge
     assert "여러 개 고를 수 있다" in judge
     assert "`근무지: 성남시 분당구(판교)` → `경기`" in judge
     # 뽑는 칸 구역에는 없다
