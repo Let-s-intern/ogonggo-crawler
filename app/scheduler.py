@@ -367,8 +367,13 @@ class WorkflowScheduler:
 
 
 def _active_workflows(conn: sqlite3.Connection) -> dict[int, int]:
-    """지금 돌아야 할 (크롤 워크플로우 id -> 주기 분)."""
-    rows = conn.execute("SELECT id, interval_minutes, status FROM workflows").fetchall()
+    """지금 돌아야 할 (크롤 워크플로우 id -> 주기 분).
+
+    직접 넣은 공고의 워크플로우(`kind = 'manual'`)는 돌 목록이 없어 빼 둔다.
+    """
+    rows = conn.execute(
+        "SELECT id, interval_minutes, status FROM workflows WHERE kind = 'crawl'"
+    ).fetchall()
     return {
         int(row["id"]): int(row["interval_minutes"]) for row in rows if row["status"] == "active"
     }

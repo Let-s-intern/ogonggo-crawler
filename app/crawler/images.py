@@ -91,9 +91,9 @@ class ImageReader(Protocol):
     async def read(self, parts: Sequence[ImageInput]) -> str: ...
 
 
-def needs_reading(body: str, images: Sequence[str]) -> bool:
+def needs_reading(body: str, images: Sequence[str], short_chars: int = SHORT_BODY_CHARS) -> bool:
     """이 공고의 이미지를 읽어야 하는가. 본문이 짧고 원문 영역에 이미지가 있을 때만이다."""
-    return bool(images) and len(_SPACES.sub(" ", body).strip()) < SHORT_BODY_CHARS
+    return bool(images) and len(_SPACES.sub(" ", body).strip()) < short_chars
 
 
 def split_tall(data: bytes) -> list[ImageInput]:
@@ -122,13 +122,22 @@ def split_tall(data: bytes) -> list[ImageInput]:
 
 
 async def read_detail_images(
-    detail: DetailParseResult, page_url: str, fetcher: FetchPolicy, reader: ImageReader
+    detail: DetailParseResult,
+    page_url: str,
+    fetcher: FetchPolicy,
+    reader: ImageReader,
+    *,
+    short_chars: int = SHORT_BODY_CHARS,
 ) -> DetailParseResult:
     """읽어야 하는 공고면 이미지를 읽어 원문 끝에 붙인다.
 
     실패하면 원문은 그대로 두고 사유만 `notes` 에 남긴다.
+
+    `short_chars` 는 본문이 이보다 짧아야 읽는다는 기준이다. 사이트 수집은 본문 셀렉터가 공고
+    영역만 잡아 기본값이 맞다. 주소로 직접 넣은 공고는 셀렉터 없이 페이지 전체를 읽어 메뉴 글자가
+    섞이므로 더 넓게 준다 (`app/crawler/manual.py`).
     """
-    if not needs_reading(detail.fields.get("body", ""), detail.images):
+    if not needs_reading(detail.fields.get("body", ""), detail.images, short_chars):
         return detail
     try:
         parts = await _download(detail.images, page_url, fetcher)

@@ -37,6 +37,8 @@ EXPECTED_COLUMNS = {
         "fail_count",
         "last_run_at",
         "auto_stop_threshold",
+        # 0042. 주소로 직접 넣은 공고의 워크플로우를 가른다
+        "kind",
     },
     "crawl_runs": {
         "id",
@@ -295,6 +297,7 @@ ALL_VERSIONS = [
     "0039",
     "0040",
     "0041",
+    "0042",
 ]
 
 
