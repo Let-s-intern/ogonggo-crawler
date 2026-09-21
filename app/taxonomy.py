@@ -106,6 +106,22 @@ def enabled_tree(conn: sqlite3.Connection) -> list[tuple[str, tuple[str, ...]]]:
     ]
 
 
+# 맞는 직군·직무를 목록에서 고르지 못했을 때 쓰는 이름 (2026-09-21 결정). 모델이 목록 밖 값을
+# 냈거나, 다른 직군의 직무를 골랐거나, 아무것도 고르지 않은 공고를 빈 칸으로 두지 않는다.
+#
+# 표에는 없는 값이다. 분류가 AI 에게 보이는 목록에 넣지 않는다 — 넣으면 가장 가까운 직군을
+# 찾는 대신 이것으로 빠진다. 검수 편집은 받는다 (`app/api/job_detail.py` 의 `list_choices`)
+ETC = "기타"
+
+
+def etc_role(minors: tuple[str, ...]) -> str:
+    """그 직군의 `기타` 직무. 직군마다 이름이 달라(`기타IT·개발`) `기타` 로 시작하는 것을 고른다.
+
+    씨앗의 직군 스물다섯에는 다 있다. 어드민에서 새로 만든 직군에 없으면 그냥 `기타` 다.
+    """
+    return next((minor for minor in minors if minor.startswith(ETC)), ETC)
+
+
 def read(conn: sqlite3.Connection, node_id: int) -> TaxonomyNode | None:
     row = conn.execute(
         "SELECT id, parent_id, name, sort_order, enabled, note FROM job_taxonomy WHERE id = ?",

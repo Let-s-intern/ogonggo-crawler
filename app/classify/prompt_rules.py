@@ -32,11 +32,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.classify.schema import (
+    EMAIL_FIELDS,
     EXTRACT_FIELDS,
     INDUSTRY,
     JUDGE_FIELDS,
     NUMBER_FIELDS,
     POSTING_TITLE,
+    REGION,
     TAXONOMY_FIELDS,
 )
 
@@ -55,7 +57,6 @@ RULE_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("qualifications", "자격 요건", EXTRACT),
     ("preferred_qualifications", "우대 사항", EXTRACT),
     ("hiring_process", "채용 절차", EXTRACT),
-    ("region", "근무 지역", EXTRACT),
     ("company_and_team_introduction", "회사·팀 소개", EXTRACT),
     ("compensation", "급여·처우", EXTRACT),
     ("benefits", "복지·혜택", EXTRACT),
@@ -67,6 +68,11 @@ RULE_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("education_level", "요구 학력", JUDGE),
     ("closes_when_filled", "채용 시 마감", JUDGE),
     ("application_method", "지원 방법", JUDGE),
+    # 2026-09-21 부터 옮기는 칸이 아니라 큰 지역 목록에서 고르는 칸이다 (`app/regions.py`)
+    ("region", "근무 지역", JUDGE),
+    # 0043. 원문의 이메일 주소를 그대로 옮긴다
+    ("application_email", "지원 접수 이메일", JUDGE),
+    ("inquiry_email", "채용 문의 이메일", JUDGE),
     ("job_field", "직군", TAXONOMY),
     ("job_role", "직무", TAXONOMY),
     ("industry", "산업", INDUSTRIES),
@@ -81,7 +87,7 @@ def names_of(kind: str) -> tuple[str, ...]:
 
 # 분류가 채우는 칸마다 규칙이 있어야 한다. 칸이 늘었는데 여기 없으면 모델이 그 칸을 모른다
 assert set(names_of(EXTRACT)) == set(EXTRACT_FIELDS)
-assert set(names_of(JUDGE)) == {*JUDGE_FIELDS, *NUMBER_FIELDS}
+assert set(names_of(JUDGE)) == {*JUDGE_FIELDS, *NUMBER_FIELDS, REGION, *EMAIL_FIELDS}
 assert set(names_of(TAXONOMY)) == set(TAXONOMY_FIELDS)
 assert names_of(INDUSTRIES) == (INDUSTRY,)
 assert names_of(TITLE) == (POSTING_TITLE,)
@@ -195,7 +201,31 @@ DEFAULT_RULES = RuleSet(
         "qualifications": FieldRule("자격요건·지원자격"),
         "preferred_qualifications": FieldRule("우대사항"),
         "hiring_process": FieldRule("전형 절차"),
-        "region": FieldRule("근무지"),
+        "region": FieldRule(
+            "근무지. 이 직무를 실제로 일하는 곳이 속한 큰 지역을 목록에서 고른다. **여러 곳이면 "
+            "모두 고른다.** 구·시·군이나 사업장 이름만 적혀 있으면 그곳이 속한 큰 지역을 고른다. "
+            "나라 밖이면 `해외` 다. `전국 현장`·`전국 각지` 처럼 곳을 특정하지 않고 전국이라고 "
+            "적혀 있으면 `전국` 하나만 고른다. 근무지가 원문에 없으면 빈 목록으로 둔다 — 이 "
+            "칸만은 비워도 된다. 회사 주소나 본사 소개에만 나온 지역은 근무지가 아니다",
+            (
+                Example("근무지: 성남시 분당구(판교)", "경기"),
+                Example("울산 본사 및 분당 GRC", "울산, 경기"),
+                Example("근무지 : 부산 해운대구 센텀", "부산"),
+                Example("베트남 하노이 법인", "해외"),
+                Example("근무지 : 본사(양재동) / 전국 현장", "전국"),
+            ),
+        ),
+        "application_email": FieldRule(
+            "지원서를 이메일로 받는다고 적힌 이메일 주소. 원문에 적힌 주소를 글자 그대로 옮긴다. "
+            "주소만 적고 앞말(`이메일:`)은 적지 않는다. 지원 접수 주소가 따로 없으면 빈 글자로 "
+            "둔다 — 문의용 주소를 여기 옮기지 않는다. 근거 문장은 적지 않아도 된다",
+            (Example("이력서를 recruit@company.com 으로 제출해 주세요", "recruit@company.com"),),
+        ),
+        "inquiry_email": FieldRule(
+            "채용 문의를 받는다고 적힌 이메일 주소. 원문에 적힌 주소를 글자 그대로 옮긴다. 주소만 "
+            "적는다. 문의 주소가 따로 없으면 빈 글자로 둔다. 근거 문장은 적지 않아도 된다",
+            (Example("채용 관련 문의: hr@company.com", "hr@company.com"),),
+        ),
         "company_and_team_introduction": FieldRule(
             "회사·팀 소개. **공고에 `회사 소개`·`팀 소개`·`회사 및 팀 소개` 같은 소제목으로 "
             "된 구역이 있을 때만** 그 구역의 내용을 가져온다. 그런 구역이 없으면 빈 목록으로 "

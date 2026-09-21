@@ -175,8 +175,12 @@ def promote(
 def list_workflows(
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
 ) -> list[WorkflowItem]:
-    """등록된 워크플로우 전부. 이름, 대상, 주기, 최근 실행, 누적 성공·실패."""
-    rows = conn.execute(_LIST_QUERY + " ORDER BY w.id").fetchall()
+    """등록된 사이트 워크플로우 전부. 이름, 대상, 주기, 최근 실행, 누적 성공·실패.
+
+    주소로 직접 넣은 공고를 담는 워크플로우(`kind = 'manual'`)는 빼 둔다. 돌 목록이 없는 자리라
+    사이트 목록에 섞이면 켜고 끌 수 있는 사이트로 보인다 (`migrations/0042_manual_workflow.sql`).
+    """
+    rows = conn.execute(_LIST_QUERY + " WHERE w.kind = 'crawl' ORDER BY w.id").fetchall()
     return [_item(row) for row in rows]
 
 

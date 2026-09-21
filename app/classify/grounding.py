@@ -58,7 +58,9 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from app import regions, taxonomy
 from app.classify.schema import (
+    EMAIL_FIELDS,
     EXTRACT_FIELDS,
     INDUSTRY,
     JOB_FIELD,
@@ -67,6 +69,7 @@ from app.classify.schema import (
     JUDGE_FIELDS,
     NUMBER_FIELDS,
     POSTING_TITLE,
+    REGION,
 )
 
 # 비교에서 지우는 글자. 공백, 글머리표, 구두점, 괄호, 따옴표다. 뜻을 나르는 글자는 남는다
@@ -74,6 +77,9 @@ _NOISE = re.compile(r"[\s·•·◦○●□■▪▶▷–—\-*_.,;:!?()\[\]{}
 
 # 이보다 짧아지는 줄은 검사 대상이 아니다
 _MIN_LENGTH = 2
+
+# 이메일 칸이 받는 모양. 오공고가 `@Email` 로 다시 검사한다
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
 
 # 숫자 칸이 받는 모양. 경력 연수는 두 자리를 넘지 않는다
 _NUMBER = re.compile(r"\d{1,2}")
@@ -89,8 +95,11 @@ _NUMBER = re.compile(r"\d{1,2}")
 # 원문이거나, 원문이 없는 건에서 본문이다 (`app/classify/store.py`)
 NOT_IN_SOURCE = "제목에도 보낸 글에도 없다"
 NOT_IN_LIST = "목록 밖이다"
+# 직군·직무를 버린 뒤 `기타` 로 채웠을 때 사유 뒤에 붙인다
+ETC_FILLED = " — 기타로 뒀다"
 NO_EVIDENCE = "근거 문장이 제목에도 보낸 글에도 없다"
 NOT_A_NUMBER = "숫자가 아니다"
+NOT_AN_EMAIL = "이메일 주소가 아니다"
 
 
 @dataclass(frozen=True)
@@ -213,6 +222,64 @@ def _ground_judged_field(
         evidence[name] = quote
 
 
+def _ground_regions(
+    fields: Mapping[str, str],
+    source: str,
+    *,
+    kept: dict[str, str],
+    dropped: list[str],
+    reasons: dict[str, str],
+    evidence: dict[str, str],
+) -> None:
+    """근무지. 큰 지역 목록 안의 이름만 남기고 목록 순서로 잇는다 (2026-09-21 결정).
+
+    스키마의 enum 이 이미 막지만, 스키마를 통과하지 않는 경로(예전처럼 원문 조각으로 답한 응답,
+    손으로 넣은 응답)가 남아 있다. 목록 밖 이름이 하나라도 있으면 버린 기록을 남기고, 목록 안
+    이름은 그대로 둔다 — 여러 곳 중 하나가 틀렸다고 나머지를 버리지 않는다.
+    """
+    picked = regions.split(fields.get(REGION, ""))
+    kept[REGION] = regions.join(picked)
+    if any(name not in regions.names() for name in picked):
+        dropped.append(REGION)
+        reasons[REGION] = NOT_IN_LIST
+    if kept[REGION]:
+        quote = _quote_in(fields, REGION, source)
+        if quote:
+            evidence[REGION] = quote
+
+
+def _ground_emails(
+    fields: Mapping[str, str],
+    source: str,
+    *,
+    kept: dict[str, str],
+    dropped: list[str],
+    reasons: dict[str, str],
+) -> None:
+    """지원 접수·채용 문의 이메일. 이메일 모양이고 원문에 그 주소가 있을 때만 남긴다 (0043).
+
+    주소 자체가 근거라 근거 문장을 따로 받지 않는다. 대신 원문에 없는 주소는 지어낸 것이다 —
+    오공고가 그 주소로 지원서를 보내라고 안내하므로 틀린 주소 하나가 지원자를 엉뚱한 곳으로 보낸다.
+    모델이 `이메일: recruit@x.com` 처럼 앞말까지 적어도 주소만 떼어 남긴다.
+    """
+    lowered = source.lower()
+    for name in EMAIL_FIELDS:
+        value = fields.get(name, "").strip()
+        kept[name] = ""
+        if not value:
+            continue
+        found = _EMAIL.search(value)
+        if found is None:
+            dropped.append(name)
+            reasons[name] = NOT_AN_EMAIL
+            continue
+        if found.group(0).lower() not in lowered:
+            dropped.append(name)
+            reasons[name] = NOT_IN_SOURCE
+            continue
+        kept[name] = found.group(0)
+
+
 def _ground_number_field(
     name: str,
     fields: Mapping[str, str],
@@ -307,6 +374,9 @@ def ground(
             name, fields, source, kept=kept, dropped=dropped, reasons=reasons, evidence=evidence
         )
 
+    _ground_regions(fields, source, kept=kept, dropped=dropped, reasons=reasons, evidence=evidence)
+    _ground_emails(fields, source, kept=kept, dropped=dropped, reasons=reasons)
+
     if taxonomy_choices:
         for name in (JOB_FIELD, JOB_ROLE, INDUSTRY):
             if name not in taxonomy_choices:
@@ -332,5 +402,44 @@ def ground(
             if JOB_ROLE not in dropped:
                 dropped.append(JOB_ROLE)
             reasons[JOB_ROLE] = NOT_IN_LIST
+        _fill_etc(kept, taxonomy_choices, reasons)
 
     return Grounded(fields=kept, evidence=evidence, dropped=dropped, reasons=reasons)
+
+
+def _fill_etc(
+    kept: dict[str, str], choices: Mapping[str, tuple[str, ...]], reasons: dict[str, str]
+) -> None:
+    """목록에서 고르지 못해 빈 직군·직무를 `기타` 로 채운다 (2026-09-21 결정).
+
+    빈 칸으로 보내면 오공고에서 그 공고가 어느 직군으로도 걸러지지 않는다. 버린 기록은 그대로
+    남는다 — 모델이 무엇을 냈고 왜 버렸는지는 `dropped_fields` 로 알 수 있어야 한다.
+
+    | 무엇이 비었나 | 채우는 값 |
+    |---|---|
+    | 직군 | 직군 `기타`, 직무 `기타` |
+    | 직무만 (목록 밖이거나 다른 직군의 직무) | 그 직군의 `기타` 직무 (`기타IT·개발` 등) |
+
+    직군을 묻지 않은 호출(표가 비었다)은 건드리지 않는다. 직무 목록이 없는 표면 직무도 건드리지
+    않는다 — 고를 목록이 없던 칸이다.
+    """
+    if JOB_FIELD not in choices:
+        return
+    asks_role = JOB_ROLE in choices
+    if not kept.get(JOB_FIELD):
+        kept[JOB_FIELD] = taxonomy.ETC
+        if asks_role:
+            kept[JOB_ROLE] = taxonomy.ETC
+        _mark_etc(reasons, (JOB_FIELD, JOB_ROLE))
+        return
+    if asks_role and not kept.get(JOB_ROLE):
+        under = choices.get(f"{JOB_ROLE}:{kept[JOB_FIELD]}", ())
+        kept[JOB_ROLE] = taxonomy.etc_role(under)
+        _mark_etc(reasons, (JOB_ROLE,))
+
+
+def _mark_etc(reasons: dict[str, str], names: tuple[str, ...]) -> None:
+    """버린 칸의 사유 뒤에 기타로 채웠다고 적는다. 버리지 않고 빈 칸이었으면 적을 것이 없다."""
+    for name in names:
+        if name in reasons and not reasons[name].endswith(ETC_FILLED):
+            reasons[name] = f"{reasons[name]}{ETC_FILLED}"

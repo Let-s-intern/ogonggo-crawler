@@ -124,7 +124,6 @@ async def test_분류가_조각을_원문_글자로_저장한다() -> None:
         response(
             responsibilities=[{"line": 1, "text": "결제 서버 개발"}],
             qualifications=[{"line": 3, "text": "- Java 3년 이상 경험"}],
-            region=[{"line": 4, "text": "성남"}],
         )
     )
 
@@ -137,7 +136,6 @@ async def test_분류가_조각을_원문_글자로_저장한다() -> None:
 
     assert result.postings[0].fields["responsibilities"] == "주요업무 : 결재 서버 개발"
     assert result.postings[0].fields["qualifications"] == "Java 3년 이상 경험"
-    assert result.postings[0].fields["region"] == "성남"
     assert result.postings[0].dropped == []
     assert any("짚은 줄 전체" in note for note in result.notes)
 

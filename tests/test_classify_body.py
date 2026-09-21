@@ -35,10 +35,12 @@ from app.classify.grounding import (
 )
 from app.classify.schema import (
     CLASSIFY_FIELDS,
+    EMAIL_FIELDS,
     EXTRACT_FIELDS,
     JUDGE_CHOICES,
     JUDGE_FIELDS,
     NUMBER_FIELDS,
+    REGION,
     VALUE_LABELS,
 )
 from app.config import Settings
@@ -120,14 +122,14 @@ async def test_a_value_that_is_not_in_the_body_is_thrown_away() -> None:
     """일부러 본문에 없는 것을 답하게 한다. 그럴듯해도 버려야 한다."""
     result, _ = await classify(
         response(
-            region="서울 강남구 테헤란로 123",
+            compensation="연봉 9,999만원 보장",
             hiring_process="서류전형 > 1차 인터뷰 > 2차 인터뷰 > 처우 협의 > 최종 합격 및 입사",
         )
     )
 
-    assert result.postings[0].dropped == ["region"]
-    assert result.postings[0].reasons["region"] == NOT_IN_SOURCE
-    assert result.postings[0].fields["region"] == ""
+    assert result.postings[0].dropped == ["compensation"]
+    assert result.postings[0].reasons["compensation"] == NOT_IN_SOURCE
+    assert result.postings[0].fields["compensation"] == ""
     # 본문에 있는 값은 그대로 남는다. 한 칸이 틀렸다고 나머지를 버리지 않는다
     assert result.postings[0].fields["hiring_process"].startswith("서류전형")
     assert "버린 칸" in " ".join(result.notes)
@@ -373,7 +375,12 @@ def test_grounding_keeps_an_empty_column_empty_without_calling_it_invented() -> 
 
 def test_the_three_kinds_of_columns_add_up() -> None:
     """칸이 늘거나 옮겨 다니면 여기서 걸린다."""
-    assert set(EXTRACT_FIELDS) | set(JUDGE_FIELDS) | set(NUMBER_FIELDS) == set(CLASSIFY_FIELDS)
+    # 근무지는 목록에서 여러 개를 고르는 칸이라 어느 쪽에도 속하지 않는다 (2026-09-21)
+    # 이메일 두 칸도 원문 주소를 옮기되 조각이 아니라 주소 하나라 따로 둔다 (0043)
+    assert set(EXTRACT_FIELDS) | set(JUDGE_FIELDS) | set(NUMBER_FIELDS) | {REGION} | set(
+        EMAIL_FIELDS
+    ) == set(CLASSIFY_FIELDS)
+    assert REGION not in {*EXTRACT_FIELDS, *JUDGE_FIELDS, *NUMBER_FIELDS}
     assert not set(EXTRACT_FIELDS) & set(JUDGE_FIELDS)
     assert not set(NUMBER_FIELDS) & (set(EXTRACT_FIELDS) | set(JUDGE_FIELDS))
 

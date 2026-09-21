@@ -40,15 +40,20 @@ PRD 비목표다 — 여기서 하는 것은 렌더링뿐이다.
 수 없으므로 기록하지 않고, 응답 본문은 `OBSERVED_BODY_LIMIT` 까지만 들고 있는다. 페이지 하나가
 수백 개의 요청을 내고 그중 하나가 수 MB 인 것이 보통이라, 상한이 없으면 관찰 자체가 메모리를
 먹는다.
+
+**요청 헤더도 함께 적는다.** 브라우저에서만 되던 요청이 `httpx` 로도 되는지가 헤더 하나로
+갈린다 — HD현대 목록 API 는 `x-user-role` 이 없으면 500 이다. 담는 것은 사이트가 요구하는
+기능성 헤더뿐이고, 브라우저가 스스로 붙인 것과 `cookie`·`authorization` 은 버린다. 그 둘은 그
+브라우저 한 번의 신원이라 저장하면 오늘만 되는 크롤러가 남는다 (`.claude/rules/crawling.md`).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -81,6 +86,44 @@ _ITEM_HINTS = ("li[data-recucls]", "ul li", "ol li", "tbody tr", "article")
 OBSERVED_BODY_LIMIT = 200_000
 # 한 페이지에서 기록할 요청 수의 상한. 폴링하는 페이지가 무한히 쌓는 것을 막는다
 OBSERVED_LIMIT = 200
+
+# 브라우저가 스스로 붙이는 헤더. 설정에 담을 것은 사이트가 요구하는 기능성 헤더뿐이라 이
+# 이름들은 버린다. `cookie` 와 `authorization` 은 그 브라우저 한 번의 신원이고, `user-agent`
+# 는 공용 fetch 클라이언트가 정한다 (`app/selector/api_schema.py` 의 `BLOCKED_HEADERS`)
+_BROWSER_HEADERS: frozenset[str] = frozenset(
+    {
+        "accept",
+        "accept-encoding",
+        "accept-language",
+        "authorization",
+        "cache-control",
+        "connection",
+        "content-length",
+        "content-type",
+        "cookie",
+        "dnt",
+        "host",
+        "origin",
+        "pragma",
+        "priority",
+        "range",
+        # `referer` 는 설정에 넣을지를 판정이 따로 정한다 (`app/selector/list_api.py`)
+        "referer",
+        "te",
+        "upgrade-insecure-requests",
+        "user-agent",
+        # 오류 추적 도구가 요청마다 새로 붙이는 값. 동원 목록 API 요청에 `sentry-trace` 가 있었다
+        "baggage",
+        "sentry-trace",
+        "traceparent",
+        "tracestate",
+    }
+)
+# 이 접두사로 시작하는 것도 브라우저가 붙인 것이다
+_BROWSER_HEADER_PREFIXES: tuple[str, ...] = ("sec-", "if-", "proxy-")
+# 요청 하나에서 적어 둘 헤더 수와 값 길이의 상한. 긴 값은 토큰이지 기능성 헤더가 아니다
+_HEADER_LIMIT = 8
+_HEADER_VALUE_LIMIT = 200
 
 # 상세 경로가 될 수 없는 파일들. 확장자로 먼저 거른다
 _ASSET_SUFFIXES: tuple[str, ...] = (
@@ -134,6 +177,9 @@ class ObservedRequest:
     """페이지가 스스로 낸 요청 하나와 그 응답.
 
     `body` 는 `OBSERVED_BODY_LIMIT` 까지 자른 것이고, 잘렸으면 `truncated` 가 참이다.
+
+    `request_headers` 는 사이트가 요구하는 기능성 헤더만 남긴 것이다. 이 요청을 `httpx` 로
+    다시 부르거나 설정에 담을 때 그대로 쓴다 (`functional_headers`).
     """
 
     method: str
@@ -143,6 +189,8 @@ class ObservedRequest:
     request_body: str = ""
     body: str = ""
     truncated: bool = False
+    # 기본값이 있어 이 필드가 생기기 전에 만들어진 호출과 시험이 그대로 통과한다
+    request_headers: Mapping[str, str] = field(default_factory=dict)
 
     @property
     def is_json(self) -> bool:
@@ -229,7 +277,34 @@ class RequestLog:
             request_body=str(getattr(request, "post_data", "") or ""),
             body=body[: self._body_limit],
             truncated=len(body) > self._body_limit,
+            request_headers=functional_headers(getattr(request, "headers", None)),
         )
+
+
+def functional_headers(headers: Any) -> dict[str, str]:
+    """요청 헤더 중 사이트가 요구하는 것만. 브라우저가 스스로 붙인 것은 버린다.
+
+    남기는 기준이 목록이 아니라 제외 목록인 이유는, 사이트가 무엇을 요구할지 미리 알 수 없기
+    때문이다. HD현대는 `x-user-role`, 현대자동차는 `x-hkmc-service` 다 — 이름을 모아 두는
+    방식으로는 다음 사이트에서 또 막힌다.
+
+    `cookie` 와 `authorization` 은 여기서 떨어진다. 그 브라우저 한 번의 신원이라 설정에 저장하면
+    등록한 날만 되는 크롤러가 남고, 그 실패는 "어제는 됐는데" 로 보여 원인을 찾기 어렵다.
+    """
+    if not isinstance(headers, Mapping):
+        return {}
+    found: dict[str, str] = {}
+    for name, value in headers.items():
+        key = str(name).strip().lower()
+        text = str(value).strip()
+        if not key or not text or len(text) > _HEADER_VALUE_LIMIT:
+            continue
+        if key in _BROWSER_HEADERS or key.startswith(_BROWSER_HEADER_PREFIXES):
+            continue
+        found[key] = text
+        if len(found) >= _HEADER_LIMIT:
+            break
+    return found
 
 
 def is_data_request(url: str) -> bool:

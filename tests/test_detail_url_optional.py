@@ -299,3 +299,63 @@ def stub_discoverer(found: bool = True) -> None:
         )
 
     app.dependency_overrides[crawlers_api.get_discoverer] = lambda: discover
+
+
+def test_공고_한_건만_열었으면_실패여도_그_페이지로_상세를_만든다(
+    client: TestClient, conn: sqlite3.Connection, called_with: list[tuple[str, str]]
+) -> None:
+    """HD현대·동원. 나머지 공고로 갈 길만 없었다. 목록 경로를 손으로 채우면 바로 돌게 둔다."""
+    opened = f"{LIST_URL}job_posting/rCL5Co3V"
+
+    async def discover(list_url: str, selectors: SelectorSet) -> Discovery:
+        return Discovery(
+            list_mode="playwright",
+            detail_mode="static",
+            detail=document_path(opened, "그 주소는 정적으로도 열렸다"),
+            evidence="렌더 후 10건, 항목에 상세 주소가 없어 클릭했다",
+            failure="detail_unreachable",
+            reason="공고 한 건을 눌러 상세는 열었지만, 공고마다 다른 상세 주소를 만들 재료가 없다",
+            list_count=10,
+        )
+
+    app.dependency_overrides[crawlers_api.get_discoverer] = lambda: discover
+    body = client.post("/api/crawlers", json={"list_url": LIST_URL}).json()
+
+    assert called_with == [(LIST_URL, ""), (LIST_URL, opened)]
+    assert body["path_failure"] == "detail_unreachable"
+    row = saved(conn)
+    assert row["detail_url"] == opened
+    # 열어 본 결과대로다. 판정이 실패했다고 셀렉터를 만든 경로로 되돌리지 않는다
+    assert row["detail_mode"] == "static"
+
+
+def test_판정이_AI_에게_물었으면_그_비용을_남긴다(
+    client: TestClient, conn: sqlite3.Connection, called_with: list[tuple[str, str]]
+) -> None:
+    """버린 제안에도 돈은 나갔다. 셀렉터 생성과 같은 칸에 센다 — 등록의 한 부분이다."""
+    spent = Usage(
+        provider="deepseek",
+        model="deepseek-flash",
+        input_tokens=2400,
+        output_tokens=650,
+        total_tokens=3050,
+        latency_ms=2900,
+    )
+
+    async def discover(list_url: str, selectors: SelectorSet) -> Discovery:
+        return Discovery(
+            list_mode="api",
+            detail_mode="static",
+            detail=document_path(f"{list_url}1/", "그 주소는 정적으로도 열렸다"),
+            evidence="AI 제안을 확인해 채택했다",
+            list_count=10,
+            ai_usage=spent,
+        )
+
+    app.dependency_overrides[crawlers_api.get_discoverer] = lambda: discover
+    client.post("/api/crawlers", json={"list_url": LIST_URL})
+
+    rows = conn.execute(
+        "SELECT feature, model, total_tokens FROM llm_calls WHERE model = 'deepseek-flash'"
+    ).fetchall()
+    assert [tuple(row) for row in rows] == [("selector_generate", "deepseek-flash", 3050)]

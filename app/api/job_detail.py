@@ -23,7 +23,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
-from app import industries, taxonomy
+from app import industries, regions, taxonomy
 from app.classify.schema import FALLBACK_FIELDS, STORED_CLASSIFY_FIELDS, VALUE_LABELS
 from app.deliver import spring
 from app.normalize.engine import OVERRIDABLE_FIELDS
@@ -86,10 +86,14 @@ SECTIONS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("experience_type", "경력", KIND_CHOICE),
             Field("experience_min_years", "최소 경력 연수"),
             Field("education_level", "학력", KIND_CHOICE),
+            # 큰 지역 목록에서 쉼표로 여러 개다. 목록 밖 이름은 `ListChoices.check` 가 막는다
             Field("region", "근무 지역"),
             Field("recruitment_type", "모집 유형", KIND_CHOICE),
             Field("recruitment_headcount", "모집 인원"),
             Field("application_method", "지원 방법", KIND_CHOICE),
+            # 0043. 분류가 원문의 주소를 옮긴다. 오공고가 이메일 형식을 다시 검사한다
+            Field("application_email", "지원 접수 이메일"),
+            Field("inquiry_email", "채용 문의 이메일"),
             Field("recruitment_start_at", "모집 시작", KIND_DATE),
             Field("recruitment_end_at", "모집 마감", KIND_DATE),
             Field("closes_when_filled", "채용 시 마감", KIND_CHOICE),
@@ -130,6 +134,8 @@ SPRING_NAMES: dict[str, str] = {
     "recruitment_type": "recruitmentType",
     "recruitment_headcount": "recruitmentHeadcount",
     "application_method": "applicationMethod",
+    "application_email": "applicationEmail",
+    "inquiry_email": "inquiryEmail",
     "recruitment_start_at": "recruitmentStartAt",
     "recruitment_end_at": "recruitmentEndAt",
     "closes_when_filled": "closesWhenFilled",
@@ -202,8 +208,17 @@ class ListChoices:
     job_roles: dict[str, tuple[str, ...]]
     industries: tuple[str, ...]
 
-    def check(self, job_field: str, job_role: str, industry: str) -> str:
-        """목록 밖 값이면 무엇이 틀렸는지 한 줄, 맞으면 빈 문자열. 빈 값은 맞다."""
+    def check(self, job_field: str, job_role: str, industry: str, region: str = "") -> str:
+        """목록 밖 값이면 무엇이 틀렸는지 한 줄, 맞으면 빈 문자열. 빈 값은 맞다.
+
+        근무 지역은 큰 지역 목록에서 쉼표로 여러 개다 (`app/regions.py`).
+        """
+        outside = [name for name in regions.split(region) if name not in regions.names()]
+        if outside:
+            return (
+                f"근무 지역 '{', '.join(outside)}' 은 지역 목록에 없다. "
+                f"{', '.join(regions.names())} 중에서 쉼표로 적는다"
+            )
         if job_field and job_field not in self.job_fields:
             return f"직군 '{job_field}' 은 직무 분류에 없다"
         if job_role and job_role not in self.job_roles.get(job_field, ()):
@@ -214,12 +229,27 @@ class ListChoices:
 
 
 def list_choices(conn: sqlite3.Connection) -> ListChoices:
+    """켜진 직무 분류에 `기타` 를 더한다. 분류가 목록에서 못 고른 공고에 넣는 값이다.
+
+    더하지 않으면 그 공고는 고칠 수 없다. 편집은 폼에 없는 칸도 지금 값으로 검사하고, 드롭다운에
+    지금 값이 없으면 `비어 있음` 으로 제출돼 아무 칸이나 고치는 순간 `기타` 가 지워진다.
+    AI 가 고르는 목록에는 넣지 않는다 (`app/taxonomy.py` 의 `ETC`).
+    """
     tree = taxonomy.enabled_tree(conn)
+    roles = {major: _with_etc_role(minors) for major, minors in tree}
+    if tree and taxonomy.ETC not in roles:
+        roles[taxonomy.ETC] = (taxonomy.ETC,)
     return ListChoices(
-        job_fields=tuple(major for major, _ in tree),
-        job_roles=dict(tree),
+        job_fields=tuple(roles),
+        job_roles=roles,
         industries=industries.enabled_names(conn),
     )
+
+
+def _with_etc_role(minors: tuple[str, ...]) -> tuple[str, ...]:
+    """직무 목록에 그 직군의 `기타` 직무가 없으면 `기타` 를 더한다. 분류가 채우는 값과 같다."""
+    etc = taxonomy.etc_role(minors)
+    return minors if etc in minors else (*minors, etc)
 
 
 def display(field: Field, value: Any) -> str:

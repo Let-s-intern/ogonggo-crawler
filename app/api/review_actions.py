@@ -81,12 +81,16 @@ async def job_edit_submit(
     form = await request.form()
     raw_job_id, part = int(job["raw_job_id"]), int(job["part"])
 
-    # 직군·직무·산업은 설정의 목록 안에서만 받는다. 직무는 고친 뒤의 직군 아래에 있어야 한다
+    # 직군·직무·산업·근무 지역은 목록 안에서만 받는다. 직무는 고친 뒤의 직군 아래에 있어야 한다
     def picked(name: str) -> str:
         return str(form[name]).strip() if name in form else str(job[name] or "").strip()
 
+    # 근무 지역은 고쳤을 때만 목록으로 본다. 2026-09-21 이전에 분류된 공고는 원문 글자(`울산광역시
+    # 동구`)라, 늘 보면 그 공고는 다른 칸 하나 고치는 것도 막힌다
+    region = picked("region")
+    changed_region = region if region != str(job["region"] or "").strip() else ""
     wrong = job_detail.list_choices(conn).check(
-        picked("job_field"), picked("job_role"), picked("industry")
+        picked("job_field"), picked("job_role"), picked("industry"), changed_region
     )
     if wrong:
         return render_panel(request, conn, normalized_id, editing=True, message=wrong)

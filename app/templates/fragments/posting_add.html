@@ -1,0 +1,68 @@
+{# 공고 한 건 추가 창 (`app/api/ui_posting_add.py`). 틀은 base.html 의 모달이고 이 조각이 안을 채운다.
+
+   step: form(입력) → done(저장했다. 공고 화면 바로가기). 가져와 저장하는 동안만 창에서 기다리고,
+   분류는 요청 밖에서 돈다 — 큰 페이지는 분류에 십수 분이 걸린다 #}
+{% from "macros.html" import wait %}
+<div class="modal-body">
+  <div class="modal-head flex items-center justify-between">
+    <h3 id="app-modal-title" class="text-base font-semibold text-slate-900">공고 한 건 추가</h3>
+    <button type="button" data-modal-close class="mt-0">닫기</button>
+  </div>
+  <div class="modal-scroll space-y-4" tabindex="-1" autofocus>
+    {% if error %}<p class="notice notice-bad">{{ error }}</p>{% endif %}
+
+    {% if step == "form" %}
+    <p class="text-sm text-slate-600">공고 페이지 주소 하나를 넣으면 한 번만 가져와 저장하고, 이어서 AI가 분류합니다. 주기적으로 수집하지 않습니다. 목록이 없는 캠페인 페이지 같은 공고에 씁니다</p>
+    <form class="space-y-3" hx-post="/ui/postings/new" hx-target="#app-modal-body" hx-swap="innerHTML"
+          hx-disabled-elt="find button" hx-indicator="find .posting-add-wait">
+      <p class="my-0">
+        <label for="posting-add-url" class="block">공고 주소</label>
+        <input id="posting-add-url" name="url" type="url" required value="{{ url }}"
+               placeholder="https://careers.example.com/jobs/123" class="w-full">
+      </p>
+      <p class="my-0">
+        <label for="posting-add-company" class="block">회사 이름 <span class="font-normal text-slate-500">(선택)</span></label>
+        <input id="posting-add-company" name="company" type="text" value="{{ company }}"
+               placeholder="예: 동원" class="w-full">
+        <span class="text-xs text-slate-500">비워 두면 AI 가 공고에서 읽습니다</span>
+      </p>
+      <p class="my-0 flex items-center justify-end gap-3">
+        <span class="posting-add-wait">{{ wait("가져오는 중 — 잠시 걸립니다") }}</span>
+        <button type="submit">가져오기</button>
+      </p>
+    </form>
+
+    {% elif step == "done" %}
+    <div class="rounded-md border {% if added.existed %}border-amber-200 bg-amber-50 text-amber-900{% else %}border-emerald-200 bg-emerald-50 text-emerald-900{% endif %} px-3 py-2 text-sm">
+      {% if added.existed %}이미 넣은 공고예요. 새로 저장하지 않았습니다. 다시 읽히려면 공고 화면에서 <span class="font-medium">AI로 다시 채우기</span>를 누릅니다{% else %}저장했어요.{% if classifying %} AI 분류는 뒤에서 돌고 있어요 — 끝나면 공고 화면에서 직군·직무 같은 칸이 채워집니다. 직무가 많은 긴 공고는 십수 분 걸릴 수 있어요{% endif %}{% endif %}
+    </div>
+    {% for note in notes %}<p class="notice notice-warn my-0">{{ note }}</p>{% endfor %}
+    {% if rows %}
+    <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr><th scope="col">제목</th><th scope="col">회사</th><th scope="col">직군 · 직무</th><th scope="col">고용 · 경력</th><th scope="col">마감</th></tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="cell-text">{{ row.title or "제목 없음" }}</td>
+          <td>{{ row.company_name or "" }}</td>
+          <td>{{ row.job_field or "비어 있음" }}{% if row.job_role %} · {{ row.job_role }}{% endif %}</td>
+          <td>{{ labels.get(row.employment_type, row.employment_type or "") }}{% if row.experience_type %} · {{ labels.get(row.experience_type, row.experience_type) }}{% endif %}</td>
+          <td>{{ (row.recruitment_end_at or "")[:16] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% if rows | length > 1 %}<p class="text-xs text-slate-500">직무마다 나뉜 공고라 {{ rows | length }}건으로 저장했어요</p>{% endif %}
+    {% endif %}
+    <p class="flex justify-end gap-2">
+      <a class="mr-auto self-center font-medium underline" href="/review?workflow_id={{ added.workflow_id }}">공고 화면에서 보기</a>
+      <button type="button" hx-get="/ui/postings/new" hx-target="#app-modal-body" hx-swap="innerHTML" class="mt-0">하나 더 추가</button>
+      <button type="button" data-modal-close class="mt-0">닫기</button>
+    </p>
+    {% endif %}
+  </div>
+</div>

@@ -33,6 +33,20 @@
 찾지 못한 필드는 비운다. 이름이 비슷하다는 이유로 아무 키나 고르지 않는다
 (`.claude/rules/llm.md` 의 "제안자이지 권위가 아니다").
 
+## 브라우저에서만 되던 요청을 그대로 옮긴다
+
+관찰한 요청에는 사이트가 요구하는 기능성 헤더가 붙어 있다. 그것을 떼고 다시 부르면 응답이
+달라지거나 아예 오지 않는다 — HD현대 목록 API 는 `x-user-role` 이 없으면 500 이다. 관찰이
+적어 둔 헤더(`ObservedRequest.request_headers`)를 확인에도 쓰고 설정에도 담는다.
+
+## 잘린 응답은 다시 받아서 본다
+
+관찰은 응답 본문을 `OBSERVED_BODY_LIMIT` 까지만 들고 있다. 공고를 수백 건씩 본문까지 담아
+주는 목록 API 는 그 상한을 넘겨 JSON 으로 읽히지 않고, 그러면 "목록 API 가 없는 사이트" 로
+판정된다 — HD현대 목록 응답이 1.4MB 다. `restore_truncated()` 가 그런 응답만 공용 fetch
+클라이언트로 한 번 다시 받아 채운다. 어차피 확인 단계가 같은 주소를 부르므로 새로 생기는
+요청 경로가 아니고, 여기서 실패하면 그 사유가 그대로 판정 사유가 된다.
+
 ## 쪽 넘김은 제안하지 않는다
 
 관찰한 요청 하나에는 그 쪽만 들어 있다. 어느 파라미터가 쪽 번호인지, 마지막 쪽을 무엇으로
@@ -51,7 +65,7 @@ from typing import Any
 from urllib.parse import parse_qsl
 
 from app.crawler.api_source import fetch_list
-from app.crawler.fetcher import FetchError, FetchPolicy
+from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError
 from app.crawler.parser import CrawlDataError, ListItem
 from app.crawler.playwright import ObservedRequest
 from app.selector.api_schema import (
@@ -83,6 +97,9 @@ MAX_ID_LENGTH = 64
 # 사이트가 요구하는 기능성 헤더. 목록 API 를 브라우저 없이 부를 때 이것 하나로 갈리는 곳이
 # 있다. User-Agent 는 담지 않는다 — 이름은 공용 fetch 클라이언트가 정한다
 REFERER = "referer"
+
+# 잘린 응답을 다시 받아 보는 횟수의 상한. 등록 한 번이 사이트를 여러 번 때리지 않게 한다
+MAX_RESTORES = 3
 
 
 @dataclass(frozen=True)
@@ -227,6 +244,9 @@ def _build(
             missing.append(name)
 
     body, body_format = _request_body(request)
+    # 브라우저가 붙였던 기능성 헤더를 그대로 옮긴다. 이것 하나로 200 과 500 이 갈리는 API 가
+    # 있어서, 떼고 저장하면 등록만 성공하고 이후 실행이 전부 실패한다
+    headers = dict(request.request_headers)
     data = {
         "list": {
             "url": request.url,
@@ -237,6 +257,7 @@ def _build(
             "fields": fields,
             "id_field": id_field,
             "link_template": link_template,
+            "headers": headers,
         }
     }
     try:
@@ -250,6 +271,7 @@ def _build(
         f"id_field: {id_field}",
         f"link_template: {link_template}",
         *(f"{name}: {fields[name]}" for name in ("date", "company_name") if name in fields),
+        *([f"headers: {', '.join(sorted(headers))}"] if headers else []),
     ]
     logger.info("목록 API 후보 url=%s items_path=%s 항목=%d", request.url, items_path, len(entries))
     return ListPath(
@@ -260,6 +282,64 @@ def _build(
         notes=tuple(notes),
         missing=tuple(missing),
     )
+
+
+async def restore_truncated(
+    client: FetchPolicy, requests: Sequence[ObservedRequest]
+) -> list[ObservedRequest]:
+    """본문이 잘린 JSON 응답만 공용 fetch 클라이언트로 다시 받아 채운다.
+
+    관찰은 응답을 `OBSERVED_BODY_LIMIT` 까지만 들고 있다. 공고를 본문까지 수백 건 담아 주는
+    목록 API 는 그 상한을 넘겨 `json.loads` 가 실패하고, 그러면 제안 단계에서 "이 목록을 담은
+    JSON 응답이 없다" 로 끝난다. 실제로는 있는데 다 못 읽은 것이다 (HD현대 1.4MB).
+
+    **브라우저를 닫은 뒤에 부른다.** 렌더는 호스트 잠금을 잡고 있어서, 그 안에서 같은 호스트로
+    정적 요청을 내면 자기 잠금을 기다리며 멈춘다 (`app/crawler/fetcher.py` 의 `guard`).
+
+    다시 받지 못한 요청은 잘린 채로 둔다. 여기서 실패하는 요청은 확인 단계에서도 실패하므로,
+    막는 자리를 앞당길 뿐 판정을 바꾸지 않는다.
+    """
+    restored: list[ObservedRequest] = []
+    tried = 0
+    for request in requests:
+        if tried >= MAX_RESTORES or not _restorable(request):
+            restored.append(request)
+            continue
+        tried += 1
+        filled = await _refetch(client, request)
+        restored.append(filled if filled is not None else request)
+    return restored
+
+
+def _restorable(request: ObservedRequest) -> bool:
+    """다시 받아 볼 만한 요청인가. 잘린 JSON 응답 하나가 조건이다."""
+    return (
+        request.truncated
+        and request.status == 200
+        and request.is_json
+        and request.method in ("GET", "POST")
+    )
+
+
+async def _refetch(client: FetchPolicy, request: ObservedRequest) -> ObservedRequest | None:
+    """같은 요청을 한 번 더 보내 본문을 통째로 받는다. 못 받으면 None 이다."""
+    body, body_format = _request_body(request)
+    headers = dict(request.request_headers)
+    try:
+        result = await client.request(
+            request.url,
+            method=request.method,
+            json_body=body if body and body_format == JSON_BODY else None,
+            form_body=body if body and body_format == FORM_BODY else None,
+            headers=headers or None,
+        )
+    except FetchError as exc:
+        logger.info("잘린 응답을 다시 받지 못했다 url=%s: %s", request.url, exc)
+        return None
+    if not result.text.strip():
+        return None
+    logger.info("잘린 응답을 다시 받았다 url=%s %d자", request.url, len(result.text))
+    return replace(request, body=result.text, truncated=False)
 
 
 async def confirm_list_path(
@@ -276,6 +356,15 @@ async def confirm_list_path(
     expected = [_squeeze(item.title) for item in items if item.title.strip()]
     try:
         result = await fetch_list(client, path.config())
+    except RobotsDisallowedError as exc:
+        # 헤더나 쿠키로 풀 문제가 아니다. 사이트가 크롤러에게 막은 주소라 저장하면 매 실행이 막힌다
+        return ListConfirmation(
+            adopted=False,
+            reason=(
+                f"{exc}. 헤더 문제가 아니다 — 막히지 않은 다른 "
+                "주소로 같은 목록을 받을 수 있는지 봐야 한다"
+            ),
+        )
     except FetchError as exc:
         return ListConfirmation(
             adopted=False,

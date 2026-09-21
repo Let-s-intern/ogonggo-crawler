@@ -14,8 +14,9 @@ import sqlite3
 from fastapi.testclient import TestClient
 
 from app import industries, taxonomy
+from app.api import job_detail
 from app.classify.classifier import _taxonomy_choices
-from app.classify.grounding import NOT_IN_LIST, ground
+from app.classify.grounding import ETC_FILLED, NOT_IN_LIST, ground
 from tests.test_ui_review_actions import client, conn, overrides  # noqa: F401
 
 TREE = (("IT·개발", ("서버·백엔드", "프론트엔드")), ("영업", ("B2B영업",)))
@@ -71,7 +72,7 @@ def test_목록_밖_값과_직군_아래에_없는_직무는_저장하지_않는
     }
 
 
-def test_AI_가_다른_직군의_직무를_고르면_버린다() -> None:
+def test_AI_가_다른_직군의_직무를_고르면_그_직군의_기타로_바꾼다() -> None:
     choices = _taxonomy_choices(TREE, ("IT·정보통신업",))
     assert choices is not None
 
@@ -89,6 +90,52 @@ def test_AI_가_다른_직군의_직무를_고르면_버린다() -> None:
     )
 
     assert grounded.fields["job_field"] == "영업"
-    assert grounded.fields["job_role"] == ""
-    assert grounded.reasons["job_role"] == NOT_IN_LIST
+    # 이 표의 `영업` 에는 `기타…` 직무가 없어 그냥 `기타` 다
+    assert grounded.fields["job_role"] == "기타"
+    assert grounded.reasons["job_role"] == f"{NOT_IN_LIST}{ETC_FILLED}"
     assert kept.fields["job_role"] == "서버·백엔드"
+
+
+def test_직무가_목록_밖이면_그_직군의_기타_직무를_고른다() -> None:
+    """씨앗의 직군마다 이름이 다른 `기타…` 직무가 있다. 그것을 쓴다."""
+    choices = _taxonomy_choices((("IT·개발", ("서버·백엔드", "기타IT·개발")),), ())
+    assert choices is not None
+
+    grounded = ground(
+        {"job_field": "IT·개발", "job_role": "양자컴퓨팅"}, "본문", "제목", taxonomy_choices=choices
+    )
+
+    assert grounded.fields["job_role"] == "기타IT·개발"
+    assert "job_role" in grounded.dropped
+
+
+def test_기타_직군_공고도_다른_칸을_고칠_수_있다(
+    client: TestClient,  # noqa: F811
+    conn: sqlite3.Connection,  # noqa: F811
+) -> None:
+    """편집은 폼에 없는 칸도 지금 값으로 검사한다. `기타` 가 목록에 없으면 고칠 수 없다."""
+    seed(conn)
+    conn.execute("UPDATE normalized_jobs SET job_field = '기타', job_role = '기타' WHERE id = 1")
+
+    form = client.get("/ui/review/jobs/1/edit").text
+    saved = client.post("/ui/review/jobs/1/edit", data={"industry": "IT·정보통신업"}).text
+
+    # 드롭다운에 지금 값이 있어야 제출할 때 `비어 있음` 으로 바뀌지 않는다
+    assert '<option value="기타" selected>' in form
+    assert "직무 분류에 없다" not in saved
+    assert "아래에 없다" not in saved
+    assert overrides(conn) == {"industry": "IT·정보통신업"}
+
+
+def test_기타_직무가_없는_직군도_기타를_고를_수_있다(
+    conn: sqlite3.Connection,  # noqa: F811
+) -> None:
+    """분류가 그 직군에 채우는 값과 편집이 받는 값이 같아야 한다."""
+    seed(conn)
+
+    choices = job_detail.list_choices(conn)
+
+    assert choices.job_roles["영업"] == ("B2B영업", "기타")
+    assert choices.job_roles["기타"] == ("기타",)
+    assert choices.check("영업", "기타", "") == ""
+    assert choices.check("기타", "기타", "") == ""

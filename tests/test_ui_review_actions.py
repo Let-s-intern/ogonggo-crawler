@@ -139,21 +139,21 @@ def test_고친_칸만_사람_보정으로_남고_다시_정규화된다(
         "/ui/review/jobs/1/edit",
         data={
             "title": "백엔드 개발자",  # 그대로
-            "region": "서울 강남구",
+            "region": "서울",
             "employment_type": "CONTRACT",
             "responsibilities": "결제 서버를 만든다",
         },
     ).text
 
     assert overrides(conn) == {
-        "region": "서울 강남구",
+        "region": "서울",
         "employment_type": "CONTRACT",
         "responsibilities": "결제 서버를 만든다",
     }
     row = conn.execute(
         "SELECT region, employment_type FROM normalized_jobs WHERE id = 1"
     ).fetchone()
-    assert (row["region"], row["employment_type"]) == ("서울 강남구", "CONTRACT")
+    assert (row["region"], row["employment_type"]) == ("서울", "CONTRACT")
     assert "3칸을 고쳤다" in html
     assert "직접 수정" in html
 
@@ -170,10 +170,10 @@ def test_저장하고_보내기는_고친_뒤_오공고에_등록한다(
 ) -> None:
     seen = oggonggo(monkeypatch)
 
-    html = client.post("/ui/review/jobs/1/edit", data={"region": "판교", "send": "1"}).text
+    html = client.post("/ui/review/jobs/1/edit", data={"region": "경기", "send": "1"}).text
 
     assert len(seen) == 1
-    assert json.loads(seen[0].content)["region"] == "판교"
+    assert json.loads(seen[0].content)["region"] == "경기"
     assert "오공고로 보냈다" in html
     status = conn.execute("SELECT status FROM spring_deliveries WHERE source_url = 'https://x/1'")
     assert status.fetchone()["status"] == "sent"

@@ -151,6 +151,8 @@ def payload(job: Mapping[str, Any] | sqlite3.Row) -> dict[str, Any]:
         "autoCloseEnabled": _boolean(job["auto_close_enabled"]),
         **{name: _text(job[column]) for name, column in _CONTENT_FIELDS},
         "applicationMethod": _choice(job, "application_method"),
+        "applicationEmail": _text(job["application_email"]),
+        "inquiryEmail": _text(job["inquiry_email"]),
         "sourceUrl": _text(job["source_url"]),
     }
     if body["recruitmentType"] == "ALWAYS_OPEN":

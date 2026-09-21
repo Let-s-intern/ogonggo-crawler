@@ -56,7 +56,7 @@ from app.crawler.failures import (
 from app.crawler.fetcher import FetchPolicy, PageSource, get_fetcher
 from app.crawler.hashing import content_hash
 from app.crawler.images import LlmImageReader
-from app.crawler.parser import ListItem
+from app.crawler.parser import DetailParseResult, ListItem
 from app.crawler.talent_pool import is_talent_pool
 from app.normalize.engine import NormalizeError, insert_normalized, load_rules
 from app.normalize.rules import Rule
@@ -673,6 +673,15 @@ def _record(
         if cover.startswith(("http://", "https://")):
             record["og_image_url"] = cover
     return record
+
+
+def raw_record(item: ListItem, detail: DetailParseResult) -> dict[str, str]:
+    """`raw_jobs.raw_data_json` 에 들어갈 값. 주기 수집과 같은 모양이라 `_record` 를 그대로 쓴다.
+
+    주소로 직접 넣은 공고가 쓴다 (`app/crawler/manual.py`). 모양이 갈리면 정규화와 분류가 두 모양을
+    알아야 한다.
+    """
+    return _record(item, detail.fields, detail.source_text, detail.cover_image)
 
 
 def _is_known(conn: sqlite3.Connection, workflow_id: int | None, column: str, value: str) -> bool:

@@ -46,7 +46,9 @@ _LIST_QUERY = (
     "c.api_config_json AS api_config_json, c.selectors_json AS selectors_json, "
     "c.created_at AS created_at, "
     f"{_CHECKED_AT} AS checked_at "
-    "FROM crawlers c ORDER BY c.id DESC"
+    # 직접 넣은 공고의 크롤러는 셀렉터가 없는 자리라 빼 둔다 (`app/crawler/manual.py`)
+    "FROM crawlers c WHERE NOT EXISTS (SELECT 1 FROM workflows w"
+    " WHERE w.crawler_id = c.id AND w.kind = 'manual') ORDER BY c.id DESC"
 )
 
 router = APIRouter(tags=["ui"], include_in_schema=False)

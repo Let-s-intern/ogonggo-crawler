@@ -48,6 +48,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
+from app import regions
 from app.classify.grounding import NOT_IN_SOURCE, ground, loose, missing_lines
 from app.classify.pieces import (
     Resolved,
@@ -73,6 +74,7 @@ from app.classify.schema import (
     CLASSIFY_FIELDS,
     COLLECTED_REVIEW_FIELDS,
     COLLECTED_REVIEW_LABELS,
+    EMAIL_FIELDS,
     EXTRACT_FIELDS,
     INDUSTRY,
     JOB_FIELD,
@@ -81,6 +83,7 @@ from app.classify.schema import (
     JUDGE_FIELDS,
     NUMBER_FIELDS,
     POSTING_TITLE,
+    REGION,
     VALUE_LABELS,
     Classification,
     ClassifySchemaError,
@@ -535,7 +538,14 @@ def posting_only_names(
     2건). 뭉뚱그린 말보다 칸 이름을 적는 편이 덜 어긴다. 직무 분류와 산업은 그 표가 켜져 있을
     때만 응답에 있어서 그때만 적는다 (`build_classification_model`)
     """
-    names: list[str] = [POSTING_TITLE, "position_name", *JUDGE_FIELDS, *NUMBER_FIELDS]
+    names: list[str] = [
+        POSTING_TITLE,
+        "position_name",
+        *JUDGE_FIELDS,
+        *NUMBER_FIELDS,
+        REGION,
+        *EMAIL_FIELDS,
+    ]
     if taxonomy_tree:
         names.append(JOB_FIELD)
         if any(minors for _, minors in taxonomy_tree):
@@ -564,6 +574,8 @@ def _classification_prompt(
         name: " / ".join(f"{value}({VALUE_LABELS[name][value]})" for value in values)
         for name, values in JUDGE_CHOICES.items()
     }
+    # 근무지는 여러 개를 고른다. 이름이 곧 화면 이름이라 괄호를 붙이지 않는다 (`app/regions.py`)
+    choices[REGION] = f"{' / '.join(regions.names())} (여러 개 고를 수 있다)"
     return _PROMPT.format(
         posting_only=", ".join(posting_only_names(taxonomy_tree, industries)),
         body=body,

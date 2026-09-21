@@ -93,6 +93,9 @@ NORMALIZED_FIELDS: tuple[str, ...] = (
     "industry",
     # 0035 가 더한 대표 이미지. 규칙이 아니라 정규화가 회사 로고·og:image 로 정한다
     "cover_image_url",
+    # 0043 이 더한 지원 접수·채용 문의 이메일. 분류가 원문에서 옮긴다
+    "application_email",
+    "inquiry_email",
 )
 
 # 규칙도 보정도 걸리지 않고 정규화가 다른 칸에서 정하는 칸. `normalized_jobs` 에만 있다 — 모집

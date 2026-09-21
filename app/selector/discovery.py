@@ -31,7 +31,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, replace
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
@@ -48,6 +48,7 @@ from app.crawler.parser import (
     select_nodes,
 )
 from app.crawler.playwright import PLAYWRIGHT, STATIC, ObservedRequest, ProbeSession
+from app.llm.base import Usage
 from app.selector.detail_path import (
     DetailPath,
     IdSource,
@@ -63,11 +64,26 @@ from app.selector.link_probe import (
     confirm_link_template,
     propose_link_template,
 )
-from app.selector.list_api import ListPath, confirm_list_path, propose_list_config
+from app.selector.list_api import (
+    ListPath,
+    confirm_list_path,
+    propose_list_config,
+    restore_truncated,
+)
+from app.selector.path_proposal import (
+    PathAnswer,
+    PathAsker,
+    PathEvidence,
+    Proposal,
+    propose_path,
+)
 from app.selector.schema import SelectorSet
 
 # 브라우저를 여는 쪽. 필요할 때만 불린다 (`Renderer.open_probe`)
 ProbeOpener = Callable[[str], AbstractAsyncContextManager[ProbeSession]]
+
+# AI 제안을 대조할 때 쓰는, 항목이 들고 있던 공고 주소의 수
+MAX_KNOWN_LINKS = 5
 
 
 @dataclass(frozen=True)
@@ -91,6 +107,8 @@ class Discovery:
     reason: str = ""
     failure: str = ""
     list_count: int = 0
+    # 판정이 막혀 AI 에게 경로를 물었으면 그 호출의 비용. 기록은 연결을 가진 등록 라우트가 한다
+    ai_usage: Usage | None = None
 
     @property
     def ok(self) -> bool:
@@ -109,11 +127,15 @@ async def discover_detail_path(
     fetcher: FetchPolicy,
     open_probe: ProbeOpener | None = None,
     sleep: Callable[[float], Awaitable[None]] | None = None,
+    ask: PathAsker | None = None,
 ) -> Discovery:
     """목록 URL 하나로 상세로 가는 길을 찾는다. 찾은 것은 제안으로 돌려준다.
 
     `sleep` 은 클릭 뒤 기다리는 자리다. 시험이 실제로 3초를 기다리지 않게 바꿔 끼운다
     (`app/crawler/fetcher.py` 의 `clock`·`sleep` 과 같은 자리).
+
+    `ask` 가 있으면 규칙으로 막힌 자리에서 AI 에게 목록 경로를 묻는다. 답은 확인을 통과해야만
+    쓴다 (`app/selector/path_proposal.py`). 없으면 묻지 않는다.
     """
     static_html, static_items, static_note = await _items_from_static(fetcher, list_url, selectors)
     static_count = len(static_items)
@@ -148,13 +170,17 @@ async def discover_detail_path(
     async with open_probe(list_url) as session:
         probed = await _probe(session, selectors=selectors, sleep=sleep)
 
-    return await _judge(
+    spent: list[Usage] = []
+    found = await _judge(
         probed,
         fetcher=fetcher,
         selectors=selectors,
         static_count=static_count,
         static_html=static_html,
+        ask=_counting(ask, spent) if ask is not None else None,
+        list_url=list_url,
     )
+    return replace(found, ai_usage=spent[0]) if spent else found
 
 
 @dataclass(frozen=True)
@@ -206,6 +232,8 @@ async def _judge(
     selectors: SelectorSet,
     static_count: int,
     static_html: str = "",
+    ask: PathAsker | None = None,
+    list_url: str = "",
 ) -> Discovery:
     """모아 온 것으로 판정한다. 알아낸 경로를 `httpx` 로 다시 불러 확인하는 것도 여기서다."""
     prefix = f"정적 목록에 항목 {static_count}건"
@@ -223,7 +251,34 @@ async def _judge(
 
     # 목록이 JSON 으로 오는 사이트인지 먼저 본다. 목록을 그린 요청은 클릭 전에 이미 나갔고,
     # 여기서 채택되면 이 크롤러는 실행마다 브라우저를 띄우지 않는다
-    list_path, list_note = await _adopt_list_api(fetcher, probed, rendered)
+    requests = await restore_truncated(fetcher, probed.requests)
+    list_path, list_note = await _adopt_list_api(fetcher, probed, rendered, requests)
+    known = _known_links(probed, rendered, selectors)
+
+    async def consult() -> Proposal | None:
+        # 대조할 공고 주소가 없거나 관찰한 JSON 응답이 없으면 묻지 않는다. AI 가 설정을 만들
+        # 근거도, 그 설정을 확인할 기준도 없는 호출이다
+        if ask is None or not known or not any(r.is_json for r in requests if r.status == 200):
+            return None
+        evidence = PathEvidence(
+            list_url=list_url or probed.url,
+            items=rendered,
+            known_links=known,
+            requests=requests,
+            robots=await _robots_text(fetcher, list_url or probed.url),
+        )
+        return await propose_path(ask, fetcher, evidence)
+
+    if list_path is not None and "date" in list_path.missing:
+        # 목록 API 는 채택했는데 마감일 칸을 못 읽었다(HD현대). 그대로 두면 끝난 공고까지 매 실행
+        # 상세를 연다. AI 제안이 마감일 칸까지 확인을 통과할 때만 바꾼다
+        proposal = await consult()
+        if proposal is not None:
+            if proposal.path is not None and "date" in proposal.path.config().fields:
+                list_path = proposal.path
+            list_note = f"{list_note}. {proposal.note}"
+    if list_path is not None:
+        list_note = f"{list_note}{_list_gap(list_path, list_path.count)}"
     list_mode = API if list_path is not None else PLAYWRIGHT
 
     if not _needs_more(rendered, selectors):
@@ -322,12 +377,51 @@ async def _judge(
             if confirmation.adopted
             else f"그 주소는 정적으로 열리지 않았다 — {confirmation.reason}"
         )
+        evidence = f"{clicked} — 상세 문서 주소를 알아냈다. {tail}. {link_note}. {list_note}"
+        if list_path is None:
+            # 규칙으로는 막혔다. 모은 증거로 AI 에게 목록 경로를 묻는다(동원). 확인을 통과한
+            # 제안만 쓴다 — 실제로 누른 공고의 주소가 제안한 형식으로 똑같이 나와야 한다
+            proposal = await consult()
+            if proposal is not None and proposal.path is not None:
+                return Discovery(
+                    list_mode=API,
+                    detail_mode=detail_mode,
+                    detail=document_path(outcome.url, tail),
+                    list=proposal.path,
+                    evidence=(
+                        f"{evidence}. {proposal.note}"
+                        f"{_list_gap(proposal.path, proposal.path.count)}"
+                    ),
+                    list_count=count,
+                )
+            if proposal is not None:
+                evidence = f"{evidence}. {proposal.note}"
+            # 공고 한 건의 상세는 열었지만 나머지 공고로 갈 길이 없다. 항목에 링크도, 주소를
+            # 만들 속성도 없고 목록 API 도 채택되지 않았다. 여기서 `ok` 를 주면 링크 없는
+            # 셀렉터가 저장되고 실행마다 전 건이 `detail_unreachable` 로 끝난다 — HD현대와
+            # 동원이 그렇게 등록만 성공했다 (2026-09-21).
+            #
+            # 연 페이지는 싣는다. 운영자가 경로를 손으로 채울 때 상세 셀렉터는 이미 있어야
+            # 하고, 그 페이지는 방금 열어 확인한 것이다 (`app/api/crawlers.py`)
+            return Discovery(
+                list_mode=list_mode,
+                detail_mode=detail_mode,
+                detail=document_path(outcome.url, tail),
+                evidence=evidence,
+                failure=DETAIL_UNREACHABLE,
+                reason=(
+                    f"공고 한 건을 눌러 상세 {outcome.url} 는 열었지만, 공고마다 다른 상세 주소를 "
+                    "만들 재료가 없다. 항목에 링크·`data-` 속성·`onclick` 인자가 없고 목록 API 도 "
+                    "채택되지 않았다"
+                ),
+                list_count=count,
+            )
         return Discovery(
             list_mode=list_mode,
             detail_mode=detail_mode,
             detail=document_path(outcome.url, tail),
             list=list_path,
-            evidence=f"{clicked} — 상세 문서 주소를 알아냈다. {tail}. {link_note}. {list_note}",
+            evidence=evidence,
             list_count=count,
         )
 
@@ -393,7 +487,10 @@ async def _from_api_request(
 
 
 async def _adopt_list_api(
-    fetcher: FetchPolicy, probed: _Probed, items: list[ListItem]
+    fetcher: FetchPolicy,
+    probed: _Probed,
+    items: list[ListItem],
+    requests: list[ObservedRequest],
 ) -> tuple[ListPath | None, str]:
     """렌더 중 나간 요청에서 목록 API 를 찾고, 확인된 것만 돌려준다.
 
@@ -403,6 +500,11 @@ async def _adopt_list_api(
     `referer` 하나로 갈리는 API 가 있어 한 번은 그것을 넣고 다시 확인한다. 담는 헤더는
     사이트가 요구하는 기능성 헤더뿐이고, 이름은 공용 클라이언트가 정한다
     (`.claude/rules/crawling.md`).
+
+    제안 전에 잘린 응답을 한 번 다시 받는다. 목록을 본문까지 담아 주는 API 는 관찰 상한을
+    넘겨 JSON 으로 읽히지 않고, 그대로 두면 API 가 있는 사이트가 없는 것으로 판정된다
+    (`app/selector/list_api.py` 의 `restore_truncated`). 다시 받은 요청은 부르는 쪽이 넘긴다 —
+    AI 에게 보일 증거도 같은 요청이어야 한다.
     """
     outcome = probed.outcome
     clicked_url = (
@@ -410,9 +512,7 @@ async def _adopt_list_api(
         if outcome is not None and outcome.reached and outcome.url and outcome.url != probed.url
         else ""
     )
-    proposed = propose_list_config(
-        probed.requests, items, _links(probed.html, probed.url), clicked_url
-    )
+    proposed = propose_list_config(requests, items, _links(probed.html, probed.url), clicked_url)
     if not proposed.ok:
         return None, f"목록 API 는 찾지 못했다: {proposed.reason}"
 
@@ -430,6 +530,72 @@ async def _adopt_list_api(
     return path, (
         f"목록은 {path.url} 의 `{path.items_path}` 로 온다. httpx 로 다시 불러 "
         f"{confirmation.count}건 중 제목 {confirmation.matched}건이 같아 채택했다"
+    )
+
+
+def _known_links(
+    probed: _Probed, rendered: list[ListItem], selectors: SelectorSet
+) -> list[tuple[str, str]]:
+    """실제로 확인한 (제목, 공고 주소). AI 제안을 대조하는 기준이다.
+
+    항목이 주소를 들고 있으면 그것이고, 없으면 첫 항목을 눌러 도착한 주소다. 첫 항목은 누른 것과
+    같은 항목이다 (`_item_nodes`). 둘 다 없으면 대조할 것이 없어 묻지 않는다.
+    """
+    if not _needs_more(rendered, selectors):
+        return [(item.title, item.link) for item in rendered[:MAX_KNOWN_LINKS] if item.link]
+    outcome = probed.outcome
+    if (
+        outcome is not None
+        and outcome.reached
+        and outcome.url
+        and outcome.url != probed.url
+        and rendered[0].title.strip()
+    ):
+        return [(rendered[0].title, outcome.url)]
+    return []
+
+
+async def _robots_text(fetcher: FetchPolicy, list_url: str) -> str:
+    """AI 에게 보일 robots.txt. 못 받으면 빈 문자열이고, robots 가 아닌 응답도 버린다.
+
+    동원 캠페인 사이트는 robots.txt 를 404 HTML 로 돌려준다. 그것을 규칙으로 보이면 AI 가
+    없는 규칙을 읽는다.
+    """
+    parts = urlsplit(list_url)
+    try:
+        page = await fetcher.fetch(f"{parts.scheme}://{parts.netloc}/robots.txt")
+    except FetchError:
+        return ""
+    return page.text if "user-agent" in page.text.lower() else ""
+
+
+def _counting(ask: PathAsker, spent: list[Usage]) -> PathAsker:
+    """묻는 함수를 감싸 비용을 모은다. 기록은 연결을 가진 등록 라우트가 한다."""
+
+    async def counted(prompt: str) -> tuple[PathAnswer, Usage | None]:
+        answer, usage = await ask(prompt)
+        if usage is not None:
+            spent.append(usage)
+        return answer, usage
+
+    return counted
+
+
+def _list_gap(path: ListPath, count: int) -> str:
+    """채택한 목록 설정에서 못 읽은 칸. 운영자가 채워야 하는 자리라 근거에 함께 적는다.
+
+    `date` 가 비면 마감 여부를 모르는 채로 돌기 때문에, 지난 공고까지 매 실행 상세를 연다.
+    HD현대 목록 API 는 끝난 공고를 포함해 556건을 주고 그중 진행 중인 것은 21건이다 —
+    적어 두지 않으면 이 차이가 실행 시간으로만 나타나고 이유는 어디에도 남지 않는다.
+    """
+    if not path.missing:
+        return ""
+    gap = f". 다만 목록에서 {', '.join(path.missing)} 은 읽지 못했다"
+    if "date" not in path.missing:
+        return gap
+    return (
+        f"{gap} — 마감일을 모르면 끝난 공고 {count}건의 상세까지 매 실행 연다. "
+        "설정에서 `list.fields.date` 와 `list.date_is_deadline` 을 적는다"
     )
 
 

@@ -28,11 +28,13 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         connection.close()
 
 
-def test_표가_비어있으면_기본_모델_그대로다(conn: sqlite3.Connection) -> None:
-    model = build_classification_model(conn)
+def test_표가_비어있으면_직무_분류를_묻지_않는다(conn: sqlite3.Connection) -> None:
+    posting = posting_model_of(build_classification_model(conn))
 
-    assert model is Classification
-    assert "job_field" not in posting_model_of(model).model_fields
+    assert "job_field" not in posting.model_fields
+    assert "job_role" not in posting.model_fields
+    # 근무지는 표와 상관없이 큰 지역 목록에서 고른다
+    assert "region" in posting.model_fields
 
 
 def test_대분류_소분류가_있으면_그_이름이_enum이_된다(conn: sqlite3.Connection) -> None:

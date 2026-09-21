@@ -67,7 +67,7 @@ from typing import Any, Final, Literal, cast, get_args
 
 from pydantic import BaseModel, Field, create_model
 
-from app import industries, taxonomy
+from app import industries, regions, taxonomy
 
 # 아래 모델은 Gemini 의 response_schema 로 그대로 나간다. `extra="forbid"` 를 걸면
 # `additionalProperties: false` 로 변환되는데 Gemini 가 그 필드를 모르고 400 을 낸다.
@@ -139,6 +139,17 @@ class Posting(BaseModel):
     experience_min_years: str = ""
     experience_min_years_evidence: str = ""
 
+    # 근무지. 큰 지역 목록(`app/regions.py`)에서 여러 개를 고른다 (2026-09-21 결정). 원문 글자를
+    # 옮기던 칸이었는데 같은 곳이 제각각 쌓였다. 목록은 응답 모델을 만들 때 enum 으로 건다
+    # (`build_classification_model`) — 여기서 `Literal` 로 적으면 씨앗 파일과 두 벌이 된다
+    region: list[str] = Field(default_factory=list)
+    region_evidence: str = ""
+
+    # 0043. 공고에 적힌 이메일 주소를 그대로 옮긴다. 원문에 그 주소가 있을 때만 남는다 — 주소 자체가
+    # 근거라 근거 문장을 따로 받지 않는다 (`app/classify/grounding.py`). 오공고가 받는 칸이다
+    application_email: str = ""
+    inquiry_email: str = ""
+
     # 0028. 지원 자격이 요구하는 최소 학력. 우대사항에만 있는 학력은 고르지 않는다
     education_level: Literal["ANY", "HIGH_SCHOOL", "ASSOCIATE", "BACHELOR", "MASTER", "DOCTORATE"]
     education_level_evidence: str = ""
@@ -158,7 +169,6 @@ class Posting(BaseModel):
     # 뽑는 칸. 모델은 글자를 쓰지 않고 몇 번 줄의 어느 부분인지를 조각으로 답한다. 저장은
     # 원문에서 잘라 온 글자다 (`app/classify/pieces.py`). `position_name` 만 0 번 줄(제목)에서 온다
     position_name: list[LinePiece] = Field(default_factory=list)
-    region: list[LinePiece] = Field(default_factory=list)
     responsibilities: list[LinePiece] = Field(default_factory=list)
     preferred_qualifications: list[LinePiece] = Field(default_factory=list)
     hiring_process: list[LinePiece] = Field(default_factory=list)
@@ -179,7 +189,6 @@ class CommonFields(BaseModel):
     갈릴 수 있고, 공고마다 되풀이해도 한 단어라 응답이 길어지지 않는다.
     """
 
-    region: list[LinePiece] = Field(default_factory=list)
     responsibilities: list[LinePiece] = Field(default_factory=list)
     preferred_qualifications: list[LinePiece] = Field(default_factory=list)
     hiring_process: list[LinePiece] = Field(default_factory=list)
@@ -254,6 +263,12 @@ JUDGE_FIELDS: tuple[str, ...] = (
 # 원문에 근거가 있을 때만 숫자를 적는 칸. 판정 칸처럼 근거 문장이 따라오지만 목록이 없다
 NUMBER_FIELDS: tuple[str, ...] = ("experience_min_years",)
 
+# 근무지. 목록에서 여러 개를 고르는 칸이라 판정 칸(하나를 고른다)과 따로 둔다 (`app/regions.py`)
+REGION: Final = "region"
+
+# 0043. 지원 접수·채용 문의 이메일. 원문의 주소를 그대로 옮기고, 원문에 있을 때만 남는다
+EMAIL_FIELDS: tuple[str, ...] = ("application_email", "inquiry_email")
+
 # 칸마다 저장하는 이름과 화면 이름. 모델이 고르는 칸과 정규화가 정하는 칸이 함께 있다
 VALUE_LABELS: Final[dict[str, dict[str, str]]] = {
     "employment_type": EMPLOYMENT_TYPES,
@@ -298,13 +313,12 @@ def suggestion_reason_field(name: str) -> str:
 
 # 판정 칸과 숫자 칸마다 따라오는 근거 문장. 컬럼이 아니라 검증과 보고를 위한 값이다
 EVIDENCE_FIELDS: tuple[str, ...] = tuple(
-    f"{name}_evidence" for name in (*JUDGE_FIELDS, *NUMBER_FIELDS)
+    f"{name}_evidence" for name in (*JUDGE_FIELDS, *NUMBER_FIELDS, REGION)
 )
 
 # 원문에 있는 글자를 그대로 가져오는 칸. `position_name` 은 제목에서, 나머지는 본문에서 온다
 EXTRACT_FIELDS: tuple[str, ...] = (
     "position_name",
-    "region",
     "responsibilities",
     "preferred_qualifications",
     "hiring_process",
@@ -324,7 +338,13 @@ EXTRACT_FIELDS: tuple[str, ...] = (
 FALLBACK_FIELDS: tuple[str, ...] = ("company_name", "recruitment_start_at", "recruitment_end_at")
 
 # 분류가 채우는 칸. `normalized_jobs` 의 같은 이름 컬럼으로 간다
-CLASSIFY_FIELDS: tuple[str, ...] = (*JUDGE_FIELDS, *NUMBER_FIELDS, *EXTRACT_FIELDS)
+CLASSIFY_FIELDS: tuple[str, ...] = (
+    *JUDGE_FIELDS,
+    *NUMBER_FIELDS,
+    REGION,
+    *EMAIL_FIELDS,
+    *EXTRACT_FIELDS,
+)
 
 # 응답 맨 위에 올 수 있는 이름 전부
 RESPONSE_FIELDS: tuple[str, ...] = tuple(Classification.model_fields)
@@ -394,16 +414,19 @@ def build_classification_model(conn: sqlite3.Connection) -> type[Classification]
 
     켜진 산업이 있으면 `industry` 도 같은 방법으로 더한다 (`migrations/0034_industries.sql`).
 
-    **켜진 대분류도 켜진 산업도 없으면(표가 비었거나 전부 껐으면) `Classification` 을 그대로
-    돌려준다.** 고를 것이 없는 판정 칸을 모델에 보내면 그 자리를 채우라고 강요하는 것과
-    같다. 대분류는 있는데 켜진 소분류가 하나도 없으면 `job_role` 없이 `job_field` 만 더한다.
+    **켜진 대분류도 켜진 산업도 없으면(표가 비었거나 전부 껐으면) 직무 분류와 산업 칸은 더하지
+    않는다.** 고를 것이 없는 판정 칸을 모델에 보내면 그 자리를 채우라고 강요하는 것과 같다.
+    대분류는 있는데 켜진 소분류가 하나도 없으면 `job_role` 없이 `job_field` 만 더한다.
+
+    근무지(`region`)는 표와 상관없이 늘 큰 지역 목록을 enum 으로 건다 (`app/regions.py`).
     """
     majors = taxonomy.list_majors(conn, enabled_only=True)
     industry_names = industries.enabled_names(conn)
-    if not majors and not industry_names:
-        return Classification
 
-    fields: dict[str, Any] = {}
+    # 근무지는 표와 상관없이 늘 목록에서 고른다. 목록이 코드 밖(씨앗 파일)에 있어 여기서 건다
+    region_names = regions.names()
+    region_type: Any = list[Literal[region_names]]  # type: ignore[valid-type]
+    fields: dict[str, Any] = {REGION: (region_type, Field(default_factory=list))}
     if majors:
         major_names = tuple(major.name for major in majors)
         minor_names = tuple(
@@ -599,6 +622,11 @@ def _text(name: str, raw: Any) -> str:
         return "true" if raw else "false"
     if isinstance(raw, int):
         return str(raw)
+    if isinstance(raw, list):
+        # 여러 개를 고르는 칸(근무지)이다. 예전처럼 조각(`{"line", "text"}`)으로 와도 그 글자를
+        # 쓴다. 목록 밖 값은 근거 검사가 거른다 (`app/classify/grounding.py`)
+        items = [item.get("text", "") if isinstance(item, Mapping) else item for item in raw]
+        return regions.SEPARATOR.join(_text(name, item) for item in items if item not in (None, ""))
     if not isinstance(raw, str):
         raise ClassifySchemaError(
             "unparsable", f"`{name}` 이 문자열이 아니다: {type(raw).__name__}"

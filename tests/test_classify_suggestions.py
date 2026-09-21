@@ -194,7 +194,7 @@ def test_only_the_three_review_fields_are_offered() -> None:
 
 async def test_a_bare_not_in_source_reason_is_reused_for_extract_fields() -> None:
     """제안과 무관한 회귀 확인 — 채우는 칸의 근거 검사 문구는 그대로다."""
-    result, _ = await classify(response(region="원문에 없는 근무지"))
+    result, _ = await classify(response(benefits="원문에 없는 복지"))
 
-    assert result.postings[0].dropped == ["region"]
-    assert result.postings[0].reasons["region"] == NOT_IN_SOURCE
+    assert result.postings[0].dropped == ["benefits"]
+    assert result.postings[0].reasons["benefits"] == NOT_IN_SOURCE
