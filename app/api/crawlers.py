@@ -649,7 +649,10 @@ async def create_crawler(
         discovery.list_mode if (discovery.ok or discovery.list_adopted) else generated_mode
     )
     list_mode = PLAYWRIGHT if requested == PLAYWRIGHT else discovered_list
-    detail_mode = (discovery.detail_mode or discovered_list) if discovery.ok else generated_mode
+    # 상세를 실제로 열어 봤으면 그때 알아낸 방식이 맞다. 판정이 실패했어도 공고 한 건은 연
+    # 경우가 있다 — 나머지 공고로 갈 길만 없었다 (`app/selector/discovery.py`)
+    opened_detail = discovery.ok or discovery.detail is not None
+    detail_mode = (discovery.detail_mode or discovered_list) if opened_detail else generated_mode
     api_config_json = _discovered_api_config(discovery)
 
     # 상세 URL 없이 등록했는데 판정이 상세 문서 주소를 알아냈으면, 그 페이지를 보고 상세
@@ -758,8 +761,12 @@ def _discovered_detail_url(discovery: Discovery) -> str:
     """판정이 알아낸 상세 문서 주소. 없으면 빈 문자열이다.
 
     API 로 가져오는 상세는 사람이 볼 페이지가 아니라 셀렉터를 만들 대상이 아니다.
+
+    판정이 실패해도 상세 문서를 실제로 열었으면 그 주소를 쓴다. 공고 한 건은 열었는데 나머지로
+    갈 길이 없는 경우다 (`app/selector/discovery.py`). 운영자가 목록 경로를 손으로 채우면 바로
+    돌 수 있게, 상세 셀렉터는 그 페이지로 미리 만들어 둔다.
     """
-    if not discovery.ok or discovery.detail is None or discovery.detail.kind != DOCUMENT:
+    if discovery.detail is None or discovery.detail.kind != DOCUMENT:
         return ""
     return discovery.detail.url
 

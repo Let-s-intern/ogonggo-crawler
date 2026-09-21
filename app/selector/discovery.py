@@ -327,12 +327,34 @@ async def _judge(
             if confirmation.adopted
             else f"그 주소는 정적으로 열리지 않았다 — {confirmation.reason}"
         )
+        evidence = f"{clicked} — 상세 문서 주소를 알아냈다. {tail}. {link_note}. {list_note}"
+        if list_path is None:
+            # 공고 한 건의 상세는 열었지만 나머지 공고로 갈 길이 없다. 항목에 링크도, 주소를
+            # 만들 속성도 없고 목록 API 도 채택되지 않았다. 여기서 `ok` 를 주면 링크 없는
+            # 셀렉터가 저장되고 실행마다 전 건이 `detail_unreachable` 로 끝난다 — HD현대와
+            # 동원이 그렇게 등록만 성공했다 (2026-09-21).
+            #
+            # 연 페이지는 싣는다. 운영자가 경로를 손으로 채울 때 상세 셀렉터는 이미 있어야
+            # 하고, 그 페이지는 방금 열어 확인한 것이다 (`app/api/crawlers.py`)
+            return Discovery(
+                list_mode=list_mode,
+                detail_mode=detail_mode,
+                detail=document_path(outcome.url, tail),
+                evidence=evidence,
+                failure=DETAIL_UNREACHABLE,
+                reason=(
+                    f"공고 한 건을 눌러 상세 {outcome.url} 는 열었지만, 공고마다 다른 상세 주소를 "
+                    "만들 재료가 없다. 항목에 링크·`data-` 속성·`onclick` 인자가 없고 목록 API 도 "
+                    "채택되지 않았다"
+                ),
+                list_count=count,
+            )
         return Discovery(
             list_mode=list_mode,
             detail_mode=detail_mode,
             detail=document_path(outcome.url, tail),
             list=list_path,
-            evidence=f"{clicked} — 상세 문서 주소를 알아냈다. {tail}. {link_note}. {list_note}",
+            evidence=evidence,
             list_count=count,
         )
 

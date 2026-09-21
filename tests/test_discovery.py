@@ -16,6 +16,7 @@ import httpx
 import pytest
 
 from app.config import Settings
+from app.crawler.click_probe import DETAIL_UNREACHABLE
 from app.crawler.collect import API
 from app.crawler.failures import LIST_EMPTY
 from app.crawler.fetcher import Fetcher
@@ -926,3 +927,133 @@ async def test_목록에서_마감일을_못_읽으면_근거에_적는다() -> 
     assert discovery.list is not None
     assert "date" in discovery.list.missing
     assert "date_is_deadline" in discovery.evidence
+
+
+# 항목이 링크도 `data-` 속성도 `onclick` 도 없는 `li`. 누르면 새 탭으로 상세가 열린다.
+# 동원 실측(2026-09-21): 목록 API 가 있었지만 robots 가 `page=` 를 막아 채택되지 않았다
+BARE_LIST = """
+<html><body><ul>
+  <li class="item"><p class="tit">전기 견적 경력직 모집</p></li>
+  <li class="item"><p class="tit">기계 견적 경력직 모집</p></li>
+</ul></body></html>
+"""
+BARE_DETAIL_URL = "https://example.test/job_posting/rCL5Co3V"
+BARE_DETAIL = (
+    "<html><body><h1>전기 견적 경력직 모집</h1><div class='body'>자격요건</div></body></html>"
+)
+
+
+def bare_session(log: RequestLog | None = None) -> ProbeSession:
+    element = StubElement()
+    session = session_for(BARE_LIST, [element], log)
+    element.action = lambda: setattr(session.page, "url", BARE_DETAIL_URL)
+    return session
+
+
+@pytest.mark.asyncio
+async def test_공고_한_건만_열고_나머지로_갈_길이_없으면_실패로_끝낸다() -> None:
+    """`ok` 를 주면 링크 없는 셀렉터가 저장되고 실행마다 전 건이 실패한다 (HD현대·동원)."""
+    opened: list[str] = []
+    client = fetcher_for(handler_for({LIST_URL: SHELL, BARE_DETAIL_URL: BARE_DETAIL}))
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKLESS_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(bare_session(), opened),
+        )
+    finally:
+        await client.aclose()
+
+    assert discovery.ok is False
+    assert discovery.failure == DETAIL_UNREACHABLE
+    assert discovery.link is None
+    assert discovery.list_adopted is False
+    assert "공고마다 다른 상세 주소를 만들 재료가 없다" in discovery.reason
+    # 연 페이지는 남긴다. 운영자가 목록 경로를 손으로 채울 때 상세 셀렉터를 만들 대상이다
+    assert discovery.detail is not None
+    assert discovery.detail.url == BARE_DETAIL_URL
+    assert discovery.detail_mode == STATIC
+
+
+@pytest.mark.asyncio
+async def test_목록_API_가_공고마다_주소를_주면_같은_경우도_성공이다() -> None:
+    """HD현대. 항목에 주소가 없어도 목록 API 의 id 로 공고마다 주소가 나온다."""
+    opened: list[str] = []
+    body = json.dumps(
+        {
+            "data": [
+                {"sn": "rCL5Co3V", "name": "전기 견적 경력직 모집"},
+                {"sn": "RdAkTmTg", "name": "기계 견적 경력직 모집"},
+            ]
+        },
+        ensure_ascii=False,
+    )
+    emitter = StubEmitter()
+    log = RequestLog()
+    log.attach(emitter)
+    emitter.emit(LIST_API_URL, body)
+    await log.drain()
+
+    client = fetcher_for(
+        handler_for({LIST_URL: SHELL, LIST_API_URL: body, BARE_DETAIL_URL: BARE_DETAIL})
+    )
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKLESS_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(bare_session(log), opened),
+        )
+    finally:
+        await client.aclose()
+
+    assert discovery.ok is True
+    assert discovery.list_adopted is True
+    assert discovery.list is not None
+    assert discovery.list.config().link_template == "https://example.test/job_posting/{id}"
+
+
+@pytest.mark.asyncio
+async def test_robots_가_막은_목록_API_는_헤더_문제라고_하지_않는다() -> None:
+    """동원 robots 의 `/*?*page=`. 헤더를 붙여도 풀리지 않는다."""
+    opened: list[str] = []
+    paged_url = "https://example.test/api/job-list?page=1"
+    body = json.dumps(
+        {
+            "data": [
+                {"sn": "rCL5Co3V", "name": "전기 견적 경력직 모집"},
+                {"sn": "RdAkTmTg", "name": "기계 견적 경력직 모집"},
+            ]
+        },
+        ensure_ascii=False,
+    )
+    emitter = StubEmitter()
+    log = RequestLog()
+    log.attach(emitter)
+    emitter.emit(paged_url, body)
+    await log.drain()
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nDisallow: /*?*page=\n")
+        return handler_for({LIST_URL: SHELL, BARE_DETAIL_URL: BARE_DETAIL})(request)
+
+    client = fetcher_for(handle)
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKLESS_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(bare_session(log), opened),
+        )
+    finally:
+        await client.aclose()
+
+    assert discovery.failure == DETAIL_UNREACHABLE
+    assert "robots.txt 가 막은 경로다" in discovery.evidence
+    assert "헤더 문제가 아니다" in discovery.evidence
+    assert "헤더가 필요하다" not in discovery.evidence

@@ -47,7 +47,7 @@ from urllib.parse import parse_qsl, urlsplit
 from bs4.element import Tag
 
 from app.crawler.api_source import build_detail, fetch_detail
-from app.crawler.fetcher import FetchError, FetchPolicy
+from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError
 from app.crawler.parser import CrawlDataError
 from app.crawler.playwright import ObservedRequest
 from app.selector.api_schema import (
@@ -425,6 +425,15 @@ async def confirm_api_path(
 
     try:
         actual = await fetch_detail(client, config, item_id)
+    except RobotsDisallowedError as exc:
+        # 헤더나 쿠키로 풀 문제가 아니다. 사이트가 크롤러에게 막은 주소라 저장하면 매 실행이 막힌다
+        return Confirmation(
+            adopted=False,
+            reason=(
+                f"{exc}. 헤더 문제가 아니다 — 막히지 않은 다른 "
+                "주소로 같은 상세를 받을 수 있는지 봐야 한다"
+            ),
+        )
     except FetchError as exc:
         return Confirmation(
             adopted=False,

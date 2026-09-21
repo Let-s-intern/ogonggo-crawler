@@ -65,7 +65,7 @@ from typing import Any
 from urllib.parse import parse_qsl
 
 from app.crawler.api_source import fetch_list
-from app.crawler.fetcher import FetchError, FetchPolicy
+from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError
 from app.crawler.parser import CrawlDataError, ListItem
 from app.crawler.playwright import ObservedRequest
 from app.selector.api_schema import (
@@ -356,6 +356,15 @@ async def confirm_list_path(
     expected = [_squeeze(item.title) for item in items if item.title.strip()]
     try:
         result = await fetch_list(client, path.config())
+    except RobotsDisallowedError as exc:
+        # 헤더나 쿠키로 풀 문제가 아니다. 사이트가 크롤러에게 막은 주소라 저장하면 매 실행이 막힌다
+        return ListConfirmation(
+            adopted=False,
+            reason=(
+                f"{exc}. 헤더 문제가 아니다 — 막히지 않은 다른 "
+                "주소로 같은 목록을 받을 수 있는지 봐야 한다"
+            ),
+        )
     except FetchError as exc:
         return ListConfirmation(
             adopted=False,
