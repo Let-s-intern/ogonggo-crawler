@@ -214,12 +214,27 @@ class ListChoices:
 
 
 def list_choices(conn: sqlite3.Connection) -> ListChoices:
+    """켜진 직무 분류에 `기타` 를 더한다. 분류가 목록에서 못 고른 공고에 넣는 값이다.
+
+    더하지 않으면 그 공고는 고칠 수 없다. 편집은 폼에 없는 칸도 지금 값으로 검사하고, 드롭다운에
+    지금 값이 없으면 `비어 있음` 으로 제출돼 아무 칸이나 고치는 순간 `기타` 가 지워진다.
+    AI 가 고르는 목록에는 넣지 않는다 (`app/taxonomy.py` 의 `ETC`).
+    """
     tree = taxonomy.enabled_tree(conn)
+    roles = {major: _with_etc_role(minors) for major, minors in tree}
+    if tree and taxonomy.ETC not in roles:
+        roles[taxonomy.ETC] = (taxonomy.ETC,)
     return ListChoices(
-        job_fields=tuple(major for major, _ in tree),
-        job_roles=dict(tree),
+        job_fields=tuple(roles),
+        job_roles=roles,
         industries=industries.enabled_names(conn),
     )
+
+
+def _with_etc_role(minors: tuple[str, ...]) -> tuple[str, ...]:
+    """직무 목록에 그 직군의 `기타` 직무가 없으면 `기타` 를 더한다. 분류가 채우는 값과 같다."""
+    etc = taxonomy.etc_role(minors)
+    return minors if etc in minors else (*minors, etc)
 
 
 def display(field: Field, value: Any) -> str:

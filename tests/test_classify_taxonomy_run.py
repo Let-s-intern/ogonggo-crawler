@@ -129,8 +129,11 @@ async def test_근거가_원문에_없어도_고른_값은_남고_근거만_빠�
     assert result.postings[0].evidence == {}
 
 
-async def test_소분류를_비워_두면_대분류만_남는다(conn: sqlite3.Connection) -> None:
-    """스키마를 거치지 않은 응답이 소분류를 비워도 대분류는 버리지 않는다."""
+async def test_소분류를_비워_두면_그_직군의_기타가_된다(conn: sqlite3.Connection) -> None:
+    """스키마를 거치지 않은 응답이 소분류를 비워도 대분류는 버리지 않고, 직무는 `기타` 다.
+
+    이 표의 `IT·개발` 에는 `기타…` 직무가 없어 그냥 `기타` 다 (2026-09-21 결정).
+    """
     tree = taxonomy.enabled_tree(conn)
     model = build_classification_model(conn)
     text = response(
@@ -149,7 +152,8 @@ async def test_소분류를_비워_두면_대분류만_남는다(conn: sqlite3.C
     )
 
     assert result.postings[0].fields["job_field"] == "IT·개발"
-    assert result.postings[0].fields.get("job_role", "") == ""
+    assert result.postings[0].fields["job_role"] == "기타"
+    # 모델이 낸 값을 버린 것이 아니다. 빈 칸을 채웠을 뿐이다
     assert result.postings[0].dropped == []
 
 
@@ -179,8 +183,8 @@ async def test_소분류_근거만_없어도_둘_다_남는다(conn: sqlite3.Con
     assert set(result.postings[0].evidence) == {"job_field"}
 
 
-async def test_대분류가_목록_밖이면_소분류도_비운다(conn: sqlite3.Connection) -> None:
-    """대분류 없이 소분류만 있는 상태는 만들지 않는다."""
+async def test_대분류가_목록_밖이면_둘_다_기타다(conn: sqlite3.Connection) -> None:
+    """대분류 없이 소분류만 있는 상태는 만들지 않는다. 빈 칸 대신 `기타` 로 둔다."""
     tree = taxonomy.enabled_tree(conn)
     model = build_classification_model(conn)
     text = response(
@@ -198,8 +202,11 @@ async def test_대분류가_목록_밖이면_소분류도_비운다(conn: sqlite
         client=FakeClient(text),
     )
 
-    assert result.postings[0].fields.get("job_field", "") == ""
-    assert result.postings[0].fields.get("job_role", "") == ""
+    assert result.postings[0].fields["job_field"] == "기타"
+    assert result.postings[0].fields["job_role"] == "기타"
+    # 버린 기록은 남는다. 모델이 무엇을 냈고 왜 버렸는지 알 수 있어야 한다
+    assert "job_field" in result.postings[0].dropped
+    assert result.postings[0].reasons["job_field"] == "목록 밖이다 — 기타로 뒀다"
 
 
 async def test_표가_비어있으면_직무_분류를_묻지_않는다() -> None:

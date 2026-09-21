@@ -58,6 +58,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from app import taxonomy
 from app.classify.schema import (
     EXTRACT_FIELDS,
     INDUSTRY,
@@ -89,6 +90,8 @@ _NUMBER = re.compile(r"\d{1,2}")
 # 원문이거나, 원문이 없는 건에서 본문이다 (`app/classify/store.py`)
 NOT_IN_SOURCE = "제목에도 보낸 글에도 없다"
 NOT_IN_LIST = "목록 밖이다"
+# 직군·직무를 버린 뒤 `기타` 로 채웠을 때 사유 뒤에 붙인다
+ETC_FILLED = " — 기타로 뒀다"
 NO_EVIDENCE = "근거 문장이 제목에도 보낸 글에도 없다"
 NOT_A_NUMBER = "숫자가 아니다"
 
@@ -332,5 +335,44 @@ def ground(
             if JOB_ROLE not in dropped:
                 dropped.append(JOB_ROLE)
             reasons[JOB_ROLE] = NOT_IN_LIST
+        _fill_etc(kept, taxonomy_choices, reasons)
 
     return Grounded(fields=kept, evidence=evidence, dropped=dropped, reasons=reasons)
+
+
+def _fill_etc(
+    kept: dict[str, str], choices: Mapping[str, tuple[str, ...]], reasons: dict[str, str]
+) -> None:
+    """목록에서 고르지 못해 빈 직군·직무를 `기타` 로 채운다 (2026-09-21 결정).
+
+    빈 칸으로 보내면 오공고에서 그 공고가 어느 직군으로도 걸러지지 않는다. 버린 기록은 그대로
+    남는다 — 모델이 무엇을 냈고 왜 버렸는지는 `dropped_fields` 로 알 수 있어야 한다.
+
+    | 무엇이 비었나 | 채우는 값 |
+    |---|---|
+    | 직군 | 직군 `기타`, 직무 `기타` |
+    | 직무만 (목록 밖이거나 다른 직군의 직무) | 그 직군의 `기타` 직무 (`기타IT·개발` 등) |
+
+    직군을 묻지 않은 호출(표가 비었다)은 건드리지 않는다. 직무 목록이 없는 표면 직무도 건드리지
+    않는다 — 고를 목록이 없던 칸이다.
+    """
+    if JOB_FIELD not in choices:
+        return
+    asks_role = JOB_ROLE in choices
+    if not kept.get(JOB_FIELD):
+        kept[JOB_FIELD] = taxonomy.ETC
+        if asks_role:
+            kept[JOB_ROLE] = taxonomy.ETC
+        _mark_etc(reasons, (JOB_FIELD, JOB_ROLE))
+        return
+    if asks_role and not kept.get(JOB_ROLE):
+        under = choices.get(f"{JOB_ROLE}:{kept[JOB_FIELD]}", ())
+        kept[JOB_ROLE] = taxonomy.etc_role(under)
+        _mark_etc(reasons, (JOB_ROLE,))
+
+
+def _mark_etc(reasons: dict[str, str], names: tuple[str, ...]) -> None:
+    """버린 칸의 사유 뒤에 기타로 채웠다고 적는다. 버리지 않고 빈 칸이었으면 적을 것이 없다."""
+    for name in names:
+        if name in reasons and not reasons[name].endswith(ETC_FILLED):
+            reasons[name] = f"{reasons[name]}{ETC_FILLED}"
