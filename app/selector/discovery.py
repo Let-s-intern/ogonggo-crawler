@@ -63,7 +63,12 @@ from app.selector.link_probe import (
     confirm_link_template,
     propose_link_template,
 )
-from app.selector.list_api import ListPath, confirm_list_path, propose_list_config
+from app.selector.list_api import (
+    ListPath,
+    confirm_list_path,
+    propose_list_config,
+    restore_truncated,
+)
 from app.selector.schema import SelectorSet
 
 # 브라우저를 여는 쪽. 필요할 때만 불린다 (`Renderer.open_probe`)
@@ -403,6 +408,10 @@ async def _adopt_list_api(
     `referer` 하나로 갈리는 API 가 있어 한 번은 그것을 넣고 다시 확인한다. 담는 헤더는
     사이트가 요구하는 기능성 헤더뿐이고, 이름은 공용 클라이언트가 정한다
     (`.claude/rules/crawling.md`).
+
+    제안 전에 잘린 응답을 한 번 다시 받는다. 목록을 본문까지 담아 주는 API 는 관찰 상한을
+    넘겨 JSON 으로 읽히지 않고, 그대로 두면 API 가 있는 사이트가 없는 것으로 판정된다
+    (`app/selector/list_api.py` 의 `restore_truncated`).
     """
     outcome = probed.outcome
     clicked_url = (
@@ -410,9 +419,8 @@ async def _adopt_list_api(
         if outcome is not None and outcome.reached and outcome.url and outcome.url != probed.url
         else ""
     )
-    proposed = propose_list_config(
-        probed.requests, items, _links(probed.html, probed.url), clicked_url
-    )
+    requests = await restore_truncated(fetcher, probed.requests)
+    proposed = propose_list_config(requests, items, _links(probed.html, probed.url), clicked_url)
     if not proposed.ok:
         return None, f"목록 API 는 찾지 못했다: {proposed.reason}"
 
@@ -430,6 +438,25 @@ async def _adopt_list_api(
     return path, (
         f"목록은 {path.url} 의 `{path.items_path}` 로 온다. httpx 로 다시 불러 "
         f"{confirmation.count}건 중 제목 {confirmation.matched}건이 같아 채택했다"
+        f"{_list_gap(path, confirmation.count)}"
+    )
+
+
+def _list_gap(path: ListPath, count: int) -> str:
+    """채택한 목록 설정에서 못 읽은 칸. 운영자가 채워야 하는 자리라 근거에 함께 적는다.
+
+    `date` 가 비면 마감 여부를 모르는 채로 돌기 때문에, 지난 공고까지 매 실행 상세를 연다.
+    HD현대 목록 API 는 끝난 공고를 포함해 556건을 주고 그중 진행 중인 것은 21건이다 —
+    적어 두지 않으면 이 차이가 실행 시간으로만 나타나고 이유는 어디에도 남지 않는다.
+    """
+    if not path.missing:
+        return ""
+    gap = f". 다만 목록에서 {', '.join(path.missing)} 은 읽지 못했다"
+    if "date" not in path.missing:
+        return gap
+    return (
+        f"{gap} — 마감일을 모르면 끝난 공고 {count}건의 상세까지 매 실행 연다. "
+        "설정에서 `list.fields.date` 와 `list.date_is_deadline` 을 적는다"
     )
 
 

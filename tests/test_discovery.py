@@ -153,11 +153,15 @@ class StubContext:
 class StubResponse:
     """브라우저가 받은 응답 하나. 본문은 관찰하는 쪽이 읽어 간다."""
 
-    def __init__(self, url: str, body: str) -> None:
+    def __init__(self, url: str, body: str, headers: dict[str, str] | None = None) -> None:
         self.url = url
         self.status = 200
         self.headers = {"content-type": "application/json"}
-        self.request = type("StubRequest", (), {"method": "GET", "post_data": None})()
+        self.request = type(
+            "StubRequest",
+            (),
+            {"method": "GET", "post_data": None, "headers": headers or {}},
+        )()
         self._body = body
 
     async def text(self) -> str:
@@ -174,9 +178,9 @@ class StubEmitter:
         if event == "response":
             self.handlers.append(handler)
 
-    def emit(self, url: str, body: str) -> None:
+    def emit(self, url: str, body: str, headers: dict[str, str] | None = None) -> None:
         for handler in self.handlers:
-            handler(StubResponse(url, body))
+            handler(StubResponse(url, body, headers))
 
 
 async def nosleep(seconds: float) -> None:
@@ -806,3 +810,119 @@ async def test_주소_형식을_알고_나면_목록을_정적으로_둔다() ->
     assert discovery.list_mode == STATIC
     assert discovery.detail_mode == STATIC
     assert "목록을 정적으로 둔다" in discovery.evidence
+
+
+# HD현대 실측(2026-09-21). 목록 API 는 `x-user-role` 이 없으면 500 이고, 끝난 공고까지 본문째로
+# 담아 1.4MB 라 관찰 상한에 잘린다. 둘 중 하나만 걸려도 "목록 API 가 없는 사이트" 로 판정됐다
+HD_API_BODY = json.dumps(
+    {
+        "data": [
+            {"recruitNoticeSn": "1002099", "recruitNoticeName": "보건관리자 채용"},
+            {"recruitNoticeSn": "1002100", "recruitNoticeName": "네트워크 엔지니어"},
+        ]
+    },
+    ensure_ascii=False,
+)
+
+
+def header_gated(pages: dict[str, str], api_url: str, seen: list[str]) -> Any:
+    """`x-user-role` 이 있어야 목록 API 가 답하는 서버. 나머지는 `handler_for` 와 같다."""
+    inner = handler_for(pages)
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == api_url:
+            role = request.headers.get("x-user-role", "")
+            seen.append(role)
+            if not role:
+                return httpx.Response(500, text='{"code":500,"message":"권한 없음"}')
+            return httpx.Response(
+                200, text=HD_API_BODY, headers={"content-type": "application/json"}
+            )
+        return inner(request)
+
+    return handle
+
+
+@pytest.mark.asyncio
+async def test_잘린_응답과_요구_헤더를_함께_넘기고_목록_API_를_채택한다() -> None:
+    opened: list[str] = []
+    seen: list[str] = []
+    emitter = StubEmitter()
+    # 관찰 상한을 넘겨 본문이 잘린 상태를 만든다. 실제로는 1.4MB 가 200,000자에 잘린다
+    log = RequestLog(body_limit=20)
+    log.attach(emitter)
+    emitter.emit(LIST_API_URL, HD_API_BODY, {"x-user-role": "FRONT", "cookie": "SESSION=abc"})
+    await log.drain()
+
+    assert log.requests[0].truncated is True
+
+    client = fetcher_for(
+        header_gated(
+            {
+                LIST_URL: SHELL,
+                "https://example.test/jobs/1002099": (
+                    "<html><body><h1>보건관리자 채용</h1></body></html>"
+                ),
+            },
+            LIST_API_URL,
+            seen,
+        )
+    )
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKED_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(session_for(RENDERED_WITH_LINKS, [StubElement()], log), opened),
+        )
+    finally:
+        await client.aclose()
+
+    assert discovery.list_mode == API
+    assert discovery.list_adopted is True
+    assert discovery.list is not None
+    config = discovery.list.config()
+    assert config.id_field == "recruitNoticeSn"
+    # 저장되는 것도 같은 헤더다. 쿠키는 그 브라우저 한 번의 신원이라 담지 않는다
+    assert config.headers == {"x-user-role": "FRONT"}
+    # 잘린 응답을 다시 받을 때 한 번, 확인할 때 한 번. 둘 다 헤더를 달고 나갔다
+    assert seen == ["FRONT", "FRONT"]
+
+
+@pytest.mark.asyncio
+async def test_목록에서_마감일을_못_읽으면_근거에_적는다() -> None:
+    """마감일을 모르면 끝난 공고의 상세까지 매 실행 연다. 실행 시간으로만 나타나면 못 찾는다."""
+    opened: list[str] = []
+    emitter = StubEmitter()
+    log = RequestLog()
+    log.attach(emitter)
+    emitter.emit(LIST_API_URL, LIST_API_BODY)
+    await log.drain()
+
+    client = fetcher_for(
+        handler_for(
+            {
+                LIST_URL: SHELL,
+                LIST_API_URL: LIST_API_BODY,
+                "https://example.test/jobs/1002099": (
+                    "<html><body><h1>보건관리자 채용</h1></body></html>"
+                ),
+            }
+        )
+    )
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKED_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(session_for(RENDERED_WITH_LINKS, [StubElement()], log), opened),
+        )
+    finally:
+        await client.aclose()
+
+    assert discovery.list_adopted is True
+    assert discovery.list is not None
+    assert "date" in discovery.list.missing
+    assert "date_is_deadline" in discovery.evidence

@@ -22,7 +22,11 @@ from app.config import Settings
 from app.crawler.fetcher import Fetcher
 from app.crawler.parser import ListItem, parse_list
 from app.crawler.playwright import ObservedRequest
-from app.selector.list_api import confirm_list_path, propose_list_config
+from app.selector.list_api import (
+    confirm_list_path,
+    propose_list_config,
+    restore_truncated,
+)
 from app.selector.schema import ListSelectors
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
@@ -394,3 +398,124 @@ async def test_referer_가_있어야_답하는_API_는_그것을_넣어_확인�
     assert seen == ["", KAKAO_LIST_URL]
     # User-Agent 는 설정에 담기지 않는다. 이름은 공용 fetch 클라이언트가 정한다
     assert "user-agent" not in {name.lower() for name in with_referer.config().headers}
+
+
+# HD현대 실측(2026-09-21): 목록 API 는 `x-user-role` 이 없으면 500 이고, 응답은 끝난 공고까지
+# 본문째로 담아 1.4MB 다. 관찰 상한(200,000자)을 넘겨 JSON 으로 읽히지 않는다
+HD_LIST_URL = "https://recruit.hd.com/kr/mainLayout/apply"
+HD_API_URL = "https://recruit.hd.com/api/v1/jobda/getRecruitNoticeList?isPost=true&LANG=KR"
+HD_ITEMS = [
+    ListItem(
+        index=0, title="[HD현대] 26년 하반기 신입사원 채용", link="", date="", detail_absent=True
+    ),
+    ListItem(
+        index=1, title="[HD현대] 26년 하반기 연구직 채용", link="", date="", detail_absent=True
+    ),
+]
+HD_PAYLOAD = {
+    "data": [
+        {"recruitNoticeSn": 264514, "recruitNoticeName": "[HD현대] 26년 하반기 신입사원 채용"},
+        {"recruitNoticeSn": 264865, "recruitNoticeName": "[HD현대] 26년 하반기 연구직 채용"},
+    ]
+}
+HD_BODY = json.dumps(HD_PAYLOAD, ensure_ascii=False)
+
+
+def hd_observed(*, body: str, truncated: bool) -> ObservedRequest:
+    return ObservedRequest(
+        method="GET",
+        url=HD_API_URL,
+        status=200,
+        content_type="application/json",
+        body=body,
+        truncated=truncated,
+        request_headers={"x-user-role": "FRONT"},
+    )
+
+
+def test_관찰한_기능성_헤더는_설정에_담긴다() -> None:
+    """헤더를 떼고 저장하면 등록만 성공하고 이후 실행이 전부 실패한다."""
+    path = propose_list_config(
+        [hd_observed(body=HD_BODY, truncated=False)],
+        HD_ITEMS,
+        [],
+        clicked_url="https://recruit.hd.com/kr/mainLayout/applyDetail/264514",
+    )
+
+    assert path.ok is True
+    assert path.config().headers == {"x-user-role": "FRONT"}
+    assert path.config().id_field == "recruitNoticeSn"
+    assert path.config().link_template == "https://recruit.hd.com/kr/mainLayout/applyDetail/{id}"
+
+
+@pytest.mark.asyncio
+async def test_잘린_JSON_응답은_다시_받아_채운다() -> None:
+    """상한에 잘린 응답은 `json.loads` 가 실패해 "목록 API 가 없다" 로 판정된다."""
+    truncated = hd_observed(body=HD_BODY[:40], truncated=True)
+    seen: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text=ROBOTS)
+        seen.append(request.headers.get("x-user-role", ""))
+        if not seen[-1]:
+            return httpx.Response(500, text='{"code":500}')
+        return httpx.Response(200, text=HD_BODY, headers={"content-type": "application/json"})
+
+    client = fetcher_for(handle)
+    try:
+        assert propose_list_config([truncated], HD_ITEMS, []).ok is False
+        restored = await restore_truncated(client, [truncated])
+    finally:
+        await client.aclose()
+
+    assert seen == ["FRONT"]
+    assert restored[0].truncated is False
+    assert restored[0].body == HD_BODY
+    # 채운 뒤에는 같은 응답이 목록으로 읽힌다
+    path = propose_list_config(
+        restored,
+        HD_ITEMS,
+        [],
+        clicked_url="https://recruit.hd.com/kr/mainLayout/applyDetail/264514",
+    )
+    assert path.ok is True
+
+
+@pytest.mark.asyncio
+async def test_다시_받지_못하면_잘린_채로_둔다() -> None:
+    """막는 자리를 앞당길 뿐이다. 판정 사유는 지금까지와 같다."""
+    truncated = hd_observed(body=HD_BODY[:40], truncated=True)
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text=ROBOTS)
+        return httpx.Response(403, text="forbidden")
+
+    client = fetcher_for(handle)
+    try:
+        restored = await restore_truncated(client, [truncated])
+    finally:
+        await client.aclose()
+
+    assert restored == [truncated]
+
+
+@pytest.mark.asyncio
+async def test_잘리지_않은_응답은_다시_부르지_않는다() -> None:
+    """등록 한 번이 사이트를 이유 없이 더 때리지 않게 한다."""
+    whole = hd_observed(body=HD_BODY, truncated=False)
+    calls: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(200, text=ROBOTS)
+
+    client = fetcher_for(handle)
+    try:
+        restored = await restore_truncated(client, [whole])
+    finally:
+        await client.aclose()
+
+    assert restored == [whole]
+    assert calls == []

@@ -18,6 +18,7 @@ from app.crawler.playwright import (
     ObservedRequest,
     Renderer,
     RequestLog,
+    functional_headers,
     is_data_request,
 )
 
@@ -68,6 +69,7 @@ class StubResponse:
             {
                 "method": str(entry.get("method", "GET")),
                 "post_data": entry.get("post_data"),
+                "headers": entry.get("request_headers", {}),
             },
         )()
         self.read_count = 0
@@ -286,3 +288,46 @@ def test_기본_본문_상한은_설정으로_남아_있다() -> None:
 )
 def test_기록_대상_판정(url: str, expected: bool) -> None:
     assert is_data_request(url) is expected
+
+
+@pytest.mark.asyncio
+async def test_사이트가_요구하는_헤더만_적는다() -> None:
+    """HD현대 목록 API 는 `x-user-role` 이 없으면 500 이다. 그 한 줄이 판정을 가른다."""
+    page = StubPage(
+        (
+            {
+                "url": "https://recruit.hd.com/api/v1/jobda/getRecruitNoticeList?isPost=true",
+                "type": "application/json",
+                "body": '{"data":[]}',
+                "request_headers": {
+                    "x-user-role": "FRONT",
+                    "accept": "application/json, text/plain, */*",
+                    "accept-language": "ko",
+                    "referer": "https://recruit.hd.com/kr/mainLayout/apply",
+                    "sec-fetch-mode": "cors",
+                    "user-agent": "Mozilla/5.0",
+                    "cookie": "JSESSIONID=abc",
+                },
+            },
+        ),
+        "<html></html>",
+    )
+    log = RequestLog()
+    log.attach(page)
+    await page.goto("https://recruit.hd.com/kr/mainLayout/apply")
+    await log.drain()
+
+    # 브라우저가 스스로 붙인 것은 전부 떨어진다. `cookie` 는 그 브라우저 한 번의 신원이고,
+    # 저장하면 등록한 날만 되는 크롤러가 남는다
+    assert dict(log.requests[0].request_headers) == {"x-user-role": "FRONT"}
+
+
+def test_헤더를_읽을_수_없으면_비운다() -> None:
+    """playwright 버전에 따라 속성이 없을 수 있다. 그때도 관찰은 계속된다."""
+    assert functional_headers(None) == {}
+    assert functional_headers("x-user-role: FRONT") == {}
+
+
+def test_긴_값은_기능성_헤더로_보지_않는다() -> None:
+    """토큰이 그 자리에 온다. 저장해도 다음 실행에는 이미 만료돼 있다."""
+    assert functional_headers({"x-token": "a" * 400}) == {}
