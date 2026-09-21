@@ -1,0 +1,12 @@
+{# 부트캠프 화면. 설정·지금 수집·지금 보내기·목록이 조각 하나(`fragments/bootcamp_panel.html`)로 돈다 #}
+{% extends "base.html" %}
+{% from "macros.html" import empty %}
+{% block title %}부트캠프{% endblock %}
+{% block heading %}부트캠프{% endblock %}
+{% block content %}
+<section>
+  <div id="bootcamp-panel" hx-get="/ui/bootcamps" hx-trigger="load" hx-swap="innerHTML">
+    {{ empty("부트캠프 목록을 불러오는 중") }}
+  </div>
+</section>
+{% endblock %}
