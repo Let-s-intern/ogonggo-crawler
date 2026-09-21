@@ -1040,7 +1040,8 @@ async def test_robots_가_막은_목록_API_는_헤더_문제라고_하지_않�
 
     def handle(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/robots.txt":
-            return httpx.Response(200, text="User-agent: *\nDisallow: /*?*page=\n")
+            # `/*?*page=` 는 파이썬 3.12 가 읽지 못한다. 경로 앞부분으로 같은 주소를 막는다
+            return httpx.Response(200, text="User-agent: *\nDisallow: /api/job-list?page=\n")
         return handler_for({LIST_URL: SHELL, BARE_DETAIL_URL: BARE_DETAIL})(request)
 
     client = fetcher_for(handle)
@@ -1128,7 +1129,8 @@ async def test_규칙으로_막히면_AI_제안을_확인해_채택한다() -> N
 
     def handle(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/robots.txt":
-            return httpx.Response(200, text="User-agent: *\nDisallow: /*?*page=\n")
+            # `/*?*page=` 는 파이썬 3.12 가 읽지 못한다. 경로 앞부분으로 같은 주소를 막는다
+            return httpx.Response(200, text="User-agent: *\nDisallow: /api/job-list?page=\n")
         return handler_for({LIST_URL: SHELL, BARE_DETAIL_URL: BARE_DETAIL, whole_url: body})(
             request
         )
@@ -1148,7 +1150,7 @@ async def test_규칙으로_막히면_AI_제안을_확인해_채택한다() -> N
 
     assert len(asked) == 1
     # robots 와 누른 공고 주소가 AI 에게 보인다. 그것이 판단의 근거다
-    assert "Disallow: /*?*page=" in asked[0]
+    assert "Disallow: /api/job-list?page=" in asked[0]
     assert BARE_DETAIL_URL in asked[0]
     assert discovery.ok is True
     assert discovery.list_mode == API

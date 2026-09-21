@@ -26,7 +26,9 @@ from app.selector.path_proposal import (
     propose_path,
 )
 
-ROBOTS = "User-agent: *\nDisallow: /*?*page=\n"
+# 동원 robots 는 `/*?*page=` 다. 파이썬 3.12 의 robots 해석기는 `*` 를 읽지 못해(3.14 부터 읽는다)
+# 운영·CI 와 같은 판정이 나오게 경로 앞부분으로 같은 주소를 막는다
+ROBOTS = "User-agent: *\nDisallow: /_backend/recruitments?companyId=c1&page=\n"
 TODAY = date(2026, 9, 21)
 LIST_URL = "https://careers.example.test/recruit"
 PAGED = "https://careers.example.test/_backend/recruitments?companyId=c1&page=1&countPerPage=10"
@@ -304,4 +306,4 @@ def test_프롬프트에는_응답_골격만_들어간다() -> None:
     assert "배열 `data` (300건)" in prompt
     # 확인한 주소의 항목은 첫 항목과 따로 보인다. id 를 짚을 근거다
     assert "확인한 공고 주소의 항목:" in prompt
-    assert "Disallow: /*?*page=" in prompt
+    assert "Disallow: /_backend/recruitments?companyId=c1&page=" in prompt
