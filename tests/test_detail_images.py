@@ -401,3 +401,23 @@ async def test_이미지뿐인_본문을_읽지_못하면_이미지_읽기를_�
     assert result.new_count == 0
     rows = conn.execute("SELECT message FROM crawl_run_failures").fetchall()
     assert any("본문이 이미지뿐인데 이미지를 읽지 못했다" in row["message"] for row in rows)
+
+
+async def test_열리지_않는_이미지와_svg_는_건너뛰고_나머지를_읽는다() -> None:
+    """한화 실측(2026-09-22): 본문 이미지 옆의 첨부 아이콘 하나 때문에 공고 이미지까지 버려졌다."""
+    broken = "https://example.test/broken.png"
+    icon = "https://example.test/ico_docx.svg"
+    fetcher = FakeFetcher({IMAGE_URL: png(100, 100), broken: b"not an image"})
+    reader = FakeReader()
+    detail = DetailParseResult(
+        fields={"title": "공고", "body": ""},
+        missing=[],
+        source_text="",
+        images=(broken, "/a.png", icon),
+    )
+
+    result = await read_detail_images(detail, PAGE, fetcher, reader)
+
+    assert icon not in fetcher.urls
+    assert len(reader.calls[0]) == 1
+    assert result.fields["body"] == READ_TEXT

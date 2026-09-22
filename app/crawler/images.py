@@ -167,6 +167,9 @@ async def _download(
         url = urljoin(page_url, source)
         if urlsplit(url).scheme not in ("http", "https"):
             continue
+        if urlsplit(url).path.lower().endswith(".svg"):
+            # 벡터 아이콘이다. 공고 글을 담은 이미지가 아니고 열 수도 없다
+            continue
         result = await fetcher.request(url)
         if not result.content:
             raise ImageReadError(f"이미지가 비었다: {url}")
@@ -175,7 +178,13 @@ async def _download(
                 f"이미지가 {len(result.content):,}바이트라 읽지 않는다"
                 f"(상한 {MAX_IMAGE_BYTES:,}): {url}"
             )
-        parts.extend(split_tall(result.content))
+        try:
+            parts.extend(split_tall(result.content))
+        except ImageReadError as exc:
+            # 한 장이 열리지 않아도 나머지는 읽는다. 한화 실측(2026-09-22): 본문 이미지 두 장 옆의
+            # 첨부 아이콘 하나가 열리지 않아 공고 이미지까지 통째로 버려졌다
+            logger.info("이미지 한 장을 건너뛴다 url=%s: %s", url, exc)
+            continue
         if len(parts) >= MAX_TILES:
             break
     if not parts:
