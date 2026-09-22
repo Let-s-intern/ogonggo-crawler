@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import asyncio
+import codecs
+import re
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -264,7 +266,7 @@ class Fetcher:
                     return FetchResult(
                         url=str(response.url),
                         status_code=response.status_code,
-                        text=response.text,
+                        text=_decoded(response),
                         content=response.content,
                     )
                 if response.status_code < 500:
@@ -313,3 +315,31 @@ async def close_fetcher() -> None:
     if _fetcher is not None:
         await _fetcher.aclose()
         _fetcher = None
+
+
+# 문서 앞부분의 `<meta charset>` 또는 `<meta http-equiv="Content-Type" content="...charset=...">`
+_META_CHARSET = re.compile(rb"""<meta[^>]+charset\s*=\s*["']?\s*([A-Za-z0-9_\-]+)""", re.IGNORECASE)
+# 문자셋 선언을 찾을 앞부분의 길이. 선언은 `<head>` 첫머리에 있다
+_SNIFF_BYTES = 4096
+
+
+def _decoded(response: httpx.Response) -> str:
+    """응답 본문을 글자로. 헤더에 문자셋이 없으면 문서의 `<meta>` 선언을 따른다.
+
+    httpx 는 헤더에 문자셋이 없으면 UTF-8 로 읽는다. 카페스 실측(2026-09-22): 헤더는
+    `text/html` 뿐이고 `<meta>` 에 `euc-kr` 이 있었다. UTF-8 로 읽어 제목이 전부 깨졌다.
+    """
+    if response.charset_encoding:
+        return response.text
+    found = _META_CHARSET.search(response.content[:_SNIFF_BYTES])
+    if found is None:
+        return response.text
+    name = found.group(1).decode("ascii", "ignore")
+    try:
+        codecs.lookup(name)
+    except LookupError:
+        return response.text
+    # EUC-KR 로 선언하고 확장 한글(CP949)을 쓰는 사이트가 흔하다. CP949 가 EUC-KR 을 포함한다
+    if name.lower().replace("_", "-") in ("euc-kr", "ks-c-5601-1987", "ksc5601"):
+        name = "cp949"
+    return response.content.decode(name, errors="replace")
