@@ -115,6 +115,8 @@ class ClickOutcome:
     url: str = ""
     html: str = ""
     requests: tuple[ObservedRequest, ...] = ()
+    # 누른 뒤 일어난 페이지 이동의 주소. 리다이렉트 전 주소까지 담긴다 (`RequestLog`)
+    navigations: tuple[str, ...] = ()
     target: str = ""
     failure: str = ""
     reason: str = ""
@@ -168,6 +170,7 @@ async def probe_click(
                 url=outcome.url,
                 html=outcome.html,
                 requests=outcome.requests,
+                navigations=outcome.navigations,
                 target=name,
                 item_count=len(items),
                 skipped=skipped,
@@ -255,6 +258,7 @@ async def _click_and_judge(
     before_tabs = len(_pages(context))
     before_body = len(await _content(page))
     mark = log.mark()
+    navigation_mark = log.navigation_mark()
 
     try:
         await target.click()
@@ -266,6 +270,7 @@ async def _click_and_judge(
     await log.drain()
 
     requests = tuple(log.since(mark))
+    navigations = tuple(log.navigations_since(navigation_mark))
     signals: list[str] = []
     url = page.url
     html = await _content(page)
@@ -294,6 +299,7 @@ async def _click_and_judge(
         url=url,
         html=html,
         requests=requests,
+        navigations=navigations,
         target=name,
     )
 

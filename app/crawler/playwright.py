@@ -225,11 +225,36 @@ class RequestLog:
         self._limit = limit
         self._slots: list[ObservedRequest | None] = []
         self._pending: list[asyncio.Future[None]] = []
+        # 페이지 이동 요청의 주소. 리다이렉트 전 주소까지 남는다 — `window.open` 으로 연 새 탭은
+        # 응답 기록이 붙기 전에 첫 요청이 지나가고, 도착한 주소는 리다이렉트 뒤라 공고 번호가
+        # 빠져 있다(GC녹십자, 2026-09-22)
+        self._navigations: list[str] = []
 
     def attach(self, page: Any) -> None:
         """페이지의 응답 이벤트에 붙는다. 같은 로그를 여러 페이지에 붙일 수 있다 —
         새 탭에서 나가는 요청도 같은 자리에 모인다."""
         page.on("response", self._on_response)
+
+    def watch_navigations(self, context: Any) -> None:
+        """컨텍스트의 페이지 이동 요청을 적는다. 새 탭의 첫 요청도 여기서는 놓치지 않는다."""
+        context.on("request", self._on_request)
+
+    def navigation_mark(self) -> int:
+        return len(self._navigations)
+
+    def navigations_since(self, mark: int) -> list[str]:
+        """표시한 자리 뒤에 일어난 페이지 이동의 주소. 같은 주소는 한 번만 담는다."""
+        return list(dict.fromkeys(self._navigations[mark:]))
+
+    def _on_request(self, request: Any) -> None:
+        with suppress(Exception):
+            if not request.is_navigation_request():
+                return
+            if not _top_level(request):
+                return
+            url = str(request.url or "")
+            if is_data_request(url):
+                self._navigations.append(url)
 
     @property
     def requests(self) -> list[ObservedRequest]:
@@ -279,6 +304,18 @@ class RequestLog:
             truncated=len(body) > self._body_limit,
             request_headers=functional_headers(getattr(request, "headers", None)),
         )
+
+
+def _top_level(request: Any) -> bool:
+    """최상위 문서로 가는 이동인가. iframe 안의 이동은 상세가 아니다.
+
+    새 탭의 첫 이동은 탭이 붙기 전이라 frame 을 읽으면 예외가 난다. 그것은 새 탭의 최상위
+    이동이라 참으로 본다.
+    """
+    try:
+        return request.frame.parent_frame is None
+    except Exception:
+        return True
 
 
 def functional_headers(headers: Any) -> dict[str, str]:
@@ -426,6 +463,7 @@ class Renderer:
                 page = await context.new_page()
                 log.attach(page)
                 context.on("page", log.attach)
+                log.watch_navigations(context)
                 await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
                 await _settle(page)
                 await log.drain()

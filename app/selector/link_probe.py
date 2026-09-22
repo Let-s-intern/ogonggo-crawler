@@ -125,6 +125,7 @@ def propose_link_template(
     reached_url: str,
     list_url: str,
     requests: Sequence[ObservedRequest] = (),
+    navigations: Sequence[str] = (),
 ) -> LinkProposal:
     """클릭이 데려간 주소나 그때 나간 요청을 항목마다 다른 주소 형식으로 옮긴다.
 
@@ -143,7 +144,7 @@ def propose_link_template(
             )
         )
 
-    for candidate, origin in _candidates(reached_url, list_url, requests):
+    for candidate, origin in _candidates(reached_url, list_url, requests, navigations):
         selector, template, used = _templatize(candidate, sources)
         if not used:
             continue
@@ -247,6 +248,10 @@ def value_sources(node: Tag) -> list[ValueSource]:
             value = value.strip()
             if key.startswith("data-") and _usable(value):
                 _add(found, seen, ValueSource(selector, f"{{{key}}}", value))
+            if element.name == "input" and key == "value" and _usable(value):
+                # 숨은 입력값에 공고 번호를 두고 클릭 때 읽어 주소를 만드는 사이트가 있다.
+                # GC녹십자: `<input type="hidden" class="key" value="2859">` (2026-09-22)
+                _add(found, seen, ValueSource(selector, "{value}", value))
             if key == "href" and _usable(value) and not value.lower().startswith("javascript:"):
                 # 항목 자체가 `a` 인 사이트가 있다. 카카오 목록이 `<a><li>...</li></a>` 라
                 # 항목 안에서 링크를 찾는 셀렉터로는 주소가 나오지 않고, 그때는 그 `href`
@@ -288,12 +293,19 @@ def _add(found: list[ValueSource], seen: set[tuple[str, str]], source: ValueSour
 
 
 def _candidates(
-    reached_url: str, list_url: str, requests: Sequence[ObservedRequest]
+    reached_url: str,
+    list_url: str,
+    requests: Sequence[ObservedRequest],
+    navigations: Sequence[str] = (),
 ) -> list[tuple[str, str]]:
     """주소 형식으로 만들어 볼 후보들. (주소, 어디서 왔는지) 순서대로."""
     found: list[tuple[str, str]] = []
     if reached_url.strip() and reached_url != list_url:
         found.append((reached_url, "클릭이 도착한 주소"))
+    for url in navigations:
+        # 리다이렉트 전 주소다. 도착한 주소에는 공고 번호가 없어도 여기에는 있다(GC녹십자)
+        if url.strip() and url not in (list_url, reached_url):
+            found.append((url, "클릭 뒤 이동한 주소"))
     for request in requests:
         if request.status != 200:
             continue

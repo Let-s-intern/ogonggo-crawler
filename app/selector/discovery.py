@@ -346,6 +346,7 @@ async def _judge(
         reached_url=outcome.url,
         list_url=probed.url,
         requests=outcome.requests,
+        navigations=outcome.navigations,
     )
     if link is not None:
         # 주소 형식을 알고 나면 정적 HTML 로도 목록이 읽히는 사이트가 있다. 두산과 네이버가
@@ -607,6 +608,7 @@ async def _adopt_link_template(
     reached_url: str,
     list_url: str,
     requests: tuple[ObservedRequest, ...] | list[ObservedRequest],
+    navigations: tuple[str, ...] | list[str] = (),
 ) -> tuple[LinkProposal | None, str]:
     """클릭으로 알아낸 주소를 항목마다 다른 형식으로 옮기고, 확인된 것만 돌려준다.
 
@@ -614,7 +616,11 @@ async def _adopt_link_template(
     않고 저장하면 공고마다 같은 페이지를 가져오는 크롤러가 남는다.
     """
     proposal = propose_link_template(
-        nodes, reached_url=reached_url, list_url=list_url, requests=list(requests)
+        nodes,
+        reached_url=reached_url,
+        list_url=list_url,
+        requests=list(requests),
+        navigations=list(navigations),
     )
     if not proposal.ok:
         return None, f"공고마다 다른 상세 주소 형식은 만들지 못했다: {proposal.reason}"
