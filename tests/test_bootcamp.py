@@ -34,7 +34,7 @@ from app.api import settings as settings_api
 from app.bootcamp import deliver, schedule, sesac, store
 from app.bootcamp import settings as bootcamp_settings
 from app.bootcamp.fill import BootcampFill, BootcampFillError, LlmBootcampFiller
-from app.bootcamp.runner import run_sesac
+from app.bootcamp.runner import run_sesac, run_sesac_all
 from app.config import Settings
 from app.crawler.fetcher import FetchResult
 from app.deliver.settings import DeliverConfig, write_config
@@ -460,12 +460,65 @@ async def test_한_번에_정리하는_수에_상한을_두고_모집중부터_�
 
     assert (first.listed, first.filled) == (12, 4)
     assert [title[:6] for title in filler.titles][:3] == ["(성동4기)", "Google", "중소기업부터"]
-    assert any("8건은 다음 수집에서" in note for note in first.notes)
+    assert any("8건은 다음 묶음에서" in note for note in first.notes)
     row = conn.execute("SELECT * FROM bootcamps WHERE external_id = '1202'").fetchone()
     assert row["status_label"] == "운영중"
     assert deliver.payload(row)["status"] == "CLOSED"
     recruiting = conn.execute("SELECT * FROM bootcamps WHERE external_id = '1197'").fetchone()
     assert deliver.payload(recruiting)["status"] == "RECRUITING"
+
+
+class AnyDetailFetcher(SesacFetcher):
+    """전체 목록의 열두 과정 모두에 상세를 준다. 받아 둔 상세가 없는 과정은 1197 의 상세를 쓴다."""
+
+    async def fetch(self, url: str) -> FetchResult:
+        if sesac.LIST_PATH not in url:
+            self.details.setdefault(url.rsplit("crsSn=", 1)[1], DETAILS["1197"])
+        return await super().fetch(url)
+
+
+class FlakyFiller(FakeFiller):
+    """처음 부른 과정 하나만 실패한다."""
+
+    async def fill(self, course: sesac.Course) -> BootcampFill:
+        if not self.titles:
+            self.titles.append(course.title)
+            raise BootcampFillError("AI 답을 읽지 못했다")
+        return await super().fill(course)
+
+
+async def test_남은_과정이_있으면_다음_묶음이_이어서_정리한다(conn: sqlite3.Connection) -> None:
+    filler = FlakyFiller()
+
+    summaries = await run_sesac_all(
+        conn,
+        fetcher=AnyDetailFetcher(list_html=ALL_LIST_HTML),
+        filler=filler,
+        settings=SETTINGS,
+        max_fills=5,
+    )
+
+    assert [(s.filled, s.fill_failed, s.deferred) for s in summaries] == [
+        (4, 1, 7),
+        (5, 0, 2),
+        (2, 0, 0),
+    ]
+    # 첫 묶음에서 실패한 과정은 이어지는 묶음에서 다시 부르지 않는다
+    assert len(filler.titles) == 12
+    assert conn.execute("SELECT count(*) FROM bootcamp_runs").fetchone()[0] == 3
+    assert conn.execute("SELECT count(*) FROM bootcamps WHERE fill_error <> ''").fetchone()[0] == 1
+
+
+async def test_한_건도_정리하지_못하면_이어서_돌지_않는다(conn: sqlite3.Connection) -> None:
+    summaries = await run_sesac_all(
+        conn,
+        fetcher=AnyDetailFetcher(list_html=ALL_LIST_HTML),
+        filler=FakeFiller(error=BootcampFillError("AI 호출이 실패했다")),
+        settings=SETTINGS,
+        max_fills=5,
+    )
+
+    assert [(s.filled, s.fill_failed, s.deferred) for s in summaries] == [(0, 5, 7)]
 
 
 async def test_모집_상태가_바뀌면_상세_없이_같은_id_로_다시_보낸다(
