@@ -282,3 +282,17 @@ def test_리다이렉트_전_주소와_숨은_입력값으로_형식을_만든�
         "https://careers.gcbiopharma.com/job-invite/2859/",
         "https://careers.gcbiopharma.com/job-invite/2871/",
     ]
+
+
+def test_두_자리_숫자_인자도_공고_번호_후보로_읽는다() -> None:
+    """카페스 실측(2026-09-22): 공고 번호가 `view(83)` 처럼 두 자리다."""
+    row = BeautifulSoup(
+        '<table><tr><td class="tL"><a href="#" onclick="view(83); return false;">공고</a>'
+        "</td></tr></table>",
+        "html.parser",
+    ).select_one("tr")
+    assert row is not None
+
+    values = [source.value for source in value_sources(row)]
+
+    assert "83" in values

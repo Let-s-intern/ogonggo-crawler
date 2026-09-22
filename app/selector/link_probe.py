@@ -263,7 +263,7 @@ def value_sources(node: Tag) -> list[ValueSource]:
                 argument = js_argument(value, index)
                 if not argument:
                     break
-                if _usable(argument):
+                if _usable(argument) or _usable_number(argument):
                     _add(
                         found,
                         seen,
@@ -396,6 +396,15 @@ def _plain(name: str) -> bool:
 
 def _usable(value: str) -> bool:
     return len(value) >= MIN_VALUE_LENGTH
+
+
+# 숫자 인자로 받는 최소 자릿수. `view(83)` 처럼 짧은 공고 번호가 있다(카페스, 2026-09-22).
+# 우연히 겹친 자리를 바꿔도 두 건을 열어 제목을 대조하는 확인에서 떨어진다
+MIN_NUMBER_LENGTH = 2
+
+
+def _usable_number(value: str) -> bool:
+    return value.isdigit() and len(value) >= MIN_NUMBER_LENGTH
 
 
 def _squeeze(value: str) -> str:
