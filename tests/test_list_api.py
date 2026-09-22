@@ -571,3 +571,90 @@ def test_짧은_값이_제목에_들어_있다고_같은_공고로_보지_않는
     )
 
     assert propose_list_config([request], items, []).ok is False
+
+
+def test_날짜는_표기가_달라도_같은_날이면_마감일_칸으로_짝을_짓는다() -> None:
+    """NHN 실측(2026-09-22): 화면 `~ 26.09.27`, 응답 `postingEndDatetime: 2026-09-27T23:59:00`."""
+    items = [
+        ListItem(index=0, title="[NHN] 백엔드 개발 인턴 (체험형)", link="", date="~ 26.09.27"),
+        ListItem(
+            index=1,
+            title="[NHN Service] [서울] 고객상담(정규직)_동행복권",
+            link="",
+            date="2026.09.14 ~ 2026.10.05",
+        ),
+    ]
+    payload = {
+        "result": [
+            {
+                "id": "4422617909897514692",
+                "name": "백엔드 개발 인턴 (체험형)",
+                "postingStaDatetime": "2026-09-16T16:00:00",
+                "postingEndDatetime": "2026-09-27T23:59:00",
+            },
+            {
+                "id": "4405976305114575784",
+                "name": "[서울] 고객상담(정규직)_동행복권",
+                "postingStaDatetime": "2026-09-14T09:00:00",
+                "postingEndDatetime": "2026-10-05T23:59:00",
+            },
+        ]
+    }
+    request = ObservedRequest(
+        method="GET",
+        url="https://example.test/v1/job-postings?page=0&size=30",
+        status=200,
+        content_type="application/json",
+        body=json.dumps(payload, ensure_ascii=False),
+    )
+
+    path = propose_list_config(
+        [request],
+        items,
+        [],
+        clicked_url="https://example.test/recruits/4422617909897514692?type=list",
+    )
+
+    assert path.ok is True
+    assert path.config().fields["date"] == "postingEndDatetime"
+
+
+def test_화면에서_날짜를_못_읽으면_마감을_뜻하는_키를_쓴다() -> None:
+    """NHN 실측(2026-09-22): 모델이 목록 날짜 셀렉터를 비웠다."""
+    items = [
+        ListItem(index=0, title="[NHN] 백엔드 개발 인턴 (체험형)", link="", date=""),
+        ListItem(index=1, title="[NHN Service] [서울] 고객상담(정규직)_동행복권", link="", date=""),
+    ]
+    payload = {
+        "result": [
+            {
+                "id": "4422617909897514692",
+                "name": "백엔드 개발 인턴 (체험형)",
+                "postingStaDatetime": "2026-09-16T16:00:00",
+                "postingEndDatetime": "2026-09-27T23:59:00",
+            },
+            {
+                "id": "4405976305114575784",
+                "name": "[서울] 고객상담(정규직)_동행복권",
+                "postingStaDatetime": "2026-09-14T09:00:00",
+                "postingEndDatetime": "2026-10-05T23:59:00",
+            },
+        ]
+    }
+    request = ObservedRequest(
+        method="GET",
+        url="https://example.test/v1/job-postings?page=0&size=30",
+        status=200,
+        content_type="application/json",
+        body=json.dumps(payload, ensure_ascii=False),
+    )
+
+    path = propose_list_config(
+        [request],
+        items,
+        [],
+        clicked_url="https://example.test/recruits/4422617909897514692?type=list",
+    )
+
+    assert path.config().fields["date"] == "postingEndDatetime"
+    assert path.config().date_is_deadline is True
