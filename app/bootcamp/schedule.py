@@ -15,7 +15,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app import db
 from app.bootcamp import settings as bootcamp_settings
-from app.bootcamp.runner import SCHEDULE, run_sesac
+from app.bootcamp.runner import SCHEDULE, run_sesac_all
 from app.config import get_settings
 from app.scheduler import get_gate
 
@@ -25,13 +25,12 @@ JOB_ID = "bootcamp:sesac"
 
 
 async def _execute() -> None:
-    """새싹에 요청을 보내므로 크롤 동시 실행 상한을 함께 잡는다."""
-    async with get_gate().slot():
-        conn = db.connect()
-        try:
-            await run_sesac(conn, trigger=SCHEDULE)
-        finally:
-            conn.close()
+    """새싹에 요청을 보내므로 묶음마다 크롤 동시 실행 상한을 함께 잡는다."""
+    conn = db.connect()
+    try:
+        await run_sesac_all(conn, trigger=SCHEDULE, slot=get_gate().slot)
+    finally:
+        conn.close()
 
 
 def sync(scheduler: AsyncIOScheduler, conn: sqlite3.Connection) -> bool:

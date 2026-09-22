@@ -19,7 +19,7 @@ from app.api.settings import get_connection
 from app.api.ui import render
 from app.bootcamp import deliver, schedule, store
 from app.bootcamp import settings as bootcamp_settings
-from app.bootcamp.runner import MANUAL, MAX_FILLS_PER_RUN, run_sesac
+from app.bootcamp.runner import MANUAL, MAX_FILLS_PER_RUN, run_sesac_all
 from app.bootcamp.sesac import list_url
 from app.config import Settings, get_settings
 from app.deliver import settings as deliver_store
@@ -54,7 +54,7 @@ def _panel(
             int(row["id"]): deliver.payload(row) for row in rows if row["filled_hash"] is not None
         },
         pending=deliver.pending_count(conn),
-        running=_running(conn),
+        running=_busy(conn),
         max_attempts=deliver.MAX_ATTEMPTS,
         max_fills=MAX_FILLS_PER_RUN,
         list_url=list_url(),
@@ -110,7 +110,7 @@ async def run_bootcamps_fragment(
     새 과정마다 AI 를 부르므로 처음 수집은 몇 분 걸린다. 요청 하나가 그동안 붙잡혀 있으면 프록시가
     끊는다.
     """
-    if _running(conn) or (_task is not None and not _task.done()):
+    if _busy(conn):
         return _panel(request, conn, settings, message="이미 수집하는 중이다")
     _start(settings)
     return _panel(
@@ -125,14 +125,18 @@ def _start(settings: Settings) -> None:
     global _task
 
     async def run() -> None:
-        async with get_gate().slot():
-            background = db.connect()
-            try:
-                await run_sesac(background, trigger=MANUAL, settings=settings)
-            finally:
-                background.close()
+        background = db.connect()
+        try:
+            await run_sesac_all(background, trigger=MANUAL, settings=settings, slot=get_gate().slot)
+        finally:
+            background.close()
 
     _task = asyncio.create_task(run())
+
+
+def _busy(conn: sqlite3.Connection) -> bool:
+    """수집 중인가. 묶음과 묶음 사이에는 `running` 기록이 잠깐 없어 백그라운드 작업도 본다."""
+    return _running(conn) or (_task is not None and not _task.done())
 
 
 def _running(conn: sqlite3.Connection) -> bool:
