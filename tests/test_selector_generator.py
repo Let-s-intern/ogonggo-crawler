@@ -307,3 +307,43 @@ async def test_empty_field_retry_says_why_it_was_refused() -> None:
     assert result.verification.ok
     assert "[직전 답이 거절됐다]" in client.calls[1]["contents"]
     assert "반복 요소를 찾아" in client.calls[1]["contents"]
+
+
+TABLE_LIST_HTML = """
+<html><body><table class="board"><tbody>
+  <tr><td class="t"><a href="/v/1">공고 하나</a></td><td class="d">2026-09-14 ~ 2026-09-27</td>
+      <td class="hit">322</td></tr>
+  <tr><td class="t"><a href="/v/2">공고 둘</a></td><td class="d">2026-07-30 ~ 2026-08-06</td>
+      <td class="hit">186</td></tr>
+</tbody></table></body></html>
+"""
+
+
+def _table_response(date: str) -> str:
+    payload = json.loads(VALID_RESPONSE)
+    payload["list"] = {"item": "table.board tr", "title": "td.t a", "link": "td.t a", "date": date}
+    return json.dumps(payload)
+
+
+async def test_날짜_칸이_숫자뿐이면_다시_묻는다() -> None:
+    """카페스 실측(2026-09-22): 날짜로 조회수 칸을 골랐다."""
+    client = FakeClient(_table_response("td.hit"), _table_response("td.d"))
+
+    result = await generate_from_html(
+        TABLE_LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert result.selectors.list.date == "td.d"
+    assert "날짜가 아니라 숫자뿐이다(예: 322)" in client.calls[1]["contents"]
+
+
+async def test_다시_물어도_날짜_칸이_숫자뿐이면_비운다() -> None:
+    client = FakeClient(_table_response("td.hit"))
+
+    result = await generate_from_html(
+        TABLE_LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert len(client.calls) == 2
+    assert result.selectors.list.date == ""
+    assert any("숫자(322)를 잡아 비웠다" in note for note in result.notes)
