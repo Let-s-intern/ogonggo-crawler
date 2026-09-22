@@ -362,3 +362,16 @@ async def test_상세_안에_넣은_목록_묶음은_밖으로_꺼낸다() -> No
     assert result.selectors.list.item == "ol.jobs > li"
     assert len(client.calls) == 1
     assert any("`detail` 안에 넣은 `list`" in note for note in result.notes)
+
+
+async def test_빈_칸을_허용해_살린_답도_숫자뿐인_날짜_칸은_비운다() -> None:
+    """두 번 모두 필수 칸이 비어 거절된 답을 살리는 경로에서도 조회수 칸을 날짜로 두지 않는다."""
+    payload = json.loads(_table_response("td.hit"))
+    payload["detail"]["title"] = ""
+    client = FakeClient(json.dumps(payload))
+
+    result = await generate_from_html(
+        TABLE_LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert result.selectors.list.date == ""

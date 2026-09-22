@@ -270,20 +270,23 @@ async def generate_from_html(
             MAX_ATTEMPTS,
             ", ".join(empty_fields),
         )
-        return GenerationResult(
-            selectors=selectors,
-            usage=spent or usage,
-            attempts=attempt,
-            verification=report,
-            notes=[
-                *_notes(cleaned_list, cleaned_detail, narrowing),
-                *moved,
-                *(
-                    [f"모델이 채우지 못한 필드: {', '.join(empty_fields)}. 손으로 채운다"]
-                    if empty_fields
-                    else []
-                ),
-            ],
+        return _without_number_date(
+            GenerationResult(
+                selectors=selectors,
+                usage=spent or usage,
+                attempts=attempt,
+                verification=report,
+                notes=[
+                    *_notes(cleaned_list, cleaned_detail, narrowing),
+                    *moved,
+                    *(
+                        [f"모델이 채우지 못한 필드: {', '.join(empty_fields)}. 손으로 채운다"]
+                        if empty_fields
+                        else []
+                    ),
+                ],
+            ),
+            list_html,
         )
 
     # 스키마에 없는 이름이 끝까지 왔으면 그 사유를 그대로 둔다. 화면이 사유마다 다음 할 일을 적는다
