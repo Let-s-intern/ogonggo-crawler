@@ -21,6 +21,7 @@ from app.api import (
     side,
     ui,
     ui_ai_quick,
+    ui_bootcamps,
     ui_companies,
     ui_cost,
     ui_crawlers,
@@ -44,6 +45,8 @@ from app.api import (
     ui_workflows,
     workflows,
 )
+from app.bootcamp import schedule as bootcamp_schedule
+from app.bootcamp.runner import close_orphan_runs as close_orphan_bootcamp_runs
 from app.config import get_settings
 from app.crawler.fetcher import close_fetcher
 from app.crawler.runner import close_orphan_runs
@@ -100,9 +103,15 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             logger.warning(
                 "지난 프로세스가 남긴 미완 부가 실행 %d건을 timeout 으로 닫았다", side_orphans
             )
+        bootcamp_orphans = close_orphan_bootcamp_runs(conn)
+        if bootcamp_orphans:
+            logger.warning(
+                "지난 프로세스가 남긴 미완 부트캠프 수집 %d건을 닫았다", bootcamp_orphans
+            )
         try:
             _seed_empty_tables(conn)
             get_scheduler().start(conn)
+            bootcamp_schedule.sync(get_scheduler().scheduler, conn)
         except sqlite3.OperationalError:
             # 스키마가 아직 없는 DB 다. 등록할 워크플로우도 없다.
             #
@@ -154,6 +163,7 @@ app.include_router(ui_ai_quick.router)
 app.include_router(ui_taxonomy.router)
 app.include_router(ui_industries.router)
 app.include_router(ui_prompt_rules.router)
+app.include_router(ui_bootcamps.router)
 # 조각 요청의 실패는 200 과 오류 조각으로 나간다. HTMX 가 4xx·5xx 를 갈아 끼우지 않아
 # 그대로 두면 화면이 조용해진다. `/api/...` 의 상태 코드는 건드리지 않는다
 ui.install_ui_error_handlers(app)

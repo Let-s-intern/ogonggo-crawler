@@ -48,8 +48,9 @@ logger = logging.getLogger(__name__)
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-# 위 메뉴는 넷이다 — 공고·사이트·비용·설정 (2026-09-17 결정, LC-3344). 운영자가 실제로 자주 하는
-# 일은 "공고가 잘 들어왔는지 보기" 하나라 그것이 첫 화면이고, 나머지는 필요할 때만 연다.
+# 위 메뉴는 공고·사이트·비용·설정 넷이었고 (2026-09-17 결정, LC-3344), 부트캠프가 더해졌다(LC-3364).
+# 운영자가 실제로 자주 하는 일은 "공고가 잘 들어왔는지 보기" 하나라 그것이 첫 화면이고,
+# 나머지는 필요할 때만 연다.
 # 경로와 이름은 여기 한 곳에서만 정한다.
 #
 # 사이트 목록 밖의 사이트 화면. 위 메뉴는 `사이트` 가 켜지고 탭은 없다. 사이트 추가·고치기는 목록의
@@ -100,6 +101,8 @@ SETTINGS_NAV: tuple[tuple[str, str], ...] = tuple(
 NAV: tuple[tuple[str, str], ...] = (
     ("/review", "공고"),
     ("/workflows", "사이트"),
+    # 새싹 부트캠프 (2026-09-22 결정, LC-3364). 공고 파이프라인과 따로 돌아 메뉴도 따로다
+    ("/bootcamps", "부트캠프"),
     ("/cost", "비용"),
     ("/settings", "설정"),
 )
@@ -554,6 +557,12 @@ def jobs_page() -> RedirectResponse:
     쪽에서 지울 방법이 없다.
     """
     return RedirectResponse("/review", status_code=307)
+
+
+@router.get("/bootcamps", response_class=HTMLResponse)
+def bootcamps_page(request: Request) -> HTMLResponse:
+    """새싹 부트캠프 수집·전송 화면 (`app/api/ui_bootcamps.py`)."""
+    return render_page(request, "pages/bootcamps.html")
 
 
 @router.get("/deliver", response_class=HTMLResponse)

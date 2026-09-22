@@ -1,4 +1,4 @@
-"""위 메뉴는 넷이다 — 공고·사이트·비용·설정 (2026-09-17 결정, LC-3344).
+"""위 메뉴는 공고·사이트·부트캠프·비용·설정이다 (2026-09-17 결정 LC-3344, 부트캠프는 LC-3364).
 
 첫 화면은 공고 목록이다. 설정 묶음은 왼쪽 목록으로(`SETTINGS_SECTIONS`) 자기 화면을 고른다.
 사이트 추가·고치기는 사이트 목록의 창과 패널이 하고, 셀렉터를 손으로 다루는 두 화면(`SITE_PAGES`)은
@@ -53,8 +53,8 @@ def client(path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestClient]
         app.dependency_overrides.clear()
 
 
-def test_위_메뉴는_넷이다() -> None:
-    assert [label for _, label in NAV] == ["공고", "사이트", "비용", "설정"]
+def test_위_메뉴() -> None:
+    assert [label for _, label in NAV] == ["공고", "사이트", "부트캠프", "비용", "설정"]
 
 
 def test_첫_화면은_공고_목록이다(client: TestClient) -> None:
