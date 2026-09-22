@@ -347,3 +347,18 @@ async def test_다시_물어도_날짜_칸이_숫자뿐이면_비운다() -> Non
     assert len(client.calls) == 2
     assert result.selectors.list.date == ""
     assert any("숫자(322)를 잡아 비웠다" in note for note in result.notes)
+
+
+async def test_상세_안에_넣은_목록_묶음은_밖으로_꺼낸다() -> None:
+    """카페스 실측(2026-09-22): DeepSeek 가 `detail` 안에 `list` 를 통째로 넣었다."""
+    payload = json.loads(VALID_RESPONSE)
+    payload["detail"]["list"] = payload.pop("list")
+    client = FakeClient(json.dumps(payload))
+
+    result = await generate_from_html(
+        LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert result.selectors.list.item == "ol.jobs > li"
+    assert len(client.calls) == 1
+    assert any("`detail` 안에 넣은 `list`" in note for note in result.notes)
