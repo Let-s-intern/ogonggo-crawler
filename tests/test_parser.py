@@ -257,3 +257,24 @@ def test_본문을_대신_채우면_메모를_남긴다() -> None:
     )
 
     assert parse_detail(html, selectors).notes == (FALLBACK_NOTE,)
+
+
+def test_제목_근처에_공고_이미지가_있으면_본문으로_쓰고_이미지를_넘긴다() -> None:
+    """한화 실측(2026-09-22): 에디터 본문이 이미지 두 장뿐이라 글이 모자랐다."""
+    html = (
+        '<html><body><div class="recruit-detail"><div class="head">'
+        '<h3 class="recruit-title">한화솔루션 마케팅 경력</h3></div>'
+        '<div class="editor"><img src="/upfile/a.png"><img src="/img/ico_docx.svg"></div>'
+        "</div></body></html>"
+    )
+    selectors = DetailSelectors(
+        title="h3.recruit-title",
+        body="div.no-such-body",
+        qualifications="",
+        recruitment_end_at="",
+        department="",
+    )
+
+    result = parse_detail(html, selectors)
+
+    assert result.images == ("/upfile/a.png", "/img/ico_docx.svg")

@@ -243,6 +243,7 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
         fallback = _body_near_title(soup, selectors.title)
         if fallback is not None:
             fields["body"] = block_text(fallback)
+            images = _images_in(fallback)
             unreadable.remove("body")
     if unreadable:
         raise FieldParseError(f"상세에서 필수 필드를 읽지 못했다: {', '.join(unreadable)}")
@@ -284,6 +285,11 @@ def _body_near_title(soup: BeautifulSoup, title_selector: str) -> Tag | None:
         for furniture in cleaned.select(PAGE_FURNITURE):
             furniture.decompose()
         if len(cleaned.get_text(strip=True)) - title_chars >= MIN_FALLBACK_BODY:
+            return cleaned
+        pictures = [one for one in _images_in(cleaned) if not one.lower().endswith(".svg")]
+        if pictures:
+            # 글은 짧아도 공고 이미지가 있다. 이미지를 읽어 본문으로 쓴다 (`app/crawler/images.py`).
+            # 한화 실측(2026-09-22): 에디터 본문이 이미지 두 장뿐이었다
             return cleaned
     return None
 
@@ -405,6 +411,11 @@ def source_images(soup: BeautifulSoup, body_selector: str) -> tuple[str, ...]:
     container = _source_container(soup, body_selector)
     if container is None:
         return ()
+    return _images_in(container)
+
+
+def _images_in(container: Tag) -> tuple[str, ...]:
+    """영역 안의 이미지 주소. `data:` 로 박힌 것은 뺀다. 같은 주소는 한 번만 담는다."""
     found: dict[str, None] = {}
     for image in container.find_all("img"):
         raw = image.get("src") or image.get("data-src") or ""
