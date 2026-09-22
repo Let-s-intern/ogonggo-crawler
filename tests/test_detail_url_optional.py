@@ -361,8 +361,12 @@ def test_판정이_AI_에게_물었으면_그_비용을_남긴다(
     assert [tuple(row) for row in rows] == [("selector_generate", "deepseek-flash", 3050)]
 
 
+@pytest.mark.parametrize("holds", [True, False])
 def test_목록이_렌더면_상세_셀렉터도_렌더한_페이지로_만든다(
-    client: TestClient, conn: sqlite3.Connection
+    client: TestClient,
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    holds: bool,
 ) -> None:
     """슈피겐 실측(2026-09-22): 상세만 정적이라 정적으로 다시 받자 JS 목록이 비어, 모델이 상세
     칸까지 비워 답했다. 어느 한쪽이라도 렌더가 필요하면 렌더로 다시 받는다."""
@@ -394,8 +398,15 @@ def test_목록이_렌더면_상세_셀렉터도_렌더한_페이지로_만든�
             list_count=8,
         )
 
+    async def static_holds(url: str, selectors: SelectorSet) -> bool:
+        return holds
+
+    monkeypatch.setattr(crawlers_api, "_static_detail_holds", static_holds)
     app.dependency_overrides[crawlers_api.get_generator] = lambda: generate
     app.dependency_overrides[crawlers_api.get_discoverer] = lambda: discover
     client.post("/api/crawlers", json={"list_url": LIST_URL})
 
     assert modes == ["", "playwright"]
+    # 렌더한 페이지로 만든 상세 셀렉터가 정적 응답에서 제목·본문을 못 잡으면 상세도 렌더로 둔다
+    # (한독, 2026-09-22)
+    assert saved(conn)["detail_mode"] == ("static" if holds else "playwright")
