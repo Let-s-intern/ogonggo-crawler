@@ -278,3 +278,35 @@ def test_제목_근처에_공고_이미지가_있으면_본문으로_쓰고_이�
     result = parse_detail(html, selectors)
 
     assert result.images == ("/upfile/a.png", "/img/ico_docx.svg")
+
+
+def test_날짜_칸은_날짜가_든_첫_노드를_쓴다() -> None:
+    """LX MMA 실측(2026-09-22): 마감일 셀렉터가 표의 값 칸 네 개를 모두 잡았다."""
+    html = (
+        "<html><body><h1>공고</h1><div class='body'>" + "본문 " * 10 + "</div><ul>"
+        "<li><div class='label'>채용 구분</div><div class='text'>수시</div></li>"
+        "<li><div class='label'>신입/경력</div><div class='text'>신입/경력</div></li>"
+        "<li><div class='label'>마감일</div><div class='text'>2026.09.27 오후 11:59</div></li>"
+        "</ul></body></html>"
+    )
+    selectors = DetailSelectors(
+        title="h1",
+        body="div.body",
+        qualifications="",
+        recruitment_end_at="li div.text",
+        department="",
+    )
+
+    assert parse_detail(html, selectors).fields["recruitment_end_at"] == "2026.09.27 오후 11:59"
+
+
+def test_날짜가_든_노드가_없으면_첫_노드를_쓴다() -> None:
+    html = (
+        "<html><body><h1>공고</h1><div class='body'>본문</div>"
+        "<p class='end'>상시채용</p></body></html>"
+    )
+    selectors = DetailSelectors(
+        title="h1", body="div.body", qualifications="", recruitment_end_at="p.end", department=""
+    )
+
+    assert parse_detail(html, selectors).fields["recruitment_end_at"] == "상시채용"

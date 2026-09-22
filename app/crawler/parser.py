@@ -223,7 +223,11 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
             fields[name] = ""
             continue
 
-        value = field_text(soup, selector, f"detail.{name}")
+        value = (
+            _date_text(soup, selector, f"detail.{name}")
+            if name in DATE_FIELDS
+            else field_text(soup, selector, f"detail.{name}")
+        )
         fields[name] = value
         if not value:
             missing.append(name)
@@ -361,6 +365,28 @@ def field_text(scope: BeautifulSoup | Tag, selector: str, name: str) -> str:
     if not nodes:
         return ""
     return block_text(nodes[0])
+
+
+# 날짜를 담는 상세 칸. 셀렉터가 여러 노드를 잡으면 날짜가 든 첫 노드를 쓴다 (`_date_text`)
+DATE_FIELDS: tuple[str, ...] = ("recruitment_end_at", "recruitment_start_at")
+_HAS_DATE = re.compile(r"\d{2,4}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]\s*\d{1,2}")
+
+
+def _date_text(scope: BeautifulSoup | Tag, selector: str, name: str) -> str:
+    """날짜 칸의 텍스트. 날짜가 든 첫 매칭 노드이고, 없으면 첫 매칭 노드다.
+
+    LX MMA 실측(2026-09-22): 마감일 셀렉터가 표의 값 칸 네 개(`수시`·`일반채용`·`신입/경력`·
+    `2026.09.27 오후 11:59`)를 모두 잡아 첫 칸 `수시` 가 마감일로 들어갔다. 날짜가 없는 값
+    (`상시채용`)은 그 자체로 뜻이 있으므로, 날짜 든 노드가 없으면 전처럼 첫 노드를 쓴다.
+    """
+    if not selector.strip():
+        return ""
+    nodes = select_nodes(scope, selector, name)
+    for node in nodes:
+        text = block_text(node)
+        if _HAS_DATE.search(text):
+            return text
+    return block_text(nodes[0]) if nodes else ""
 
 
 def block_text(node: Tag) -> str:
