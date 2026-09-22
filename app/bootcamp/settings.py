@@ -15,7 +15,7 @@ DELIVER_ENABLED = "bootcamp_deliver_enabled"
 
 KEYS: tuple[str, ...] = (SCHEDULE_ENABLED, INTERVAL_HOURS, DELIVER_ENABLED)
 
-# 새싹 모집 중 과정은 몇 건이고 모집 기간이 몇 주다. 하루 두 번이면 새 과정을 늦지 않게 잡는다
+# 새싹 모집 기간은 몇 주다. 하루 두 번이면 새 과정과 모집 마감을 늦지 않게 잡는다
 DEFAULT_INTERVAL_HOURS = 12
 
 

@@ -3,12 +3,16 @@
 새싹은 서울시 청년취업사관학교다. 오프라인 과정이 오공고의 부트캠프에 해당한다. 온라인 과정은 짧은
 동영상 강의라 부트캠프가 아니어서 읽지 않는다.
 
+**모집 상태와 상관없이 전부 읽는다** (2026-09-22 결정). 모집중은 몇 건뿐이고 대부분
+운영중·과정종료다.
+신청이 끝난 과정은 오공고에 모집 마감으로 들어간다 (`spring_status`).
+
 공고 크롤러처럼 LLM 이 셀렉터를 만들지 않는다. 부트캠프 사이트는 새싹 하나이고 틀이 정해져 있어
 고정 파서가 싸고 확실하다. 틀이 바뀌면 여기서 `SesacParseError` 가 나고 실행 기록에 남는다.
 
 | 자리 | 읽는 것 |
 |---|---|
-| 목록 `courseList.do?searchRcrtStts=RECRUITING` | 모집 중인 과정의 `crsSn` 과 썸네일 |
+| 목록 `courseList.do` | 과정마다 `crsSn`·모집 상태·썸네일 |
 | 상세 머리 태그 | 모집 상태·캠퍼스·분야 |
 | 상세 강의 정보 표 | 모집기간·교육기간·교육시간·교육장소 |
 | 상세 교육개요 | 글과 이미지. 대개 이미지 몇 장이 전부다 |
@@ -27,8 +31,10 @@ from bs4 import BeautifulSoup, Tag
 BASE_URL = "https://sesac.seoul.kr"
 LIST_PATH = "/sesac/course/offline/courseList.do"
 DETAIL_PATH = "/sesac/course/offline/courseDetail.do"
-# 한 쪽에 12개가 나온다. 모집 중인 과정이 이보다 많은 일은 드물지만, 끝없이 넘기지 않게 상한을 둔다
-MAX_PAGES = 10
+# 한 쪽에 12개가 나온다. 2026-09-22 에 192건, 16쪽이다. 끝없이 넘기지 않게 상한을 둔다
+MAX_PAGES = 30
+# 새싹 모집 상태 중 아직 신청할 수 있는 것. 나머지(운영중·과정종료·운영대기)는 모집 마감이다
+OPEN_STATUSES = frozenset({"모집중", "모집예정"})
 
 _DATE = re.compile(r"(\d{4})[.-](\d{1,2})[.-](\d{1,2})")
 _HOURS = re.compile(r"(\d+)\s*시간")
@@ -44,6 +50,7 @@ class ListItem:
     crs_sn: str
     title: str
     thumbnail_url: str
+    status: str = ""
 
 
 @dataclass(frozen=True)
@@ -77,7 +84,12 @@ class Course:
 
 
 def list_url(page: int = 1) -> str:
-    return f"{BASE_URL}{LIST_PATH}?searchRcrtStts=RECRUITING&cPage={page}"
+    return f"{BASE_URL}{LIST_PATH}?cPage={page}"
+
+
+def spring_status(label: str) -> str:
+    """새싹 모집 상태를 오공고 부트캠프 모집 상태로. 신청할 수 없으면 모집 마감이다."""
+    return "RECRUITING" if label.strip() in OPEN_STATUSES else "CLOSED"
 
 
 def detail_url(crs_sn: str) -> str:
@@ -96,7 +108,8 @@ def parse_list(html: str) -> list[ListItem]:
         title = _text(link.select_one(".tit"))
         image = link.select_one(".thumb-area img")
         thumbnail = urljoin(BASE_URL, str(image.get("src", ""))) if image else ""
-        items.append(ListItem(crs_sn=crs_sn, title=title, thumbnail_url=thumbnail))
+        status = _text(link.select_one(".tag-list li"))
+        items.append(ListItem(crs_sn=crs_sn, title=title, thumbnail_url=thumbnail, status=status))
     return list({item.crs_sn: item for item in items}.values())
 
 
@@ -117,7 +130,8 @@ def parse_detail(html: str, crs_sn: str) -> Course:
         raise SesacParseError(f"과정명을 찾지 못했다 crsSn={crs_sn}")
 
     tags = [_text(node) for node in soup.select(".assist-area .tag-list li")]
-    status = next((_text(node) for node in soup.select(".assist-area .tag-list li.clr01")), "")
+    # 첫 태그가 모집 상태다. 상태마다 클래스가 다르다(모집중 clr01, 운영중 clr04, 과정종료 clr05)
+    status = tags[0] if tags else ""
     campus = next((_text(node) for node in soup.select(".assist-area .tag-list li.clr02")), "")
     category = next((_text(node) for node in soup.select(".assist-area .tag-list li.clr03")), "")
     if not tags:

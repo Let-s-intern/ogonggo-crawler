@@ -1,8 +1,8 @@
 """`bootcamps` 표를 읽고 쓴다 (`migrations/0044_bootcamps.sql`).
 
-과정 하나가 행 하나다. 파서가 읽은 값이 바뀌면(`page_hash`) AI 칸과 전송 시도 수를 새로 센다 — 바뀐
-안내로 다시 채우고 다시 보내야 해서다. 채운 글과 오공고 id 는 지우지 않는다. 다시 채우기
-전까지 보이는 글이 있어야 하고, 다시 보낼 때 id 로 교체해야 한다.
+과정 하나가 행 하나다. 정리까지 끝난 과정(`is_done`)은 수집이 다시 읽지 않는다 (2026-09-22 결정).
+정리에 실패한 과정만 다시 받아 넣는데, 그사이 파서가 읽은 값이 바뀌었으면(`page_hash`) 새 값으로
+덮고 시도 수를 새로 센다.
 """
 
 from __future__ import annotations
@@ -29,15 +29,20 @@ def page_hash(course: Course, thumbnail_url: str) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def upsert(conn: sqlite3.Connection, course: Course, thumbnail_url: str) -> tuple[int, str]:
-    """과정을 넣거나 바꾼다. (행 id, 새로 들어왔나·바뀌었나·같은가) 를 돌려준다."""
+def upsert(
+    conn: sqlite3.Connection, course: Course, thumbnail_url: str, status_label: str = ""
+) -> tuple[int, str]:
+    """과정을 넣거나 바꾼다. (행 id, 새로 들어왔나·바뀌었나·같은가) 를 돌려준다.
+
+    모집 상태는 목록 카드의 것(`status_label`)이 먼저다. 없으면 상세의 것이다.
+    """
     digest = page_hash(course, thumbnail_url)
     values: dict[str, Any] = {
         "external_id": course.crs_sn,
         "title": course.title,
         "campus": course.campus,
         "category": course.category,
-        "status_label": course.status,
+        "status_label": status_label or course.status,
         "recruitment_start_date": _iso(course.recruitment_start),
         "recruitment_end_date": _iso(course.recruitment_end),
         "program_start_date": _iso(course.program_start),
@@ -63,9 +68,7 @@ def upsert(conn: sqlite3.Connection, course: Course, thumbnail_url: str) -> tupl
         )
         return int(cursor.lastrowid or 0), NEW
     if row["page_hash"] == digest:
-        conn.execute(
-            "UPDATE bootcamps SET last_seen_at = datetime('now') WHERE id = ?", (row["id"],)
-        )
+        touch(conn, course.source_url, str(values["status_label"]))
         return int(row["id"]), SAME
     assignments = ", ".join(f"{name} = ?" for name in values)
     conn.execute(
@@ -74,6 +77,38 @@ def upsert(conn: sqlite3.Connection, course: Course, thumbnail_url: str) -> tupl
         (*values.values(), row["id"]),
     )
     return int(row["id"]), CHANGED
+
+
+def is_done(conn: sqlite3.Connection, source_url: str) -> bool:
+    """이미 모아 AI 정리까지 끝난 과정인가. 그런 과정은 상세를 다시 받지 않는다."""
+    row = conn.execute(
+        "SELECT page_hash, filled_hash FROM bootcamps WHERE source_url = ?", (source_url,)
+    ).fetchone()
+    return row is not None and row["filled_hash"] == row["page_hash"]
+
+
+def touch(conn: sqlite3.Connection, source_url: str, status_label: str) -> bool:
+    """목록에서 다시 본 과정. 본 시각과 목록 카드의 모집 상태를 적는다. 상태가 바뀌었으면 True.
+
+    상태가 바뀌면 전송 시도 수를 새로 센다 — 오공고에 새 상태를 보내야 한다
+    (`app/bootcamp/deliver.py`).
+    """
+    row = conn.execute(
+        "SELECT status_label FROM bootcamps WHERE source_url = ?", (source_url,)
+    ).fetchone()
+    changed = row is not None and bool(status_label) and row["status_label"] != status_label
+    if changed:
+        conn.execute(
+            "UPDATE bootcamps SET status_label = ?, send_attempts = 0,"
+            " last_seen_at = datetime('now'), updated_at = datetime('now') WHERE source_url = ?",
+            (status_label, source_url),
+        )
+    else:
+        conn.execute(
+            "UPDATE bootcamps SET last_seen_at = datetime('now') WHERE source_url = ?",
+            (source_url,),
+        )
+    return changed
 
 
 def needs_fill(conn: sqlite3.Connection, bootcamp_id: int) -> bool:
@@ -125,9 +160,12 @@ def curriculum(row: sqlite3.Row) -> list[CurriculumGroup]:
 
 
 def listing(conn: sqlite3.Connection, limit: int = 200) -> list[sqlite3.Row]:
-    """화면 목록. 최근에 본 과정이 위다."""
+    """화면 목록. 신청할 수 있는 과정이 위고, 그 안에서는 새싹 번호가 큰(최근) 과정이 위다."""
     return conn.execute(
-        "SELECT * FROM bootcamps ORDER BY last_seen_at DESC, id DESC LIMIT ?", (limit,)
+        "SELECT * FROM bootcamps"
+        " ORDER BY status_label NOT IN ('모집중', '모집예정'), CAST(external_id AS INTEGER) DESC"
+        " LIMIT ?",
+        (limit,),
     ).fetchall()
 
 

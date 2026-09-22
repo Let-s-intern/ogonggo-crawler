@@ -6,11 +6,14 @@
 | 확인 | 깨지면 |
 |---|---|
 | 목록·상세의 날짜·캠퍼스·분야·목차·교육개요 이미지를 읽는다 | 오공고 필수 칸이 비어 거절된다 |
-| 새 과정과 바뀐 과정만 AI 로 채운다 | 수집 때마다 같은 과정에 AI 비용이 든다 |
+| 이미 모아 정리한 과정은 상세도 AI 도 다시 부르지 않는다 | 수집마다 같은 과정에 비용이 든다 |
 | 목록이 비었는데 총 건수가 0 이 아니면 실패다 | 새싹 틀이 바뀐 날이 성공으로 보인다 |
-| 등록하고 id 를 적고, 바뀐 과정은 그 id 로 교체한다 | 같은 과정이 쌓이거나 낡은 안내가 남는다 |
+| 등록하고 id 를 적고, 두 번 보내지 않는다 | 같은 과정이 오공고에 쌓인다 |
 | 409 면 원문 주소로 id 를 찾아 교체한다 | id 를 잃은 과정을 영영 못 보낸다 |
 | 목차를 교육 시작일부터 센 주차로 바꾸고, 많으면 주차별로 합친다 | 목차가 수업 목록이 된다 |
+| 상태와 상관없이 모으고, 끝난 과정은 모집 마감으로 보낸다 | 끝난 과정이 모집중으로 보인다 |
+| 모은 과정의 상태가 바뀌면 상세 없이 다시 보낸다 | 개강한 과정이 모집중으로 남는다 |
+| 한 번에 정리하는 수에 상한을 두고 모집중부터 채운다 | 첫 수집이 한 시간 넘게 돈다 |
 """
 
 from __future__ import annotations
@@ -43,8 +46,9 @@ FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 LIST_HTML = (FIXTURES / "sesac-list-recruiting-20260922.html").read_text(encoding="utf-8")
 DETAILS = {
     sn: (FIXTURES / f"sesac-detail-{sn}-20260922.html").read_text(encoding="utf-8")
-    for sn in ("1197", "1189", "1154")
+    for sn in ("1197", "1189", "1154", "1202")
 }
+ALL_LIST_HTML = (FIXTURES / "sesac-list-all-p1-20260922.html").read_text(encoding="utf-8")
 KEY = "test-internal-key"
 SETTINGS = Settings(gemini_api_key="테스트키", ogonggo_internal_api_key=KEY)
 EMPTY_LIST = LIST_HTML.split('<div class="list-wrap v1">')[0] + "</body></html>"
@@ -178,28 +182,27 @@ async def test_새_과정만_AI_로_채우고_같은_과정은_다시_채우지_
     second = await run_sesac(conn, fetcher=SesacFetcher(), filler=filler, settings=SETTINGS)
 
     assert (first.status, first.listed, first.new, first.filled) == ("success", 3, 3, 3)
-    assert (second.status, second.new, second.changed, second.filled) == ("success", 0, 0, 0)
+    assert (second.status, second.new, second.skipped, second.filled) == ("success", 0, 3, 0)
     assert len(filler.titles) == 3
     runs = conn.execute("SELECT status, new_count FROM bootcamp_runs ORDER BY id").fetchall()
     assert [tuple(run) for run in runs] == [("success", 3), ("success", 0)]
 
 
-async def test_안내가_바뀐_과정은_다시_채운다(conn: sqlite3.Connection) -> None:
-    filler = FakeFiller()
-    await run_sesac(conn, fetcher=SesacFetcher(), filler=filler, settings=SETTINGS)
+async def test_이미_모은_과정은_안내가_바뀌어도_상세를_다시_받지_않는다(
+    conn: sqlite3.Connection,
+) -> None:
+    await run_sesac(conn, fetcher=SesacFetcher(), filler=FakeFiller(), settings=SETTINGS)
     changed = DETAILS["1197"].replace("2026.08.13 - 2026.09.28", "2026.08.13 - 2026.10.05")
+    fetcher = SesacFetcher(details={**DETAILS, "1197": changed})
+    filler = FakeFiller()
 
-    summary = await run_sesac(
-        conn,
-        fetcher=SesacFetcher(details={**DETAILS, "1197": changed}),
-        filler=filler,
-        settings=SETTINGS,
-    )
+    summary = await run_sesac(conn, fetcher=fetcher, filler=filler, settings=SETTINGS)
 
-    assert (summary.changed, summary.filled) == (1, 1)
+    assert (summary.new, summary.skipped, summary.filled) == (0, 3, 0)
+    assert all(sesac.LIST_PATH in url for url in fetcher.urls)
+    assert filler.titles == []
     row = conn.execute("SELECT * FROM bootcamps WHERE external_id = '1197'").fetchone()
-    assert row["recruitment_end_date"] == "2026-10-05"
-    assert row["filled_hash"] == row["page_hash"]
+    assert row["recruitment_end_date"] == "2026-09-28"
 
 
 async def test_AI_가_실패하면_사유를_남기고_다음_수집에서_다시_채운다(
@@ -241,7 +244,7 @@ def _spring(handler: Any) -> list[httpx.Request]:
     return seen
 
 
-async def test_등록하고_id_를_적고_바뀐_과정은_그_id_로_교체한다(conn: sqlite3.Connection) -> None:
+async def test_등록하고_id_를_적고_두_번_보내지_않는다(conn: sqlite3.Connection) -> None:
     await run_sesac(conn, fetcher=SesacFetcher(), filler=FakeFiller(), settings=SETTINGS)
     ids = iter(range(101, 200))
     seen = _spring(
@@ -270,21 +273,6 @@ async def test_등록하고_id_를_적고_바뀐_과정은_그_id_로_교체한�
     assert body["representativeImageUrl"].startswith("https://sesac.seoul.kr/")
     assert body["capacity"] == 30
     assert body["curriculums"][0]["subtitle"] == "IT 이해"
-
-    changed = DETAILS["1197"].replace("2026.08.13 - 2026.09.28", "2026.08.13 - 2026.10.05")
-    await run_sesac(
-        conn,
-        fetcher=SesacFetcher(details={**DETAILS, "1197": changed}),
-        filler=FakeFiller(),
-        settings=SETTINGS,
-    )
-    seen.clear()
-    replaced = await deliver.deliver_pending(conn, settings=SETTINGS)
-
-    assert replaced.sent == 1
-    assert [(request.method, request.url.path) for request in seen] == [
-        ("PUT", "/api/v1/internal/bootcamps/101")
-    ]
 
 
 async def test_409_면_원문_주소로_id_를_찾아_교체한다(conn: sqlite3.Connection) -> None:
@@ -429,3 +417,107 @@ def test_store_해시는_같은_값이면_같다() -> None:
 
     assert store.page_hash(course, "a") == store.page_hash(course, "a")
     assert store.page_hash(course, "a") != store.page_hash(course, "b")
+
+
+def test_목록은_모집_상태와_상관없이_읽고_카드의_상태를_가져온다() -> None:
+    items = sesac.parse_list(ALL_LIST_HTML)
+
+    assert len(items) == 12
+    assert [item.status for item in items[:4]] == ["모집중", "모집중", "모집중", "운영중"]
+    assert "searchRcrtStts" not in sesac.list_url(2)
+
+
+def test_운영중_과정의_상세도_상태를_읽는다() -> None:
+    course = sesac.parse_detail(DETAILS["1202"], "1202")
+
+    assert (course.status, course.campus, course.category) == ("운영중", "성동", "디지털마케팅")
+
+
+@pytest.mark.parametrize(
+    ("label", "status"),
+    [
+        ("모집중", "RECRUITING"),
+        ("모집예정", "RECRUITING"),
+        ("운영중", "CLOSED"),
+        ("과정종료", "CLOSED"),
+    ],
+)
+def test_새싹_상태를_오공고_모집_상태로_옮긴다(label: str, status: str) -> None:
+    assert sesac.spring_status(label) == status
+
+
+async def test_한_번에_정리하는_수에_상한을_두고_모집중부터_채운다(
+    conn: sqlite3.Connection,
+) -> None:
+    fetcher = SesacFetcher(list_html=ALL_LIST_HTML)
+    filler = FakeFiller()
+
+    first = await run_sesac(conn, fetcher=fetcher, filler=filler, settings=SETTINGS, max_fills=4)
+
+    assert (first.listed, first.filled) == (12, 4)
+    assert [title[:6] for title in filler.titles][:3] == ["(성동4기)", "Google", "중소기업부터"]
+    assert any("8건은 다음 수집에서" in note for note in first.notes)
+    row = conn.execute("SELECT * FROM bootcamps WHERE external_id = '1202'").fetchone()
+    assert row["status_label"] == "운영중"
+    assert deliver.payload(row)["status"] == "CLOSED"
+    recruiting = conn.execute("SELECT * FROM bootcamps WHERE external_id = '1197'").fetchone()
+    assert deliver.payload(recruiting)["status"] == "RECRUITING"
+
+
+async def test_모집_상태가_바뀌면_상세_없이_같은_id_로_다시_보낸다(
+    conn: sqlite3.Connection,
+) -> None:
+    await run_sesac(conn, fetcher=SesacFetcher(), filler=FakeFiller(), settings=SETTINGS)
+    ids = iter(range(101, 200))
+    seen = _spring(
+        lambda request: httpx.Response(
+            201 if request.method == "POST" else 200,
+            json={"data": {"bootcampId": next(ids)} if request.method == "POST" else None},
+        )
+    )
+    await deliver.deliver_pending(conn, settings=SETTINGS)
+    seen.clear()
+    started = LIST_HTML.replace('<li class="clr01">모집중</li>', '<li class="clr04">운영중</li>', 1)
+    fetcher = SesacFetcher(list_html=started)
+
+    summary = await run_sesac(conn, fetcher=fetcher, filler=FakeFiller(), settings=SETTINGS)
+    resent = await deliver.deliver_pending(conn, settings=SETTINGS)
+
+    assert (summary.skipped, summary.status_changed, summary.filled) == (3, 1, 0)
+    assert all(sesac.LIST_PATH in url for url in fetcher.urls)
+    assert resent.sent == 1
+    assert [(request.method, request.url.path) for request in seen] == [
+        ("PUT", "/api/v1/internal/bootcamps/101")
+    ]
+    assert json.loads(seen[0].content)["status"] == "CLOSED"
+    assert deliver.pending(conn) == []
+
+
+def test_지금_수집은_백그라운드로_시작한다(
+    tmp_path: pathlib.Path, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.api import ui_bootcamps
+
+    started: list[Settings] = []
+    monkeypatch.setattr(ui_bootcamps, "_start", started.append)
+
+    def request_connection() -> Iterator[sqlite3.Connection]:
+        connection = db.connect(tmp_path / "jobs.db")
+        try:
+            yield connection
+        finally:
+            connection.close()
+
+    app.dependency_overrides[settings_api.get_connection] = request_connection
+    try:
+        client = TestClient(app)
+        first = client.post("/ui/bootcamps/run")
+        conn.execute("INSERT INTO bootcamp_runs (trigger, status) VALUES ('manual', 'running')")
+        second = client.post("/ui/bootcamps/run")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert "수집을 시작했다" in first.text
+    assert "이미 수집하는 중이다" in second.text
+    assert 'hx-trigger="every 5s"' in second.text
+    assert len(started) == 1

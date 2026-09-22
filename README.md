@@ -27,9 +27,10 @@ URL 입력 → 셀렉터 생성(LLM) → 테스트 실행 → 워크플로우 �
 다시 돌리면 된다. 자세한 구조는 [`.claude/docs/architecture.md`](.claude/docs/architecture.md)에
 있다.
 
-부트캠프는 이 흐름을 타지 않는다. 새싹(SeSAC) 오프라인 과정 하나만 모으므로 고정 파서로 읽고,
-교육개요 이미지를 AI 로 정리해 오공고 `/api/v1/internal/bootcamps` 로 등록·교체한다. 코드는
-`app/bootcamp/`, 화면은 위 메뉴 `부트캠프`, 표는 `migrations/0044_bootcamps.sql` 이다.
+부트캠프는 이 흐름을 타지 않는다. 새싹(SeSAC) 오프라인 과정(모집 상태와 상관없이 전부)만 모으므로 고정 파서로 읽고,
+교육개요 이미지를 AI 로 정리해 오공고 `/api/v1/internal/bootcamps` 로 등록한다. 한 번 모은 과정은
+다시 읽지 않는다. 코드는 `app/bootcamp/`, 화면은 위 메뉴 `부트캠프`, 표는
+`migrations/0044_bootcamps.sql` 이다.
 
 ## 스택
 

@@ -4,8 +4,11 @@
 -- 싣지 않는다. 부트캠프 사이트는 새싹 하나라 전용 수집기(`app/bootcamp/`)를 따로 두고, 과정 한 건을
 -- 행 하나에 담는다. 파서가 읽은 값, AI 가 채운 글 칸, 오공고 전송 상태가 한 행에 있다.
 --
--- page_hash 는 파서가 읽은 값 전체의 해시다. 바뀌면 AI 가 다시 채우고(filled_hash) 오공고에 다시
--- 보낸다(sent_hash). 새싹은 모집기간을 늘리며 교육개요 이미지를 갈아 끼우는 일이 있다.
+-- 한 번 모아 AI 정리까지 끝난 과정은 다시 읽지 않는다 (2026-09-22 결정). 상세를 다시 받지도, AI 를
+-- 다시 부르지도, 오공고로 다시 보내지도 않는다. 정리에 실패한 과정만 다음 수집에서 다시 받는다.
+-- page_hash 는 파서가 읽은 값의 해시로, 정리(filled_hash)·전송(sent_hash)이 어느 판에 대한 것인지 가른다.
+-- 모집 상태만은 매번 목록 카드에서 읽어 status_label 에 적는다. 보낸 상태(sent_status_label)와 다르면
+-- 오공고에 다시 보낸다 — 모집중이던 과정이 운영중이 되면 오공고에서도 모집 마감이 돼야 한다.
 --
 -- 되돌리기: 두 표를 지운다.
 
@@ -39,6 +42,7 @@ CREATE TABLE bootcamps (
     fill_error             TEXT NOT NULL DEFAULT '',
     spring_bootcamp_id     INTEGER,
     sent_hash              TEXT,
+    sent_status_label      TEXT,
     send_status            TEXT CHECK (send_status IN ('sent', 'failed')),
     send_attempts          INTEGER NOT NULL DEFAULT 0,
     send_error             TEXT NOT NULL DEFAULT '',
@@ -55,7 +59,7 @@ CREATE TABLE bootcamp_runs (
     status        TEXT NOT NULL CHECK (status IN ('running', 'success', 'failed')),
     listed_count  INTEGER NOT NULL DEFAULT 0,
     new_count     INTEGER NOT NULL DEFAULT 0,
-    changed_count INTEGER NOT NULL DEFAULT 0,
+    skipped_count INTEGER NOT NULL DEFAULT 0,
     filled_count  INTEGER NOT NULL DEFAULT 0,
     sent_count    INTEGER NOT NULL DEFAULT 0,
     failed_count  INTEGER NOT NULL DEFAULT 0,

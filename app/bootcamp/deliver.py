@@ -1,20 +1,22 @@
 """채운 부트캠프를 오공고 관리자 API 로 등록·교체한다 (2026-09-22 결정, LC-3364).
 
-`POST /api/v1/internal/bootcamps` 로 등록하고 받은 id 를 행에 적는다. 공고 전송과 달리 **바뀐 과정은
-다시 보낸다** — 새싹은 모집기간을 늘리며 안내를 갈아 끼우고, 부트캠프는 건수가 적어 교체가 싸다.
-id 가 있으면 `PUT /{id}` 로 통째로 바꾼다. 409 가 오면 `GET ?sourceUrl=` 로 id 를 찾아 교체한다.
+`POST /api/v1/internal/bootcamps` 로 등록하고 받은 id 를 행에 적는다. 한 번 보낸 과정은 모집 상태가
+바뀔 때만 `PUT /{id}` 로 다시 보낸다 — 수집이 정리까지 끝난 과정의 상세는 다시 읽지 않지만, 목록
+카드의 모집 상태는 매번 본다 (`app/bootcamp/runner.py`). 409 가 오면
+`GET ?sourceUrl=` 로 id 를 찾아 `PUT /{id}` 로 크롤러 값을 싣는다. id 를 적기 전에 크롤러가 죽었거나
+DB 를 옮긴 경우다.
 
 오공고 주소와 키는 공고 전송과 같은 것이다 (`app/deliver/settings.py`, `OGONGGO_INTERNAL_API_KEY`).
 
 ## 보내지 않는 과정
 
-- AI 가 아직 채우지 않았거나 채운 뒤 안내가 바뀐 과정(`filled_hash != page_hash`).
-  다음 수집이 채운다
+- AI 가 아직 채우지 않은 과정(`filled_hash != page_hash`). 다음 수집이 채운다
 - 이미 지금 안내로 보낸 과정(`sent_hash = page_hash`)
-- 지금 안내로 세 번 실패한 과정. 안내가 바뀌면 다시 센다
+- 세 번 실패한 과정. 화면의 `지금 보내기` 는 보낸다
 
 ## 고정 값
 
+모집 상태는 새싹 목록 카드의 상태에서 온다. 모집중·모집예정은 모집중, 나머지는 모집 마감이다.
 새싹 오프라인 과정은 모두 서울시가 비용을 대는 무료 과정이고, 수강신청은 새싹 사이트의
 과정 페이지에서 한다. 그래서 진행 방식은 오프라인, 수강료는 무료, 지원 방법은 외부
 페이지(원문 주소)로 고정한다.
@@ -31,7 +33,7 @@ from typing import Any
 
 import httpx
 
-from app.bootcamp import store
+from app.bootcamp import sesac, store
 from app.bootcamp.sesac import CurriculumGroup
 from app.config import Settings, get_settings
 from app.deliver import settings as deliver_store
@@ -55,7 +57,11 @@ _READY = """
     AND coalesce(content, '') <> ''
     AND coalesce(short_description, '') <> ''
 """
-_UNSENT = "(sent_hash IS NULL OR sent_hash <> page_hash)"
+# 안 보냈거나, 보낸 뒤 모집 상태가 바뀐 과정이다
+_UNSENT = (
+    "(sent_hash IS NULL OR sent_hash <> page_hash"
+    " OR coalesce(sent_status_label, '') <> status_label)"
+)
 
 
 @dataclass
@@ -126,6 +132,7 @@ def payload(row: sqlite3.Row) -> dict[str, Any]:
         "title": str(row["title"]),
         "programType": str(row["category"] or "").strip() or "기타",
         "operationType": "OFFLINE",
+        "status": sesac.spring_status(str(row["status_label"] or "")),
         # 모집 마감일이 없으면 상시 모집이다. 상시 모집에는 마감 일시를 둘 수 없다
         "recruitmentType": "PERIOD" if start and end else "ALWAYS_OPEN",
         "recruitmentStartAt": f"{start}T00:00:00" if start else None,
@@ -227,7 +234,8 @@ async def _deliver_one(
     conn.execute(
         """
         UPDATE bootcamps
-           SET spring_bootcamp_id = ?, sent_hash = page_hash, send_status = 'sent',
+           SET spring_bootcamp_id = ?, sent_hash = page_hash, sent_status_label = status_label,
+               send_status = 'sent',
                send_attempts = send_attempts + 1, send_error = '', sent_at = datetime('now')
          WHERE id = ?
         """,
