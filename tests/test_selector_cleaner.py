@@ -146,3 +146,24 @@ def test_huge_attribute_values_are_cut_short() -> None:
     assert "data-buffer" in cleaned.html
     assert "본문" in cleaned.html
     assert not cleaned.truncated
+
+
+def test_같은_클래스의_섹션이라도_안이_제각각이면_줄이지_않는다() -> None:
+    """greetinghr 실측(2026-09-22): 같은 클래스의 섹션 여덟 개 중 일곱 번째가 공고 목록이었다."""
+    sizes = [2, 5, 14, 4, 1, 9, 30, 2]
+    sections = "".join(
+        f'<div class="section"><div class="inner">{"<p>글</p>" * size}</div></div>'
+        for size in sizes[:6]
+    )
+    items = "".join(
+        f'<li><a class="item" href="/ko/o/{n}"><span>공고 {n}</span><span>경력</span></a></li>'
+        for n in range(6)
+    )
+    sections += f'<div class="section"><div class="inner"><ul>{items}</ul></div></div>'
+    sections += '<div class="section"><div class="inner"><p>끝</p></div></div>'
+
+    cleaned = clean_html(f"<body><main>{sections}</main></body>")
+    soup = BeautifulSoup(cleaned.html, "html.parser")
+
+    assert len(soup.select("div.section")) == 8
+    assert len(soup.select("a.item")) == 4

@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 
 from bs4 import BeautifulSoup, Comment, Tag
@@ -26,6 +27,8 @@ DEFAULT_KEEP_SIBLINGS = 4
 
 # 반복으로 볼 최소 형제 수. 이보다 적으면 리스트가 아니라 그냥 마크업이다.
 _MIN_REPEAT = 3
+# 반복 항목끼리 안에 든 요소 수가 이 비율 안에서 비슷해야 한다 (`_alike`)
+_SIZE_TOLERANCE = 0.4
 
 _DROP_TAGS = ("script", "style", "svg", "noscript", "iframe", "template")
 _ON_ATTR = re.compile(r"^on", re.IGNORECASE)
@@ -151,7 +154,7 @@ def _sample_repeats(soup: BeautifulSoup, keep: int) -> tuple[Tag | None, int]:
             groups.setdefault((child.name, tuple(child.get("class") or ())), []).append(child)
 
         for (name, _), children in groups.items():
-            if len(children) < _MIN_REPEAT:
+            if len(children) < _MIN_REPEAT or not _alike(children):
                 continue
             if len(children) > best_count and name not in ("option", "meta", "link"):
                 best_count = len(children)
@@ -161,6 +164,29 @@ def _sample_repeats(soup: BeautifulSoup, keep: int) -> tuple[Tag | None, int]:
                 removed += 1
 
     return best_region, removed
+
+
+def _alike(children: list[Tag]) -> bool:
+    """형제들이 서로 닮았는가. 닮아야 반복 목록이다.
+
+    겉의 태그와 클래스가 같아도 안이 제각각이면 목록이 아니라 페이지 빌더의 섹션이다. greetinghr
+    실측(2026-09-22): 같은 클래스의 섹션 여덟 개 중 일곱 번째가 공고 목록이라, 다섯 번째부터
+    지우면 목록이 사라졌다. 섹션은 안에 든 요소 수가 9개에서 143개까지 들쭉날쭉했고, 공고
+    항목은 22~25개로 고르다. 안의 칸 구성과 요소 수가 절반 이상 비슷해야 반복으로 본다.
+    """
+    shapes = Counter(_shape(node) for node in children)
+    if shapes.most_common(1)[0][1] * 2 < len(children):
+        return False
+    sizes = sorted(len(node.find_all(True)) for node in children)
+    middle = sizes[len(sizes) // 2]
+    near = [size for size in sizes if abs(size - middle) <= middle * _SIZE_TOLERANCE]
+    return len(near) * 2 >= len(children)
+
+
+def _shape(node: Tag) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    return tuple(
+        (child.name, tuple(child.get("class") or ())) for child in node.find_all(recursive=False)
+    )
 
 
 def _fallback_region(soup: BeautifulSoup) -> Tag | None:
