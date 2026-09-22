@@ -519,3 +519,55 @@ async def test_잘리지_않은_응답은_다시_부르지_않는다() -> None:
 
     assert restored == [whole]
     assert calls == []
+
+
+def _nhn_request() -> ObservedRequest:
+    payload = {
+        "result": [
+            {"id": "4422617909897514692", "name": "백엔드 개발 인턴 (체험형)"},
+            {"id": "4405976305114575784", "name": "[서울] 고객상담(정규직)_동행복권"},
+        ]
+    }
+    return ObservedRequest(
+        method="GET",
+        url="https://example.test/v1/job-postings?page=0&size=30",
+        status=200,
+        content_type="application/json",
+        body=json.dumps(payload, ensure_ascii=False),
+    )
+
+
+def test_화면이_제목_앞에_회사를_붙여도_목록_API_를_찾는다() -> None:
+    """NHN 실측(2026-09-22): 화면 제목 앞의 `[NHN] ` 이 응답의 `name` 에는 없다."""
+    items = [
+        ListItem(index=0, title="[NHN] 백엔드 개발 인턴 (체험형)", link="", date=""),
+        ListItem(index=1, title="[NHN Service] [서울] 고객상담(정규직)_동행복권", link="", date=""),
+    ]
+
+    path = propose_list_config(
+        [_nhn_request()],
+        items,
+        [],
+        clicked_url="https://example.test/recruits/4422617909897514692?type=list",
+    )
+
+    assert path.ok is True
+    assert path.config().fields["title"] == "name"
+    assert path.config().id_field == "id"
+
+
+def test_짧은_값이_제목에_들어_있다고_같은_공고로_보지_않는다() -> None:
+    items = [
+        ListItem(index=0, title="2026 하반기 신입 채용 [개발]", link="", date=""),
+        ListItem(index=1, title="2026 하반기 신입 채용 [디자인]", link="", date=""),
+    ]
+    payload = {"result": [{"id": "1001", "name": "신입"}, {"id": "1002", "name": "채용"}]}
+    request = ObservedRequest(
+        method="GET",
+        url="https://example.test/v1/postings",
+        status=200,
+        content_type="application/json",
+        body=json.dumps(payload, ensure_ascii=False),
+    )
+
+    assert propose_list_config([request], items, []).ok is False

@@ -378,8 +378,8 @@ async def confirm_list_path(
             adopted=False, reason=f"다시 부른 응답에서 항목을 읽지 못했다: {exc}"
         )
 
-    got = {_squeeze(item.title) for item in result.items}
-    matched = sum(1 for title in expected if title in got)
+    got = [_squeeze(item.title) for item in result.items]
+    matched = sum(1 for title in expected if any(_same_title(title, value) for value in got))
     if matched < MIN_TITLE_HITS or matched * 2 < min(len(expected), len(result.items)):
         return ListConfirmation(
             adopted=False,
@@ -414,7 +414,7 @@ def _title_hits(entries: Sequence[Any], titles: Sequence[str]) -> int:
     """이 배열이 그 제목들을 몇 건이나 담고 있는가."""
     found = 0
     for title in titles:
-        if any(title in _values(entry).values() for entry in entries):
+        if any(_same_title(title, value) for entry in entries for value in _values(entry).values()):
             found += 1
     return found
 
@@ -429,7 +429,9 @@ def _pairs(
         if not title:
             continue
         for entry in entries:
-            path = next((key for key, value in _values(entry).items() if value == title), "")
+            path = next(
+                (key for key, value in _values(entry).items() if _same_title(title, value)), ""
+            )
             if path:
                 found.append((path, entry, item))
                 break
@@ -596,6 +598,29 @@ def _common(paths: Iterator[str]) -> str:
 def _usable_id(value: str) -> bool:
     """공고 id 로 볼 만한 값인가. 짧은 값은 주소 아무 자리에나 우연히 들어 있다."""
     return MIN_ID_LENGTH <= len(value) <= MAX_ID_LENGTH
+
+
+# 화면 제목 안에 든 응답 값을 같은 제목으로 볼 최소 길이와 비율. 짧은 값("신입")이 아무 제목에나
+# 들어 있어 짝이 틀리는 것을 막는다
+MIN_PARTIAL_TITLE = 6
+MIN_PARTIAL_RATIO = 0.5
+
+
+def _same_title(rendered: str, value: str) -> bool:
+    """화면 제목과 응답 값이 같은 공고의 제목인가.
+
+    화면이 제목 앞뒤에 회사나 분류를 붙이는 사이트가 있다. NHN 실측(2026-09-22): 화면은
+    `[NHN] 백엔드 개발 인턴 (체험형)`, 응답의 `name` 은 `백엔드 개발 인턴 (체험형)` 이었다. 글자가
+    통째로 같아야 한다고 보면 목록 API 를 못 찾고, 항목에 링크가 없어 상세로 갈 길이 끊겼다.
+    """
+    value = _squeeze(value)
+    if value == rendered:
+        return True
+    return (
+        len(value) >= MIN_PARTIAL_TITLE
+        and value in rendered
+        and len(value) >= len(rendered) * MIN_PARTIAL_RATIO
+    )
 
 
 def _squeeze(value: str) -> str:
