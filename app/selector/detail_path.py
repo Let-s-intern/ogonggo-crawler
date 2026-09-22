@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
 
+from bs4 import BeautifulSoup
 from bs4.element import Tag
 
 from app.crawler.api_source import build_detail, fetch_detail
@@ -486,7 +487,11 @@ async def confirm_document_path(client: FetchPolicy, url: str, marker: str) -> C
     except FetchError as exc:
         return Confirmation(adopted=False, reason=f"공용 fetch 클라이언트로 부르지 못했다: {exc}")
 
-    if _squeeze(marker) not in _squeeze(result.text):
+    # 화면에 보이는 본문에서만 찾는다. `<title>`·`<meta>`·스크립트 속 데이터에만 제목이 있는 문서는
+    # 정적으로 받아도 본문이 비어 있다. recruiter.co.kr 이 그렇다 — 정적 응답은 `<title>` 에 공고
+    # 제목을 두고 본문은 브라우저에서 그린다. 문자열 전체에서 찾으면 그것을 정적 채택으로 보고,
+    # 실행마다 상세의 제목과 본문을 못 읽었다 (2026-09-22)
+    if _squeeze(marker) not in _squeeze(_visible_text(result.text)):
         return Confirmation(
             adopted=False,
             reason=(
@@ -495,6 +500,15 @@ async def confirm_document_path(client: FetchPolicy, url: str, marker: str) -> C
             ),
         )
     return Confirmation(adopted=True, title=marker, body_length=len(result.text))
+
+
+def _visible_text(html: str) -> str:
+    """`<body>` 에서 화면에 보이는 글자. 스크립트와 스타일은 뺀다."""
+    soup = BeautifulSoup(html, "html.parser")
+    body = soup.body or soup
+    for node in body.find_all(("script", "style", "noscript", "template")):
+        node.decompose()
+    return body.get_text(" ")
 
 
 def _same(expected: str, actual: str) -> bool:
