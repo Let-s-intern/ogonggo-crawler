@@ -501,6 +501,7 @@ class Renderer:
                         url, wait_until="domcontentloaded", timeout=timeout_ms
                     )
                     await _settle(page)
+                    await _inline_frames(page)
                     html = await page.content()
                     final_url = page.url
                     if log is not None:
@@ -552,6 +553,33 @@ async def _settle(page: Any) -> None:
             arg=list(_ITEM_HINTS),
             timeout=int(_ITEMS_SECONDS * 1000),
         )
+
+
+# 같은 출처 iframe 의 본문을 그 iframe 바로 뒤에 붙인다. 다른 출처(광고·지도)는 `contentDocument`
+# 가 null 이라 저절로 빠진다
+_INLINE_FRAMES_JS = """
+() => {
+  for (const frame of document.querySelectorAll('iframe')) {
+    let doc = null;
+    try { doc = frame.contentDocument; } catch (e) { continue; }
+    if (!doc || !doc.body || !doc.body.innerHTML.trim()) continue;
+    const box = document.createElement('div');
+    box.setAttribute('data-iframe-content', '');
+    box.innerHTML = doc.body.innerHTML;
+    frame.after(box);
+  }
+}
+"""
+
+
+async def _inline_frames(page: Any) -> None:
+    """iframe 안의 글을 문서에 옮겨 적는다. 안 되어도 실패로 보지 않는다.
+
+    `page.content()` 는 iframe 안을 담지 않는다. 한화 실측(2026-09-22): 공고 본문을 에디터
+    iframe 에 그려 렌더한 HTML 에 본문이 없었고, 본문 셀렉터가 비어 필수 칸 실패로 끝났다.
+    """
+    with suppress(Exception):
+        await page.evaluate(_INLINE_FRAMES_JS)
 
 
 def _status(response: Any) -> int:

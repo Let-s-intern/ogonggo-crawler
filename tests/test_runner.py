@@ -228,7 +228,8 @@ async def test_상세_필드를_못_읽으면_parse_로_남는다(conn: sqlite3.
     fetcher = StubSite().fetcher()
     target = RunTarget(
         list_url=LIST_URL,
-        selectors=replaced("detail", body="div.no-such-description"),
+        # 제목까지 깨뜨린다. 제목이 읽히면 본문은 제목 근처의 글로 대신 채운다
+        selectors=replaced("detail", title="h1.no-such-title", body="div.no-such-description"),
         trigger=SCHEDULE,
         workflow_id=1,
     )

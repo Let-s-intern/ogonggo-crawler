@@ -57,3 +57,21 @@ def test_새_탭의_첫_이동과_리다이렉트를_모두_적는다() -> None:
         "https://example.test/job-invite/2859/",
         "https://example.test/job/slug/4467050/",
     ]
+
+
+async def test_렌더한_문서에_iframe_의_글을_옮겨_적는다() -> None:
+    """한화 실측(2026-09-22): 본문이 에디터 iframe 안에 있어 `page.content()` 에 없었다."""
+    from app.crawler.playwright import _INLINE_FRAMES_JS, _inline_frames
+
+    class FakePage:
+        def __init__(self) -> None:
+            self.scripts: list[str] = []
+
+        async def evaluate(self, script: str) -> None:
+            self.scripts.append(script)
+
+    page = FakePage()
+    await _inline_frames(page)
+
+    assert page.scripts == [_INLINE_FRAMES_JS]
+    assert "contentDocument" in _INLINE_FRAMES_JS

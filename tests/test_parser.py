@@ -159,8 +159,9 @@ def test_일부_항목만_실패하면_나머지는_남고_실패가_기록된�
 
 
 def test_상세_필수_필드를_못_읽으면_parse_다() -> None:
+    # 제목까지 깨뜨린다. 제목이 읽히면 본문은 제목 근처의 글로 대신 채운다
     selectors = DetailSelectors(
-        title=DETAIL_SELECTORS.title,
+        title="h1.no-such-title",
         body="div.no-such-description",
         qualifications="",
         recruitment_end_at="",
@@ -198,3 +199,61 @@ def test_셀렉터_문법_오류는_parse_다() -> None:
 
     with pytest.raises(FieldParseError):
         parse_list(LIST_HTML, selectors, LIST_URL)
+
+
+HANWHA_TABLE_DETAIL = """
+<html><body><header><nav>메뉴 채용공고 마이페이지</nav></header>
+<div class="recruit-detail"><div class="contents">
+  <div class="head"><h3 class="recruit-title">[한화모멘텀] 해외영업(중국) 경력사원 채용</h3></div>
+  <section class="detail-section"><h3>모집단위</h3><table><tr><td>해외영업 (중국)</td>
+  <td>{duties}</td></tr></table></section>
+</div></div>
+<footer>서울시 중구 청계천로 86</footer></body></html>
+"""
+
+
+def test_본문_셀렉터가_빗나가면_제목_근처의_글을_본문으로_쓴다() -> None:
+    """한화 실측(2026-09-22): 에디터형 공고로 만든 본문 셀렉터가 표로 된 공고에서 0개였다."""
+    html = HANWHA_TABLE_DETAIL.format(duties="시장 조사 및 신규 거래선 발굴 " * 20)
+    selectors = DetailSelectors(
+        title="h3.recruit-title",
+        body="div.recruit-detail-editor",
+        qualifications="",
+        recruitment_end_at="",
+        department="",
+    )
+
+    result = parse_detail(html, selectors)
+
+    assert "시장 조사 및 신규 거래선 발굴" in result.fields["body"]
+    assert "청계천로" not in result.fields["body"]
+    assert "메뉴" not in result.fields["body"]
+
+
+def test_제목_근처에도_글이_모자라면_본문_실패로_남는다() -> None:
+    html = HANWHA_TABLE_DETAIL.format(duties="짧다")
+    selectors = DetailSelectors(
+        title="h3.recruit-title",
+        body="div.recruit-detail-editor",
+        qualifications="",
+        recruitment_end_at="",
+        department="",
+    )
+
+    with pytest.raises(FieldParseError):
+        parse_detail(html, selectors)
+
+
+def test_본문을_대신_채우면_메모를_남긴다() -> None:
+    from app.crawler.parser import FALLBACK_NOTE
+
+    html = HANWHA_TABLE_DETAIL.format(duties="시장 조사 및 신규 거래선 발굴 " * 20)
+    selectors = DetailSelectors(
+        title="h3.recruit-title",
+        body="div.recruit-detail-editor",
+        qualifications="",
+        recruitment_end_at="",
+        department="",
+    )
+
+    assert parse_detail(html, selectors).notes == (FALLBACK_NOTE,)

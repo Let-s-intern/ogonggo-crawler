@@ -235,10 +235,19 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
     # 이미지 한 장이라 필수 칸 실패로 끝났다
     if "body" in unreadable and images:
         unreadable.remove("body")
+    fallback: Tag | None = None
+    if "body" in unreadable and fields["title"]:
+        # 본문 셀렉터가 아무것도 잡지 못했다. 한 사이트에 상세 모양이 둘 이상인 경우다 — 셀렉터는
+        # 등록할 때 본 한 건의 모양으로 만들어진다. 제목에서 위로 올라가 글이 충분한 영역을 본문으로
+        # 쓴다. 한화 실측(2026-09-22): 에디터형 공고로 만든 본문 셀렉터가 표로 된 공고에서 0개였다
+        fallback = _body_near_title(soup, selectors.title)
+        if fallback is not None:
+            fields["body"] = block_text(fallback)
+            unreadable.remove("body")
     if unreadable:
         raise FieldParseError(f"상세에서 필수 필드를 읽지 못했다: {', '.join(unreadable)}")
 
-    container = source_text(soup, selectors.body)
+    container = block_text(fallback) if fallback is not None else source_text(soup, selectors.body)
     structured = structured_text(soup, container) if container.strip() else ""
     return DetailParseResult(
         fields=fields,
@@ -246,7 +255,37 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
         source_text=f"{container}\n{structured}" if structured else container,
         images=images,
         cover_image=og_image(soup),
+        notes=(FALLBACK_NOTE,) if fallback is not None else (),
     )
+
+
+FALLBACK_NOTE = (
+    "본문 셀렉터가 아무것도 잡지 못해 제목 근처의 글을 본문으로 썼다. 본문 셀렉터를 확인한다"
+)
+
+# 본문 셀렉터가 빗나갔을 때 제목 위에서 찾을 본문의 최소 글자 수(제목 글자는 뺀다)와 올라갈 단계
+MIN_FALLBACK_BODY = 300
+FALLBACK_LEVELS = 6
+
+
+def _body_near_title(soup: BeautifulSoup, title_selector: str) -> Tag | None:
+    """제목 노드의 조상 중 페이지 부속을 빼고도 글이 충분한 가장 가까운 것. 없으면 None.
+
+    `body` 까지는 올라가지 않는다. 페이지 전체가 본문이 되면 메뉴와 푸터가 통째로 들어온다.
+    """
+    nodes = select_nodes(soup, title_selector, "detail.title")
+    if not nodes:
+        return None
+    title_chars = len(nodes[0].get_text(strip=True))
+    for depth, parent in enumerate(nodes[0].parents):
+        if depth >= FALLBACK_LEVELS or parent.name in ("body", "html", "[document]"):
+            return None
+        cleaned = copy.copy(parent)
+        for furniture in cleaned.select(PAGE_FURNITURE):
+            furniture.decompose()
+        if len(cleaned.get_text(strip=True)) - title_chars >= MIN_FALLBACK_BODY:
+            return cleaned
+    return None
 
 
 def select_nodes(scope: BeautifulSoup | Tag, selector: str, name: str) -> list[Tag]:
