@@ -28,6 +28,11 @@ _MIN_REPEAT = 3
 _DROP_TAGS = ("script", "style", "svg", "noscript", "iframe", "template")
 _ON_ATTR = re.compile(r"^on", re.IGNORECASE)
 _BLANK_LINES = re.compile(r"\n\s*\n+")
+# 속성 값이 이보다 길면 앞부분만 남긴다. 셀렉터가 보는 것은 속성이 있는지와 앞부분이고, 긴 값은
+# 붙여 넣은 편집기 데이터나 base64 이미지다. 이노션 상세 한 건의 `data-buffer`(피그마 데이터)가
+# 14만 자라 입력 상한을 혼자 다 쓰고 본문이 잘렸다 (2026-09-22)
+_MAX_ATTR_CHARS = 500
+_KEEP_ATTR_CHARS = 100
 _NARROW_FALLBACKS = ("main", "article", "[role=main]", "body")
 
 
@@ -116,6 +121,9 @@ def _strip_noise(soup: BeautifulSoup) -> None:
             del tag[name]
         if tag.has_attr("style"):
             del tag["style"]
+        for name, value in list(tag.attrs.items()):
+            if isinstance(value, str) and len(value) > _MAX_ATTR_CHARS:
+                tag[name] = value[:_KEEP_ATTR_CHARS]
 
 
 def _sample_repeats(soup: BeautifulSoup, keep: int) -> tuple[Tag | None, int]:

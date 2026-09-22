@@ -134,3 +134,15 @@ def test_section_blocks_with_different_classes_are_not_sampled() -> None:
 
     assert soup.select_one("div.list") is not None
     assert len(soup.select("div.list li")) == 4
+
+
+def test_huge_attribute_values_are_cut_short() -> None:
+    """이노션 실측(2026-09-22): 본문 속 `data-buffer` 하나가 14만 자라 입력 상한을 혼자 다 썼다."""
+    html = f'<div class="body"><span data-buffer="{"A" * 150_000}">본문</span></div>'
+
+    cleaned = clean_html(html)
+
+    assert len(cleaned.html) < 1_000
+    assert "data-buffer" in cleaned.html
+    assert "본문" in cleaned.html
+    assert not cleaned.truncated
