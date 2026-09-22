@@ -133,11 +133,14 @@ def _sample_repeats(soup: BeautifulSoup, keep: int) -> tuple[Tag | None, int]:
         if not isinstance(parent, Tag) or parent.decomposed:
             continue
 
-        groups: dict[str, list[Tag]] = {}
+        # 태그와 클래스가 같아야 반복이다. 태그만 보면 페이지 빌더의 섹션 블록(div 여러 개)이
+        # 반복으로 잡혀 다섯 번째 이후 섹션이 통째로 지워진다 — recruiter.co.kr 은 공고 목록이
+        # 다섯 번째 섹션이라 목록이 사라졌다 (2026-09-22)
+        groups: dict[tuple[str, tuple[str, ...]], list[Tag]] = {}
         for child in parent.find_all(recursive=False):
-            groups.setdefault(child.name, []).append(child)
+            groups.setdefault((child.name, tuple(child.get("class") or ())), []).append(child)
 
-        for name, children in groups.items():
+        for (name, _), children in groups.items():
             if len(children) < _MIN_REPEAT:
                 continue
             if len(children) > best_count and name not in ("option", "meta", "link"):

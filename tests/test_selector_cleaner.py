@@ -113,3 +113,24 @@ def test_clean_page_reports_nothing_removed() -> None:
 def test_keep_siblings_must_be_positive() -> None:
     with pytest.raises(ValueError):
         clean_html("<ul><li>1</li></ul>", keep_siblings=0)
+
+
+def test_section_blocks_with_different_classes_are_not_sampled() -> None:
+    """태그만 같고 클래스가 다른 형제는 반복이 아니다. 다섯 번째 섹션의 공고 목록이 남아야 한다.
+
+    recruiter.co.kr 실측(2026-09-22): 페이지 빌더가 섹션을 div 일곱 개로 두고 공고 목록이 다섯
+    번째였다. 태그 이름만 보고 줄이면 목록이 통째로 지워져 셀렉터를 만들 수 없었다.
+    """
+    items = "".join(f'<li><a class="item" href="/jobs/{n}">공고 {n}</a></li>' for n in range(8))
+    html = (
+        "<body><div>"
+        '<div class="banner">배너</div><div></div><div class="intro">소개</div><div></div>'
+        f'<div class="list"><ul>{items}</ul></div><div></div><div></div>'
+        "</div></body>"
+    )
+
+    cleaned = clean_html(html)
+    soup = BeautifulSoup(cleaned.html, "html.parser")
+
+    assert soup.select_one("div.list") is not None
+    assert len(soup.select("div.list li")) == 4
