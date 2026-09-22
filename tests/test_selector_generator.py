@@ -256,3 +256,54 @@ async def test_missing_keys_become_empty_fields_instead_of_crashing() -> None:
 
     assert result.selectors.detail.body == ""
     assert any("detail.body" in note for note in result.notes)
+
+
+def _response_with(**list_fields: str) -> str:
+    payload = json.loads(VALID_RESPONSE)
+    payload["list"].update(list_fields)
+    return json.dumps(payload)
+
+
+async def test_zero_match_is_asked_again_with_what_went_wrong() -> None:
+    """이노션 실측(2026-09-22): DeepSeek 가 클래스 앞의 `.` 을 빼 제목이 0개였다. 틀린 칸을 적어
+    한 번 더 묻고, 맞은 답을 쓴다."""
+    client = FakeClient(_response_with(title="t"), VALID_RESPONSE)
+
+    result = await generate_from_html(
+        LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert result.selectors.list.title == "a.t"
+    assert result.verification.ok
+    assert len(client.calls) == 2
+    retry_prompt = client.calls[1]["contents"]
+    assert "list.title: `t`" in retry_prompt
+    assert "클래스는 `.이름`" in retry_prompt
+    assert result.usage.input_tokens == 4321 * 2
+
+
+async def test_zero_match_is_asked_only_once_more_and_keeps_the_better_answer() -> None:
+    worse = _response_with(item="ul.none", title="b.none")
+    better = _response_with(title="t")
+    client = FakeClient(better, worse)
+
+    result = await generate_from_html(
+        LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert len(client.calls) == 2
+    assert result.selectors.list.item == "ol.jobs > li"
+    assert result.verification.failed_list_fields == ["list.title"]
+
+
+async def test_empty_field_retry_says_why_it_was_refused() -> None:
+    """HD현대 실측: 목록을 비운 답이 같은 질문에 두 번 왔다. 두 번째는 이유를 적어 묻는다."""
+    client = FakeClient(_response_with(item=""), VALID_RESPONSE)
+
+    result = await generate_from_html(
+        LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert result.verification.ok
+    assert "[직전 답이 거절됐다]" in client.calls[1]["contents"]
+    assert "반복 요소를 찾아" in client.calls[1]["contents"]
