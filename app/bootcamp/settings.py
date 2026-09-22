@@ -6,17 +6,20 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import dataclass
 
 SCHEDULE_ENABLED = "bootcamp_schedule_enabled"
-INTERVAL_HOURS = "bootcamp_interval_hours"
+RUN_TIME = "bootcamp_run_time"
 DELIVER_ENABLED = "bootcamp_deliver_enabled"
 
-KEYS: tuple[str, ...] = (SCHEDULE_ENABLED, INTERVAL_HOURS, DELIVER_ENABLED)
+KEYS: tuple[str, ...] = (SCHEDULE_ENABLED, RUN_TIME, DELIVER_ENABLED)
 
-# 새싹 모집 기간은 몇 주다. 하루 두 번이면 새 과정과 모집 마감을 늦지 않게 잡는다
-DEFAULT_INTERVAL_HOURS = 12
+# 매일 한 번, 표시 시간대(`DISPLAY_TIMEZONE`, 기본 한국)의 이 시각에 수집한다 (2026-09-22 결정).
+# 새싹 모집 기간은 몇 주라 하루 한 번이면 새 과정과 모집 마감을 늦지 않게 잡는다
+DEFAULT_RUN_TIME = "09:00"
+_RUN_TIME = re.compile(r"([01]\d|2[0-3]):([0-5]\d)")
 
 
 class BootcampSettingError(ValueError):
@@ -25,17 +28,26 @@ class BootcampSettingError(ValueError):
 
 @dataclass(frozen=True)
 class BootcampConfig:
-    # 주기 수집을 켰는가. 꺼져 있어도 화면의 `지금 수집` 은 돈다
+    # 매일 수집을 켰는가. 꺼져 있어도 화면의 `지금 수집` 은 돈다
     schedule_enabled: bool = False
-    interval_hours: int = DEFAULT_INTERVAL_HOURS
+    # 매일 수집하는 시각 `HH:MM`
+    run_time: str = DEFAULT_RUN_TIME
     # 수집이 끝나면 오공고로 보내는가. 꺼져 있어도 화면의 `지금 보내기` 는 보낸다
     deliver_enabled: bool = False
 
     def validate(self) -> None:
-        if not 1 <= self.interval_hours <= 24 * 7:
+        if not _RUN_TIME.fullmatch(self.run_time):
             raise BootcampSettingError(
-                f"수집 주기는 1시간부터 168시간까지다: {self.interval_hours}"
+                f"수집 시각은 00:00 부터 23:59 까지 HH:MM 으로 적는다: {self.run_time!r}"
             )
+
+    @property
+    def hour(self) -> int:
+        return int(self.run_time[:2])
+
+    @property
+    def minute(self) -> int:
+        return int(self.run_time[3:])
 
 
 def read_config(conn: sqlite3.Connection) -> BootcampConfig:
@@ -46,13 +58,10 @@ def read_config(conn: sqlite3.Connection) -> BootcampConfig:
             KEYS,
         )
     }
-    try:
-        hours = int(stored.get(INTERVAL_HOURS, DEFAULT_INTERVAL_HOURS))
-    except ValueError:
-        hours = DEFAULT_INTERVAL_HOURS
+    run_time = stored.get(RUN_TIME, DEFAULT_RUN_TIME)
     return BootcampConfig(
         schedule_enabled=stored.get(SCHEDULE_ENABLED, "0") == "1",
-        interval_hours=hours if hours >= 1 else DEFAULT_INTERVAL_HOURS,
+        run_time=run_time if _RUN_TIME.fullmatch(run_time) else DEFAULT_RUN_TIME,
         deliver_enabled=stored.get(DELIVER_ENABLED, "0") == "1",
     )
 
@@ -61,7 +70,7 @@ def write_config(conn: sqlite3.Connection, config: BootcampConfig) -> BootcampCo
     config.validate()
     values = {
         SCHEDULE_ENABLED: "1" if config.schedule_enabled else "0",
-        INTERVAL_HOURS: str(config.interval_hours),
+        RUN_TIME: config.run_time,
         DELIVER_ENABLED: "1" if config.deliver_enabled else "0",
     }
     for key, value in values.items():

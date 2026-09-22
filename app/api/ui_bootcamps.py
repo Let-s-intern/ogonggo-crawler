@@ -82,13 +82,13 @@ def update_bootcamp_settings_fragment(
     request: Request,
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
     settings: Annotated[Settings, Depends(get_settings)],
-    interval_hours: Annotated[int, Form()] = bootcamp_settings.DEFAULT_INTERVAL_HOURS,
+    run_time: Annotated[str, Form()] = bootcamp_settings.DEFAULT_RUN_TIME,
     schedule_enabled: Annotated[str, Form()] = "",
     deliver_enabled: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     config = bootcamp_settings.BootcampConfig(
         schedule_enabled=schedule_enabled == "1",
-        interval_hours=interval_hours,
+        run_time=run_time.strip(),
         deliver_enabled=deliver_enabled == "1",
     )
     try:

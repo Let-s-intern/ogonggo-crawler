@@ -1,7 +1,7 @@
-"""부트캠프 주기 수집을 스케줄러 잡 하나로 건다.
+"""부트캠프 매일 수집을 스케줄러 잡 하나로 건다. 시각은 표시 시간대(기본 한국) 기준이다.
 
 크롤 워크플로우와 같은 APScheduler 에 붙지만 앞머리가 달라 `WorkflowScheduler.sync()` 가 건드리지
-않는다 — 그쪽은 모르는 잡을 지우지 않는다 (`app/scheduler.py`). 켜기·주기는 `app_settings` 에 있고,
+않는다 — 그쪽은 모르는 잡을 지우지 않는다 (`app/scheduler.py`). 켜기·시각은 `app_settings` 에 있고,
 화면에서 저장할 때와 기동할 때 이 함수로 맞춘다.
 """
 
@@ -11,11 +11,12 @@ import logging
 import sqlite3
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 
 from app import db
 from app.bootcamp import settings as bootcamp_settings
 from app.bootcamp.runner import SCHEDULE, run_sesac
+from app.config import get_settings
 from app.scheduler import get_gate
 
 logger = logging.getLogger(__name__)
@@ -40,17 +41,19 @@ def sync(scheduler: AsyncIOScheduler, conn: sqlite3.Connection) -> bool:
     if not config.schedule_enabled:
         if existing is not None:
             scheduler.remove_job(JOB_ID)
-            logger.info("부트캠프 주기 수집을 뗐다")
+            logger.info("부트캠프 매일 수집을 뗐다")
         return False
     scheduler.add_job(
         _execute,
-        trigger=IntervalTrigger(hours=config.interval_hours),
+        trigger=CronTrigger(
+            hour=config.hour, minute=config.minute, timezone=get_settings().display_timezone
+        ),
         id=JOB_ID,
         max_instances=1,
         coalesce=True,
         replace_existing=True,
     )
-    logger.info("부트캠프 주기 수집을 %s시간마다 건다", config.interval_hours)
+    logger.info("부트캠프 수집을 매일 %s 에 건다", config.run_time)
     return True
 
 

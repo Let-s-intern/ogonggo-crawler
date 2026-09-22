@@ -362,14 +362,18 @@ async def test_AI_호출은_이미지와_함께_한_번이고_bootcamp_fill_로_
     assert [tuple(row) for row in rows] == [("bootcamp_fill", 1)]
 
 
-def test_주기_수집을_켜면_잡이_걸리고_끄면_떨어진다(conn: sqlite3.Connection) -> None:
+def test_매일_수집을_켜면_한국_시각_9시_잡이_걸리고_끄면_떨어진다(conn: sqlite3.Connection) -> None:
     scheduler = get_scheduler().scheduler
     bootcamp_settings.write_config(
-        conn, bootcamp_settings.BootcampConfig(schedule_enabled=True, interval_hours=6)
+        conn, bootcamp_settings.BootcampConfig(schedule_enabled=True, run_time="09:00")
     )
     try:
         assert schedule.sync(scheduler, conn) is True
-        assert scheduler.get_job(schedule.JOB_ID) is not None
+        job = scheduler.get_job(schedule.JOB_ID)
+        assert job is not None
+        fields = {field.name: str(field) for field in job.trigger.fields}
+        assert (fields["hour"], fields["minute"]) == ("9", "0")
+        assert str(job.trigger.timezone) == "Asia/Seoul"
 
         bootcamp_settings.write_config(conn, bootcamp_settings.BootcampConfig())
         assert schedule.sync(scheduler, conn) is False
@@ -379,9 +383,9 @@ def test_주기_수집을_켜면_잡이_걸리고_끄면_떨어진다(conn: sqli
             scheduler.remove_job(schedule.JOB_ID)
 
 
-def test_수집_주기는_1시간부터_일주일까지다(conn: sqlite3.Connection) -> None:
+def test_수집_시각은_HH_MM_이다(conn: sqlite3.Connection) -> None:
     with pytest.raises(bootcamp_settings.BootcampSettingError):
-        bootcamp_settings.write_config(conn, bootcamp_settings.BootcampConfig(interval_hours=0))
+        bootcamp_settings.write_config(conn, bootcamp_settings.BootcampConfig(run_time="25:00"))
 
 
 async def test_화면에_모은_과정과_보낼_값이_보인다(

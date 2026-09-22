@@ -27,14 +27,14 @@
         <label for="bootcamp-schedule" class="inline-flex items-center gap-2">
           <input id="bootcamp-schedule" name="schedule_enabled" type="checkbox" value="1"
                  {% if config.schedule_enabled %}checked{% endif %}>
-          주기적으로 수집한다
+          매일 수집한다
         </label>
         <span class="ml-2 text-sm">{{ state("켜짐") if config.schedule_enabled else state("꺼짐") }}</span>
       </p>
       <p>
-        <label for="bootcamp-interval" class="block">수집 주기(시간)</label>
-        <input id="bootcamp-interval" name="interval_hours" type="number" min="1" max="168"
-               value="{{ config.interval_hours }}" class="w-24">
+        <label for="bootcamp-run-time" class="block">수집 시각(한국 시간)</label>
+        <input id="bootcamp-run-time" name="run_time" type="time" required
+               value="{{ config.run_time }}" class="w-32">
         {% if next_run %}<span class="block text-xs text-slate-500">다음 수집 {{ next_run | as_time }}</span>{% endif %}
       </p>
       <p>
