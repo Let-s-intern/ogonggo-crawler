@@ -16,8 +16,10 @@ from dataclasses import dataclass
 
 from bs4 import BeautifulSoup, Comment, Tag
 
-# 한 번의 생성 요청에 실어 보낼 정제 HTML 의 상한(문자 수).
-DEFAULT_MAX_CHARS = 30_000
+# 한 번의 생성 요청에 실어 보낼 정제 HTML 의 상한(문자 수). 3만에서 6만으로 올렸다 — 긴 클래스
+# 이름을 쓰는 사이트(나인하이어)는 반복을 줄여도 4만 5천 자였고, 넘치면 가장 많이 반복하는 영역으로
+# 좁히는데 그 영역이 공고가 아닌 안내 문단이라 목록이 통째로 빠졌다 (슈피겐, 2026-09-22)
+DEFAULT_MAX_CHARS = 60_000
 
 # 반복 영역에서 남기는 형제 수. 3~4개면 구조가 드러난다.
 DEFAULT_KEEP_SIBLINGS = 4
