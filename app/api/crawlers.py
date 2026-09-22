@@ -676,7 +676,14 @@ async def create_crawler(
             result,
             list_url=payload.list_url,
             detail_url=sample_detail_url,
-            render_mode=discovery.detail_mode or generated_mode,
+            # 목록과 상세를 한 경로로 다시 받는다. 어느 한쪽이라도 렌더가 필요하면 렌더다 — 상세만
+            # 정적이라고 정적으로 받으면 JS 로 그리는 목록이 비어, 모델이 목록을 비우며 상세 칸까지
+            # 비워 답했다(슈피겐, 2026-09-22)
+            render_mode=(
+                PLAYWRIGHT
+                if PLAYWRIGHT in (discovery.detail_mode, generated_mode)
+                else discovery.detail_mode or generated_mode
+            ),
         )
 
     # 항목이 `href` 를 안 들고 있어 판정이 상세 주소 형식을 알아냈으면 그것을 셀렉터에 얹는다.

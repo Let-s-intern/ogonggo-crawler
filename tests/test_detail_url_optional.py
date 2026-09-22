@@ -359,3 +359,43 @@ def test_판정이_AI_에게_물었으면_그_비용을_남긴다(
         "SELECT feature, model, total_tokens FROM llm_calls WHERE model = 'deepseek-flash'"
     ).fetchall()
     assert [tuple(row) for row in rows] == [("selector_generate", "deepseek-flash", 3050)]
+
+
+def test_목록이_렌더면_상세_셀렉터도_렌더한_페이지로_만든다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """슈피겐 실측(2026-09-22): 상세만 정적이라 정적으로 다시 받자 JS 목록이 비어, 모델이 상세
+    칸까지 비워 답했다. 어느 한쪽이라도 렌더가 필요하면 렌더로 다시 받는다."""
+    modes: list[str] = []
+
+    async def generate(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
+        modes.append(render_mode)
+        return GenerationResult(
+            selectors=validate_selectors(SELECTORS),
+            usage=Usage(
+                provider="deepseek",
+                model="deepseek-flash",
+                input_tokens=1,
+                output_tokens=1,
+                total_tokens=2,
+                latency_ms=1,
+            ),
+            attempts=1,
+            verification=Verified(),
+            render_mode="playwright",
+        )
+
+    async def discover(list_url: str, selectors: SelectorSet) -> Discovery:
+        return Discovery(
+            list_mode="api",
+            detail_mode="static",
+            detail=document_path(f"{LIST_URL}job_posting/s44YbZq6", "정적으로도 열렸다"),
+            evidence="목록 API 를 채택했다",
+            list_count=8,
+        )
+
+    app.dependency_overrides[crawlers_api.get_generator] = lambda: generate
+    app.dependency_overrides[crawlers_api.get_discoverer] = lambda: discover
+    client.post("/api/crawlers", json={"list_url": LIST_URL})
+
+    assert modes == ["", "playwright"]
