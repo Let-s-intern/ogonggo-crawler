@@ -1196,15 +1196,19 @@ async def test_AI_제안이_확인되지_않으면_실패는_그대로다() -> N
 
 @pytest.mark.asyncio
 async def test_목록_API_에서_마감일을_못_읽으면_AI_에게_묻는다() -> None:
-    """HD현대. 목록 API 는 규칙으로 채택됐지만 마감일 칸을 사람이 정해야 했다."""
+    """HD현대. 목록 API 는 규칙으로 채택됐지만 마감일 칸을 사람이 정해야 했다.
+
+    키 이름이 마감을 뜻하지 않아(`dueYmd`) 이름으로도 찾지 못하는 경우다. `endDate` 처럼 이름이
+    말해 주면 규칙이 먼저 찾고 AI 를 부르지 않는다 (아래 시험).
+    """
     opened: list[str] = []
     asked: list[str] = []
     body = json.dumps(
         {
             "data": {
                 "list": [
-                    {"jobId": "1002099", "name": "보건관리자 채용", "endDate": "2099-12-31"},
-                    {"jobId": "1002100", "name": "네트워크 엔지니어", "endDate": "2099-12-30"},
+                    {"jobId": "1002099", "name": "보건관리자 채용", "dueYmd": "2099-12-31"},
+                    {"jobId": "1002100", "name": "네트워크 엔지니어", "dueYmd": "2099-12-30"},
                 ]
             }
         },
@@ -1230,7 +1234,7 @@ async def test_목록_API_에서_마감일을_못_읽으면_AI_에게_묻는다(
     reply = path_answer(
         url=LIST_API_URL,
         items_path="data.list",
-        date_field="endDate",
+        date_field="dueYmd",
         date_is_deadline=True,
         id_field="jobId",
         link_template="https://example.test/jobs/{id}",
@@ -1250,7 +1254,7 @@ async def test_목록_API_에서_마감일을_못_읽으면_AI_에게_묻는다(
     assert len(asked) == 1
     assert discovery.list is not None
     config = discovery.list.config()
-    assert config.fields["date"] == "endDate"
+    assert config.fields["date"] == "dueYmd"
     assert config.date_is_deadline is True
     # 마감일을 채웠으니 운영자에게 채우라는 말은 남지 않는다
     assert "date_is_deadline` 을 적는다" not in discovery.evidence

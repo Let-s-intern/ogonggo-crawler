@@ -260,3 +260,32 @@ async def test_user_agent_is_the_configured_one() -> None:
     await fetcher.aclose()
 
     assert all(headers["user-agent"] == USER_AGENT for headers in site.headers)
+
+
+def _euc_kr_page(*, header_charset: bool) -> Callable[[httpx.Request], httpx.Response]:
+    html = (
+        '<html><head><meta http-equiv="Content-Type" content="text/html; charset=euc-kr" />'
+        "</head><body><a>2026년 하반기 신규채용 공고</a></body></html>"
+    )
+    content_type = "text/html; charset=euc-kr" if header_charset else "text/html"
+
+    def page(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=html.encode("cp949"), headers={"content-type": content_type}
+        )
+
+    return page
+
+
+@pytest.mark.parametrize("header_charset", [False, True])
+async def test_헤더에_문자셋이_없으면_meta_선언대로_읽는다(header_charset: bool) -> None:
+    """카페스 실측(2026-09-22): 헤더는 `text/html` 뿐이고 `<meta>` 에만 euc-kr 이 있었다."""
+    clock = FakeClock()
+    site = StubSite(clock, robots_then("", _euc_kr_page(header_charset=header_charset)))
+    fetcher = make_fetcher(site, clock, delay=0.0)
+    try:
+        result = await fetcher.fetch("http://kapes.test/employment/advertise.asp")
+    finally:
+        await fetcher.aclose()
+
+    assert "2026년 하반기 신규채용 공고" in result.text

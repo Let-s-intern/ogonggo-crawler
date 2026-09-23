@@ -12,22 +12,32 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 
 from bs4 import BeautifulSoup, Comment, Tag
 
-# 한 번의 생성 요청에 실어 보낼 정제 HTML 의 상한(문자 수).
-DEFAULT_MAX_CHARS = 30_000
+# 한 번의 생성 요청에 실어 보낼 정제 HTML 의 상한(문자 수). 3만에서 6만으로 올렸다 — 긴 클래스
+# 이름을 쓰는 사이트(나인하이어)는 반복을 줄여도 4만 5천 자였고, 넘치면 가장 많이 반복하는 영역으로
+# 좁히는데 그 영역이 공고가 아닌 안내 문단이라 목록이 통째로 빠졌다 (슈피겐, 2026-09-22)
+DEFAULT_MAX_CHARS = 60_000
 
 # 반복 영역에서 남기는 형제 수. 3~4개면 구조가 드러난다.
 DEFAULT_KEEP_SIBLINGS = 4
 
 # 반복으로 볼 최소 형제 수. 이보다 적으면 리스트가 아니라 그냥 마크업이다.
 _MIN_REPEAT = 3
+# 반복 항목끼리 안에 든 요소 수가 이 비율 안에서 비슷해야 한다 (`_alike`)
+_SIZE_TOLERANCE = 0.4
 
 _DROP_TAGS = ("script", "style", "svg", "noscript", "iframe", "template")
 _ON_ATTR = re.compile(r"^on", re.IGNORECASE)
 _BLANK_LINES = re.compile(r"\n\s*\n+")
+# 속성 값이 이보다 길면 앞부분만 남긴다. 셀렉터가 보는 것은 속성이 있는지와 앞부분이고, 긴 값은
+# 붙여 넣은 편집기 데이터나 base64 이미지다. 이노션 상세 한 건의 `data-buffer`(피그마 데이터)가
+# 14만 자라 입력 상한을 혼자 다 쓰고 본문이 잘렸다 (2026-09-22)
+_MAX_ATTR_CHARS = 500
+_KEEP_ATTR_CHARS = 100
 _NARROW_FALLBACKS = ("main", "article", "[role=main]", "body")
 
 
@@ -116,6 +126,9 @@ def _strip_noise(soup: BeautifulSoup) -> None:
             del tag[name]
         if tag.has_attr("style"):
             del tag["style"]
+        for name, value in list(tag.attrs.items()):
+            if isinstance(value, str) and len(value) > _MAX_ATTR_CHARS:
+                tag[name] = value[:_KEEP_ATTR_CHARS]
 
 
 def _sample_repeats(soup: BeautifulSoup, keep: int) -> tuple[Tag | None, int]:
@@ -133,12 +146,15 @@ def _sample_repeats(soup: BeautifulSoup, keep: int) -> tuple[Tag | None, int]:
         if not isinstance(parent, Tag) or parent.decomposed:
             continue
 
-        groups: dict[str, list[Tag]] = {}
+        # 태그와 클래스가 같아야 반복이다. 태그만 보면 페이지 빌더의 섹션 블록(div 여러 개)이
+        # 반복으로 잡혀 다섯 번째 이후 섹션이 통째로 지워진다 — recruiter.co.kr 은 공고 목록이
+        # 다섯 번째 섹션이라 목록이 사라졌다 (2026-09-22)
+        groups: dict[tuple[str, tuple[str, ...]], list[Tag]] = {}
         for child in parent.find_all(recursive=False):
-            groups.setdefault(child.name, []).append(child)
+            groups.setdefault((child.name, tuple(child.get("class") or ())), []).append(child)
 
-        for name, children in groups.items():
-            if len(children) < _MIN_REPEAT:
+        for (name, _), children in groups.items():
+            if len(children) < _MIN_REPEAT or not _alike(children):
                 continue
             if len(children) > best_count and name not in ("option", "meta", "link"):
                 best_count = len(children)
@@ -148,6 +164,29 @@ def _sample_repeats(soup: BeautifulSoup, keep: int) -> tuple[Tag | None, int]:
                 removed += 1
 
     return best_region, removed
+
+
+def _alike(children: list[Tag]) -> bool:
+    """형제들이 서로 닮았는가. 닮아야 반복 목록이다.
+
+    겉의 태그와 클래스가 같아도 안이 제각각이면 목록이 아니라 페이지 빌더의 섹션이다. greetinghr
+    실측(2026-09-22): 같은 클래스의 섹션 여덟 개 중 일곱 번째가 공고 목록이라, 다섯 번째부터
+    지우면 목록이 사라졌다. 섹션은 안에 든 요소 수가 9개에서 143개까지 들쭉날쭉했고, 공고
+    항목은 22~25개로 고르다. 안의 칸 구성과 요소 수가 절반 이상 비슷해야 반복으로 본다.
+    """
+    shapes = Counter(_shape(node) for node in children)
+    if shapes.most_common(1)[0][1] * 2 < len(children):
+        return False
+    sizes = sorted(len(node.find_all(True)) for node in children)
+    middle = sizes[len(sizes) // 2]
+    near = [size for size in sizes if abs(size - middle) <= middle * _SIZE_TOLERANCE]
+    return len(near) * 2 >= len(children)
+
+
+def _shape(node: Tag) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    return tuple(
+        (child.name, tuple(child.get("class") or ())) for child in node.find_all(recursive=False)
+    )
 
 
 def _fallback_region(soup: BeautifulSoup) -> Tag | None:

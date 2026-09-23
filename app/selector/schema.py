@@ -240,9 +240,22 @@ def relocate_misplaced(data: Any) -> tuple[Any, list[str]]:
     if not isinstance(data, Mapping):
         return data, []
     moved = {section: dict(value) for section, value in data.items() if isinstance(value, Mapping)}
+    notes: list[str] = []
+    for outer, inner in (("detail", "list"), ("list", "detail")):
+        # 묶음 하나를 옆 묶음 안에 통째로 넣은 응답이다. 카페스 실측(2026-09-22): DeepSeek 가
+        # `detail` 안에 `list` 를 넣어 등록이 거절됐다. 꺼내서 제자리에 합친다
+        nested = moved.get(outer, {}).get(inner)
+        if not isinstance(nested, Mapping):
+            continue
+        moved[outer].pop(inner)
+        home = moved.setdefault(inner, {})
+        for name, value in nested.items():
+            current = home.get(name)
+            if not (isinstance(current, str) and current.strip()):
+                home[name] = value
+        notes.append(f"모델이 `{outer}` 안에 넣은 `{inner}` 를 밖으로 꺼냈다")
     if "list" not in moved or "detail" not in moved:
         return data, []
-    notes: list[str] = []
     for source, target, fields in (
         ("detail", "list", LIST_FIELDS),
         ("list", "detail", DETAIL_FIELDS),

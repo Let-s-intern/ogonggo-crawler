@@ -173,6 +173,8 @@ def test_필드_하나만_실패하면_사유가_필드와_함께_온다(
 ) -> None:
     broken = json.loads(json.dumps(SELECTORS))
     broken["detail"]["body"] = "div.no-such-description"
+    # 제목까지 깨뜨린다. 제목이 읽히면 본문은 제목 근처의 글로 대신 채운다
+    broken["detail"]["title"] = "h1.no-such-title"
     crawler_id = add_crawler(conn, broken)
 
     body = client.post(f"/api/crawlers/{crawler_id}/test-run?limit=1").json()

@@ -256,3 +256,122 @@ async def test_missing_keys_become_empty_fields_instead_of_crashing() -> None:
 
     assert result.selectors.detail.body == ""
     assert any("detail.body" in note for note in result.notes)
+
+
+def _response_with(**list_fields: str) -> str:
+    payload = json.loads(VALID_RESPONSE)
+    payload["list"].update(list_fields)
+    return json.dumps(payload)
+
+
+async def test_zero_match_is_asked_again_with_what_went_wrong() -> None:
+    """이노션 실측(2026-09-22): DeepSeek 가 클래스 앞의 `.` 을 빼 제목이 0개였다. 틀린 칸을 적어
+    한 번 더 묻고, 맞은 답을 쓴다."""
+    client = FakeClient(_response_with(title="t"), VALID_RESPONSE)
+
+    result = await generate_from_html(
+        LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert result.selectors.list.title == "a.t"
+    assert result.verification.ok
+    assert len(client.calls) == 2
+    retry_prompt = client.calls[1]["contents"]
+    assert "list.title: `t`" in retry_prompt
+    assert "클래스는 `.이름`" in retry_prompt
+    assert result.usage.input_tokens == 4321 * 2
+
+
+async def test_zero_match_is_asked_only_once_more_and_keeps_the_better_answer() -> None:
+    worse = _response_with(item="ul.none", title="b.none")
+    better = _response_with(title="t")
+    client = FakeClient(better, worse)
+
+    result = await generate_from_html(
+        LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert len(client.calls) == 2
+    assert result.selectors.list.item == "ol.jobs > li"
+    assert result.verification.failed_list_fields == ["list.title"]
+
+
+async def test_empty_field_retry_says_why_it_was_refused() -> None:
+    """HD현대 실측: 목록을 비운 답이 같은 질문에 두 번 왔다. 두 번째는 이유를 적어 묻는다."""
+    client = FakeClient(_response_with(item=""), VALID_RESPONSE)
+
+    result = await generate_from_html(
+        LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert result.verification.ok
+    assert "[직전 답이 거절됐다]" in client.calls[1]["contents"]
+    assert "반복 요소를 찾아" in client.calls[1]["contents"]
+
+
+TABLE_LIST_HTML = """
+<html><body><table class="board"><tbody>
+  <tr><td class="t"><a href="/v/1">공고 하나</a></td><td class="d">2026-09-14 ~ 2026-09-27</td>
+      <td class="hit">322</td></tr>
+  <tr><td class="t"><a href="/v/2">공고 둘</a></td><td class="d">2026-07-30 ~ 2026-08-06</td>
+      <td class="hit">186</td></tr>
+</tbody></table></body></html>
+"""
+
+
+def _table_response(date: str) -> str:
+    payload = json.loads(VALID_RESPONSE)
+    payload["list"] = {"item": "table.board tr", "title": "td.t a", "link": "td.t a", "date": date}
+    return json.dumps(payload)
+
+
+async def test_날짜_칸이_숫자뿐이면_다시_묻는다() -> None:
+    """카페스 실측(2026-09-22): 날짜로 조회수 칸을 골랐다."""
+    client = FakeClient(_table_response("td.hit"), _table_response("td.d"))
+
+    result = await generate_from_html(
+        TABLE_LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert result.selectors.list.date == "td.d"
+    assert "날짜가 아니라 숫자뿐이다(예: 322)" in client.calls[1]["contents"]
+
+
+async def test_다시_물어도_날짜_칸이_숫자뿐이면_비운다() -> None:
+    client = FakeClient(_table_response("td.hit"))
+
+    result = await generate_from_html(
+        TABLE_LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert len(client.calls) == 2
+    assert result.selectors.list.date == ""
+    assert any("숫자(322)를 잡아 비웠다" in note for note in result.notes)
+
+
+async def test_상세_안에_넣은_목록_묶음은_밖으로_꺼낸다() -> None:
+    """카페스 실측(2026-09-22): DeepSeek 가 `detail` 안에 `list` 를 통째로 넣었다."""
+    payload = json.loads(VALID_RESPONSE)
+    payload["detail"]["list"] = payload.pop("list")
+    client = FakeClient(json.dumps(payload))
+
+    result = await generate_from_html(
+        LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert result.selectors.list.item == "ol.jobs > li"
+    assert len(client.calls) == 1
+    assert any("`detail` 안에 넣은 `list`" in note for note in result.notes)
+
+
+async def test_빈_칸을_허용해_살린_답도_숫자뿐인_날짜_칸은_비운다() -> None:
+    """두 번 모두 필수 칸이 비어 거절된 답을 살리는 경로에서도 조회수 칸을 날짜로 두지 않는다."""
+    payload = json.loads(_table_response("td.hit"))
+    payload["detail"]["title"] = ""
+    client = FakeClient(json.dumps(payload))
+
+    result = await generate_from_html(
+        TABLE_LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert result.selectors.list.date == ""

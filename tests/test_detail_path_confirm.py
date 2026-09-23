@@ -229,3 +229,29 @@ def _lotte_title() -> str:
     node = soup.find("h1") or soup.find("title")
     assert node is not None
     return node.get_text(strip=True)
+
+
+@pytest.mark.asyncio
+async def test_제목이_title_과_스크립트에만_있으면_채택하지_않는다() -> None:
+    """recruiter.co.kr. 정적 응답은 `<title>` 과 스크립트에만 제목을 두고 본문은 비어 있다."""
+    title = "HD현대마린솔루션 보건관리자 계약직 사원 모집"
+    shell = (
+        f"<html><head><title>{title} | HD현대 채용</title>"
+        f'<meta property="og:title" content="{title}"></head>'
+        f'<body><div id="__next"></div><script>{{"title": "{title}"}}</script></body></html>'
+    )
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text=ROBOTS)
+        return httpx.Response(200, text=shell, headers={"content-type": "text/html"})
+
+    client = fetcher_for(handle)
+    try:
+        confirmation = await confirm_document_path(
+            client, "https://hd.recruiter.co.kr/career/jobs/129233", title
+        )
+    finally:
+        await client.aclose()
+
+    assert confirmation.adopted is False

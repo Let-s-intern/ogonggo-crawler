@@ -159,8 +159,9 @@ def test_일부_항목만_실패하면_나머지는_남고_실패가_기록된�
 
 
 def test_상세_필수_필드를_못_읽으면_parse_다() -> None:
+    # 제목까지 깨뜨린다. 제목이 읽히면 본문은 제목 근처의 글로 대신 채운다
     selectors = DetailSelectors(
-        title=DETAIL_SELECTORS.title,
+        title="h1.no-such-title",
         body="div.no-such-description",
         qualifications="",
         recruitment_end_at="",
@@ -198,3 +199,114 @@ def test_셀렉터_문법_오류는_parse_다() -> None:
 
     with pytest.raises(FieldParseError):
         parse_list(LIST_HTML, selectors, LIST_URL)
+
+
+HANWHA_TABLE_DETAIL = """
+<html><body><header><nav>메뉴 채용공고 마이페이지</nav></header>
+<div class="recruit-detail"><div class="contents">
+  <div class="head"><h3 class="recruit-title">[한화모멘텀] 해외영업(중국) 경력사원 채용</h3></div>
+  <section class="detail-section"><h3>모집단위</h3><table><tr><td>해외영업 (중국)</td>
+  <td>{duties}</td></tr></table></section>
+</div></div>
+<footer>서울시 중구 청계천로 86</footer></body></html>
+"""
+
+
+def test_본문_셀렉터가_빗나가면_제목_근처의_글을_본문으로_쓴다() -> None:
+    """한화 실측(2026-09-22): 에디터형 공고로 만든 본문 셀렉터가 표로 된 공고에서 0개였다."""
+    html = HANWHA_TABLE_DETAIL.format(duties="시장 조사 및 신규 거래선 발굴 " * 20)
+    selectors = DetailSelectors(
+        title="h3.recruit-title",
+        body="div.recruit-detail-editor",
+        qualifications="",
+        recruitment_end_at="",
+        department="",
+    )
+
+    result = parse_detail(html, selectors)
+
+    assert "시장 조사 및 신규 거래선 발굴" in result.fields["body"]
+    assert "청계천로" not in result.fields["body"]
+    assert "메뉴" not in result.fields["body"]
+
+
+def test_제목_근처에도_글이_모자라면_본문_실패로_남는다() -> None:
+    html = HANWHA_TABLE_DETAIL.format(duties="짧다")
+    selectors = DetailSelectors(
+        title="h3.recruit-title",
+        body="div.recruit-detail-editor",
+        qualifications="",
+        recruitment_end_at="",
+        department="",
+    )
+
+    with pytest.raises(FieldParseError):
+        parse_detail(html, selectors)
+
+
+def test_본문을_대신_채우면_메모를_남긴다() -> None:
+    from app.crawler.parser import FALLBACK_NOTE
+
+    html = HANWHA_TABLE_DETAIL.format(duties="시장 조사 및 신규 거래선 발굴 " * 20)
+    selectors = DetailSelectors(
+        title="h3.recruit-title",
+        body="div.recruit-detail-editor",
+        qualifications="",
+        recruitment_end_at="",
+        department="",
+    )
+
+    assert parse_detail(html, selectors).notes == (FALLBACK_NOTE,)
+
+
+def test_제목_근처에_공고_이미지가_있으면_본문으로_쓰고_이미지를_넘긴다() -> None:
+    """한화 실측(2026-09-22): 에디터 본문이 이미지 두 장뿐이라 글이 모자랐다."""
+    html = (
+        '<html><body><div class="recruit-detail"><div class="head">'
+        '<h3 class="recruit-title">한화솔루션 마케팅 경력</h3></div>'
+        '<div class="editor"><img src="/upfile/a.png"><img src="/img/ico_docx.svg"></div>'
+        "</div></body></html>"
+    )
+    selectors = DetailSelectors(
+        title="h3.recruit-title",
+        body="div.no-such-body",
+        qualifications="",
+        recruitment_end_at="",
+        department="",
+    )
+
+    result = parse_detail(html, selectors)
+
+    assert result.images == ("/upfile/a.png", "/img/ico_docx.svg")
+
+
+def test_날짜_칸은_날짜가_든_첫_노드를_쓴다() -> None:
+    """LX MMA 실측(2026-09-22): 마감일 셀렉터가 표의 값 칸 네 개를 모두 잡았다."""
+    html = (
+        "<html><body><h1>공고</h1><div class='body'>" + "본문 " * 10 + "</div><ul>"
+        "<li><div class='label'>채용 구분</div><div class='text'>수시</div></li>"
+        "<li><div class='label'>신입/경력</div><div class='text'>신입/경력</div></li>"
+        "<li><div class='label'>마감일</div><div class='text'>2026.09.27 오후 11:59</div></li>"
+        "</ul></body></html>"
+    )
+    selectors = DetailSelectors(
+        title="h1",
+        body="div.body",
+        qualifications="",
+        recruitment_end_at="li div.text",
+        department="",
+    )
+
+    assert parse_detail(html, selectors).fields["recruitment_end_at"] == "2026.09.27 오후 11:59"
+
+
+def test_날짜가_든_노드가_없으면_첫_노드를_쓴다() -> None:
+    html = (
+        "<html><body><h1>공고</h1><div class='body'>본문</div>"
+        "<p class='end'>상시채용</p></body></html>"
+    )
+    selectors = DetailSelectors(
+        title="h1", body="div.body", qualifications="", recruitment_end_at="p.end", department=""
+    )
+
+    assert parse_detail(html, selectors).fields["recruitment_end_at"] == "상시채용"

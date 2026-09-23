@@ -248,3 +248,51 @@ def test_항목_자체가_a_인_사이트는_그_href_를_형식으로_쓴다() 
     assert proposal.selector == ""
     assert proposal.template == "https://careers.kakao.com{href}"
     assert (proposal.resolved, proposal.count) == (11, 11)
+
+
+GC_ITEMS = """
+<div id="listBody">
+  <div class="list-item recruit"><input type="hidden" value="o" class="listType">
+    <input type="hidden" value="2859" class="key"><div class="job-title">해외영업(경력)</div></div>
+  <div class="list-item recruit"><input type="hidden" value="o" class="listType">
+    <input type="hidden" value="2871" class="key"><div class="job-title">생산(신입)</div></div>
+</div>
+"""
+GC_REACHED = "https://careers.gcbiopharma.com/job/GC-%ED%95%B4%EC%99%B8/4467050/"
+
+
+def test_리다이렉트_전_주소와_숨은_입력값으로_형식을_만든다() -> None:
+    """GC녹십자 실측(2026-09-22): 공고 번호는 숨은 입력값에만 있고, 누르면 `window.open` 으로 연
+    `job-invite/2859/` 가 번호 없는 주소로 리다이렉트된다. 도착한 주소만 보면 재료가 없다."""
+    items = BeautifulSoup(GC_ITEMS, "html.parser").select("div.list-item.recruit")
+
+    proposal = propose_link_template(
+        items,
+        reached_url=GC_REACHED,
+        list_url="https://recruit.gccorp.com/kor/recruit/list",
+        navigations=["https://careers.gcbiopharma.com/job-invite/2859/", GC_REACHED],
+    )
+
+    assert proposal.ok is True
+    assert proposal.template == "https://careers.gcbiopharma.com/job-invite/{value}/"
+    selectors = ListSelectors(
+        item="", title="", link=proposal.selector, date="", link_template=proposal.template
+    )
+    assert [resolve_link(node, selectors).url for node in items] == [
+        "https://careers.gcbiopharma.com/job-invite/2859/",
+        "https://careers.gcbiopharma.com/job-invite/2871/",
+    ]
+
+
+def test_두_자리_숫자_인자도_공고_번호_후보로_읽는다() -> None:
+    """카페스 실측(2026-09-22): 공고 번호가 `view(83)` 처럼 두 자리다."""
+    row = BeautifulSoup(
+        '<table><tr><td class="tL"><a href="#" onclick="view(83); return false;">공고</a>'
+        "</td></tr></table>",
+        "html.parser",
+    ).select_one("tr")
+    assert row is not None
+
+    values = [source.value for source in value_sources(row)]
+
+    assert "83" in values

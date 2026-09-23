@@ -113,3 +113,57 @@ def test_clean_page_reports_nothing_removed() -> None:
 def test_keep_siblings_must_be_positive() -> None:
     with pytest.raises(ValueError):
         clean_html("<ul><li>1</li></ul>", keep_siblings=0)
+
+
+def test_section_blocks_with_different_classes_are_not_sampled() -> None:
+    """태그만 같고 클래스가 다른 형제는 반복이 아니다. 다섯 번째 섹션의 공고 목록이 남아야 한다.
+
+    recruiter.co.kr 실측(2026-09-22): 페이지 빌더가 섹션을 div 일곱 개로 두고 공고 목록이 다섯
+    번째였다. 태그 이름만 보고 줄이면 목록이 통째로 지워져 셀렉터를 만들 수 없었다.
+    """
+    items = "".join(f'<li><a class="item" href="/jobs/{n}">공고 {n}</a></li>' for n in range(8))
+    html = (
+        "<body><div>"
+        '<div class="banner">배너</div><div></div><div class="intro">소개</div><div></div>'
+        f'<div class="list"><ul>{items}</ul></div><div></div><div></div>'
+        "</div></body>"
+    )
+
+    cleaned = clean_html(html)
+    soup = BeautifulSoup(cleaned.html, "html.parser")
+
+    assert soup.select_one("div.list") is not None
+    assert len(soup.select("div.list li")) == 4
+
+
+def test_huge_attribute_values_are_cut_short() -> None:
+    """이노션 실측(2026-09-22): 본문 속 `data-buffer` 하나가 14만 자라 입력 상한을 혼자 다 썼다."""
+    html = f'<div class="body"><span data-buffer="{"A" * 150_000}">본문</span></div>'
+
+    cleaned = clean_html(html)
+
+    assert len(cleaned.html) < 1_000
+    assert "data-buffer" in cleaned.html
+    assert "본문" in cleaned.html
+    assert not cleaned.truncated
+
+
+def test_같은_클래스의_섹션이라도_안이_제각각이면_줄이지_않는다() -> None:
+    """greetinghr 실측(2026-09-22): 같은 클래스의 섹션 여덟 개 중 일곱 번째가 공고 목록이었다."""
+    sizes = [2, 5, 14, 4, 1, 9, 30, 2]
+    sections = "".join(
+        f'<div class="section"><div class="inner">{"<p>글</p>" * size}</div></div>'
+        for size in sizes[:6]
+    )
+    items = "".join(
+        f'<li><a class="item" href="/ko/o/{n}"><span>공고 {n}</span><span>경력</span></a></li>'
+        for n in range(6)
+    )
+    sections += f'<div class="section"><div class="inner"><ul>{items}</ul></div></div>'
+    sections += '<div class="section"><div class="inner"><p>끝</p></div></div>'
+
+    cleaned = clean_html(f"<body><main>{sections}</main></body>")
+    soup = BeautifulSoup(cleaned.html, "html.parser")
+
+    assert len(soup.select("div.section")) == 8
+    assert len(soup.select("a.item")) == 4

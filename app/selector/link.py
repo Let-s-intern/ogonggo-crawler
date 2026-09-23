@@ -58,6 +58,9 @@ PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_:.-]*)(\|arg\d+)?\}")
 # `{onclick|arg1}` 은 그중 첫 번째를 뜻한다
 ARG_MARK = "|arg"
 _JS_ARG = re.compile(r"'([^']*)'|\"([^\"]*)\"")
+# 따옴표 없는 숫자 인자. 첫 호출의 괄호 안만 본다 — 카페스 `onclick="view(83); return false;"`
+_BARE_CALL = re.compile(r"\(([^()]*)\)")
+_BARE_NUMBER = re.compile(r"^\d+$")
 
 # 속성값을 URL 에 끼울 때 그대로 두는 문자. 나머지는 퍼센트 인코딩한다
 _KEEP_IN_URL = "/?:=&%+#"
@@ -196,6 +199,13 @@ def js_argument(value: str, index: int) -> str:
     그때는 빈 값이 되어 그 항목이 실패로 남는다 — 틀린 주소를 만들지 않는다.
     """
     args = [first or second for first, second in _JS_ARG.findall(value)]
+    if not args:
+        # 따옴표 인자가 하나도 없을 때만 숫자 인자를 센다. 따옴표 인자가 있는 호출에서 숫자까지
+        # 세면 이미 저장된 `{onclick|arg2}` 의 번호가 밀린다
+        call = _BARE_CALL.search(value)
+        if call is not None:
+            parts = [part.strip() for part in call.group(1).split(",")]
+            args = [part for part in parts if _BARE_NUMBER.match(part)]
     return args[index - 1].strip() if 0 < index <= len(args) else ""
 
 

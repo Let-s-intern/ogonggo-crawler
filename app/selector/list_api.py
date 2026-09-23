@@ -59,7 +59,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import parse_qsl
@@ -237,7 +237,12 @@ def _build(
     fields: dict[str, Any] = {"title": title_path}
     missing: list[str] = []
     for name in ("date", "company_name"):
-        found = _value_path([(entry, getattr(item, name)) for entry, item in pairs])
+        found = _value_path(
+            [(entry, getattr(item, name)) for entry, item in pairs],
+            same=_same_date if name == "date" else _same_value,
+        )
+        if not found and name == "date":
+            found = _deadline_by_name([entry for entry, _ in pairs])
         if found:
             fields[name] = found
         else:
@@ -258,6 +263,9 @@ def _build(
             "id_field": id_field,
             "link_template": link_template,
             "headers": headers,
+            # 키 이름이 마감을 뜻할 때만 목록 날짜로 끝난 공고를 건너뛴다. 게시일을 마감일로
+            # 읽으면 새 공고가 조용히 버려진다 (`app/selector/api_schema.py`)
+            "date_is_deadline": _is_deadline_key(fields.get("date", "")),
         }
     }
     try:
@@ -378,8 +386,8 @@ async def confirm_list_path(
             adopted=False, reason=f"다시 부른 응답에서 항목을 읽지 못했다: {exc}"
         )
 
-    got = {_squeeze(item.title) for item in result.items}
-    matched = sum(1 for title in expected if title in got)
+    got = [_squeeze(item.title) for item in result.items]
+    matched = sum(1 for title in expected if any(_same_title(title, value) for value in got))
     if matched < MIN_TITLE_HITS or matched * 2 < min(len(expected), len(result.items)):
         return ListConfirmation(
             adopted=False,
@@ -414,7 +422,7 @@ def _title_hits(entries: Sequence[Any], titles: Sequence[str]) -> int:
     """이 배열이 그 제목들을 몇 건이나 담고 있는가."""
     found = 0
     for title in titles:
-        if any(title in _values(entry).values() for entry in entries):
+        if any(_same_title(title, value) for entry in entries for value in _values(entry).values()):
             found += 1
     return found
 
@@ -429,7 +437,9 @@ def _pairs(
         if not title:
             continue
         for entry in entries:
-            path = next((key for key, value in _values(entry).items() if value == title), "")
+            path = next(
+                (key for key, value in _values(entry).items() if _same_title(title, value)), ""
+            )
             if path:
                 found.append((path, entry, item))
                 break
@@ -528,8 +538,12 @@ def _usable_links(links: Sequence[str], items: Sequence[ListItem]) -> list[str]:
     return unique
 
 
-def _value_path(pairs: Sequence[tuple[Mapping[str, Any], str]]) -> str:
+def _value_path(
+    pairs: Sequence[tuple[Mapping[str, Any], str]],
+    same: Callable[[str, str], bool] | None = None,
+) -> str:
     """렌더된 값과 같은 값을 가진 키의 경로. 여러 항목에서 같은 키가 맞아야 한다."""
+    matches = same or _same_value
     counts: dict[str, int] = {}
     wanted = 0
     for entry, raw in pairs:
@@ -538,12 +552,71 @@ def _value_path(pairs: Sequence[tuple[Mapping[str, Any], str]]) -> str:
             continue
         wanted += 1
         for key, value in _values(entry).items():
-            if value == text:
+            if matches(text, value):
                 counts[key] = counts.get(key, 0) + 1
     if not counts or wanted < MIN_TITLE_HITS:
         return ""
     best = max(counts, key=lambda key: counts[key])
     return best if counts[best] >= min(wanted, MIN_TITLE_HITS) else ""
+
+
+def _same_value(rendered: str, value: str) -> bool:
+    return value == rendered
+
+
+# `2026.09.27`, `26.09.27`, `2026-09-27T23:59:00`, `2026년 9월 27일`
+_DATE = re.compile(r"(\d{4}|\d{2})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})")
+
+
+def _dates(text: str) -> set[tuple[int, int, int]]:
+    found: set[tuple[int, int, int]] = set()
+    for year, month, day in _DATE.findall(text):
+        full = int(year) + 2000 if len(year) == 2 else int(year)
+        found.add((full, int(month), int(day)))
+    return found
+
+
+def _same_date(rendered: str, value: str) -> bool:
+    """화면의 날짜 표기와 응답 값이 같은 날을 가리키는가.
+
+    NHN 실측(2026-09-22): 화면은 `~ 26.09.27`, 응답은 `2026-09-27T23:59:00` 이었다. 글자로 견주면
+    마감일 칸을 못 찾아 끝난 공고까지 매 실행 상세를 연다. 응답 값의 첫 날짜가 화면 값의 가장
+    늦은 날짜와 같으면 같은 칸이다 — 화면이 기간(`시작 ~ 마감`)을 보여 주면 마감일 쪽을 고른다.
+    """
+    if value == rendered:
+        return True
+    shown = _dates(rendered)
+    if not shown:
+        return False
+    first = _DATE.search(value)
+    if first is None:
+        return False
+    return next(iter(_dates(first.group(0)))) == max(shown)
+
+
+# 마감일로 볼 키 이름. 화면에서 날짜를 읽지 못했을 때만 쓴다
+_DEADLINE_KEY = re.compile(r"end|close|deadline|expire", re.IGNORECASE)
+
+
+def _is_deadline_key(path: Any) -> bool:
+    return isinstance(path, str) and bool(_DEADLINE_KEY.search(path.rsplit(".", 1)[-1]))
+
+
+def _deadline_by_name(entries: Sequence[Mapping[str, Any]]) -> str:
+    """이름이 마감을 뜻하고 값이 항목마다 날짜인 키. 없거나 둘 이상이면 빈 문자열이다.
+
+    화면에서 날짜를 읽지 못하면 대조할 값이 없다. NHN 실측(2026-09-22): 모델이 목록의 날짜
+    셀렉터를 비워, 응답에 `postingEndDatetime` 이 있는데도 마감일 칸을 못 찾았다.
+    """
+    if len(entries) < MIN_TITLE_HITS:
+        return ""
+    flattened = [_values(entry) for entry in entries]
+    candidates = [
+        key
+        for key in flattened[0]
+        if _is_deadline_key(key) and all(_DATE.search(one.get(key, "")) for one in flattened)
+    ]
+    return candidates[0] if len(candidates) == 1 else ""
 
 
 def _request_body(request: ObservedRequest) -> tuple[dict[str, Any], str]:
@@ -596,6 +669,29 @@ def _common(paths: Iterator[str]) -> str:
 def _usable_id(value: str) -> bool:
     """공고 id 로 볼 만한 값인가. 짧은 값은 주소 아무 자리에나 우연히 들어 있다."""
     return MIN_ID_LENGTH <= len(value) <= MAX_ID_LENGTH
+
+
+# 화면 제목 안에 든 응답 값을 같은 제목으로 볼 최소 길이와 비율. 짧은 값("신입")이 아무 제목에나
+# 들어 있어 짝이 틀리는 것을 막는다
+MIN_PARTIAL_TITLE = 6
+MIN_PARTIAL_RATIO = 0.5
+
+
+def _same_title(rendered: str, value: str) -> bool:
+    """화면 제목과 응답 값이 같은 공고의 제목인가.
+
+    화면이 제목 앞뒤에 회사나 분류를 붙이는 사이트가 있다. NHN 실측(2026-09-22): 화면은
+    `[NHN] 백엔드 개발 인턴 (체험형)`, 응답의 `name` 은 `백엔드 개발 인턴 (체험형)` 이었다. 글자가
+    통째로 같아야 한다고 보면 목록 API 를 못 찾고, 항목에 링크가 없어 상세로 갈 길이 끊겼다.
+    """
+    value = _squeeze(value)
+    if value == rendered:
+        return True
+    return (
+        len(value) >= MIN_PARTIAL_TITLE
+        and value in rendered
+        and len(value) >= len(rendered) * MIN_PARTIAL_RATIO
+    )
 
 
 def _squeeze(value: str) -> str:

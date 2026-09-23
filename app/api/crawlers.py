@@ -84,7 +84,7 @@ from app.selector.generator import (
 from app.selector.path_proposal import llm_asker
 from app.selector.repair import RepairOutcome, SelectorRepairError, repair_for_urls
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
-from app.selector.verify import VerificationReport
+from app.selector.verify import VerificationReport, verify_selectors
 
 logger = logging.getLogger(__name__)
 
@@ -670,18 +670,39 @@ async def create_crawler(
     # 셀렉터를 만든다. 여기까지 와야 목록 URL 하나로 등록이 끝난다 — 상세 셀렉터가 비어 있는
     # 크롤러는 첫 실행에서 본문을 못 읽는다
     sample_detail_url = payload.detail_url.strip() or _discovered_detail_url(discovery)
+    # 상세 셀렉터를 만든 HTML 을 어느 경로로 받았는가
+    detail_source_mode = generated_mode
     if not payload.detail_url.strip() and sample_detail_url:
+        detail_source_mode = (
+            PLAYWRIGHT
+            if PLAYWRIGHT in (discovery.detail_mode, generated_mode)
+            else discovery.detail_mode or generated_mode
+        )
         result = await _fill_detail(
             generate,
             result,
             list_url=payload.list_url,
             detail_url=sample_detail_url,
-            render_mode=discovery.detail_mode or generated_mode,
+            # 목록과 상세를 한 경로로 다시 받는다. 어느 한쪽이라도 렌더가 필요하면 렌더다 — 상세만
+            # 정적이라고 정적으로 받으면 JS 로 그리는 목록이 비어, 모델이 목록을 비우며 상세 칸까지
+            # 비워 답했다(슈피겐, 2026-09-22)
+            render_mode=detail_source_mode,
         )
 
     # 항목이 `href` 를 안 들고 있어 판정이 상세 주소 형식을 알아냈으면 그것을 셀렉터에 얹는다.
     # 확인된 것만 온다 (`app/selector/link_probe.py`)
     selectors = _with_link(result.selectors, discovery)
+
+    if (
+        detail_mode == STATIC
+        and detail_source_mode == PLAYWRIGHT
+        and sample_detail_url
+        and not await _static_detail_holds(sample_detail_url, selectors)
+    ):
+        # 상세 셀렉터는 렌더한 페이지로 만들었는데 판정은 상세를 정적으로 뒀다. 제목이 정적
+        # 응답에도 있어 정적으로 본 것이고, 구조까지 같다는 뜻은 아니다. 한독 실측(2026-09-22):
+        # 그 셀렉터가 등록할 때 본 공고의 정적 응답에서조차 제목을 못 잡았다
+        detail_mode = PLAYWRIGHT
 
     name = payload.name.strip() or urlsplit(payload.list_url).netloc
     # 안 적었으면 NULL 이다. 빈 문자열로 넣으면 "회사명이 있다" 와 구분되지 않는다
@@ -766,6 +787,16 @@ async def create_crawler(
         path_reason=discovery.reason,
         path_failure=discovery.failure,
     )
+
+
+async def _static_detail_holds(url: str, selectors: SelectorSet) -> bool:
+    """렌더한 페이지로 만든 상세 셀렉터가 정적 응답에서도 제목과 본문을 잡는가."""
+    try:
+        page = await get_fetcher().fetch(url)
+    except FetchError:
+        return False
+    report = verify_selectors(selectors, "", page.text)
+    return not {"detail.title", "detail.body"} & set(report.failed)
 
 
 def _discovered_detail_url(discovery: Discovery) -> str:

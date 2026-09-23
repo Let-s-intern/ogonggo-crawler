@@ -4,7 +4,8 @@
 
 - 보내는 것은 정제·샘플링된 HTML 뿐이다. 원본 페이지를 그대로 싣지 않는다
 - 응답은 셀렉터 JSON 스키마로 강제하고, 받은 뒤에도 다시 검증한다
-- 깨진 응답(`unparsable`)만 1회 재생성한다. 나머지 실패는 운영자에게 넘긴다
+- 스키마에 맞지 않는 응답은 1회 재생성한다. 필수 칸이 0개 매칭이면 무엇이 틀렸는지 적어 1회 더
+  묻는다. 그래도 틀린 칸은 운영자에게 넘긴다
 - 생성마다 모델 ID, 입출력 토큰 수, 지연을 로그로 남긴다
 - API 키는 환경변수에서만 읽고 어디에도 남기지 않는다
 
@@ -18,8 +19,10 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
+
+from bs4 import BeautifulSoup
 
 from app.config import Settings, get_settings
 from app.crawler.fetcher import PageSource, get_fetcher
@@ -39,7 +42,8 @@ from app.selector.verify import VerificationReport, verify_selectors
 
 logger = logging.getLogger(__name__)
 
-# 깨진 응답에 한해 한 번 더. 2회를 넘기지 않는다 (`.claude/rules/llm.md`).
+# 스키마에 맞지 않는 응답은 두 번까지 묻는다 (`.claude/rules/llm.md`). 0개 매칭으로 다시 묻는
+# 한 번은 따로다 — 한 생성의 호출은 많아야 세 번이다
 MAX_ATTEMPTS = 2
 
 _SYSTEM_INSTRUCTION = (
@@ -176,8 +180,19 @@ async def generate_from_html(
 
     last_error: SelectorSchemaError | None = None
     last_text: str | None = None
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        text, usage = await call_model(resolved_client, model, prompt, attempt, provider=provider)
+    # 스키마 거절로 다시 물은 수와, 0개 매칭으로 다시 물은 적이 있는지. 둘은 따로 센다
+    schema_failures = 0
+    match_retried = False
+    feedback = ""
+    spent: Usage | None = None
+    best: GenerationResult | None = None
+    attempt = 0
+    while True:
+        attempt += 1
+        text, usage = await call_model(
+            resolved_client, model, prompt + feedback, attempt, provider=provider
+        )
+        spent = usage if spent is None else _added(spent, usage)
         last_text = text
         try:
             selectors, moved = parse_generated(text)
@@ -194,6 +209,10 @@ async def generate_from_html(
             # 묻기만 한다 — 같은 응답이 두 번 오면 거절한다. 옆 묶음에 잘못 둔 칸은 거절하기 전에
             # `parse_generated` 가 제자리로 옮긴다 (2026-09-17)
             last_error = exc
+            schema_failures += 1
+            if schema_failures >= MAX_ATTEMPTS:
+                break
+            feedback = _schema_feedback(exc)
             continue
 
         # 항목 셀렉터가 공고가 아닌 반복까지 잡았으면 제목이 있는 쪽으로 좁힌다. 넓히지는
@@ -208,12 +227,32 @@ async def generate_from_html(
             report.summary(),
             report.failed or "없음",
         )
-        return GenerationResult(
+        result = GenerationResult(
             selectors=selectors,
-            usage=usage,
+            usage=spent,
             attempts=attempt,
             verification=report,
             notes=[*_notes(cleaned_list, cleaned_detail, narrowing), *moved],
+        )
+        missed = _problems(report, selectors, list_html, detail_html)
+        if not missed:
+            return result
+        if best is None or len(missed) < len(
+            _problems(best.verification, best.selectors, list_html, detail_html)
+        ):
+            best = result
+        if match_retried:
+            break
+        # 모양은 맞는데 꼭 있어야 할 칸이 이 HTML 에서 0개다. 같은 질문을 되풀이하지 않고 무엇이
+        # 틀렸는지 적어 한 번만 더 묻는다. DeepSeek 가 클래스 앞의 `.` 을 빼거나(이노션) 목록을
+        # 비워 답한 것(HD현대)이 이렇게 풀렸다 (2026-09-22)
+        match_retried = True
+        feedback = _match_feedback(missed)
+
+    if best is not None:
+        # 다시 물어도 모든 칸이 맞지 않았다. 덜 틀린 답을 draft 로 남기고 틀린 칸은 화면이 알린다
+        return _without_number_date(
+            replace(best, usage=spent or best.usage, attempts=attempt), list_html
         )
 
     assert last_error is not None  # 루프는 최소 한 번 돈다
@@ -231,20 +270,23 @@ async def generate_from_html(
             MAX_ATTEMPTS,
             ", ".join(empty_fields),
         )
-        return GenerationResult(
-            selectors=selectors,
-            usage=usage,
-            attempts=MAX_ATTEMPTS,
-            verification=report,
-            notes=[
-                *_notes(cleaned_list, cleaned_detail, narrowing),
-                *moved,
-                *(
-                    [f"모델이 채우지 못한 필드: {', '.join(empty_fields)}. 손으로 채운다"]
-                    if empty_fields
-                    else []
-                ),
-            ],
+        return _without_number_date(
+            GenerationResult(
+                selectors=selectors,
+                usage=spent or usage,
+                attempts=attempt,
+                verification=report,
+                notes=[
+                    *_notes(cleaned_list, cleaned_detail, narrowing),
+                    *moved,
+                    *(
+                        [f"모델이 채우지 못한 필드: {', '.join(empty_fields)}. 손으로 채운다"]
+                        if empty_fields
+                        else []
+                    ),
+                ],
+            ),
+            list_html,
         )
 
     # 스키마에 없는 이름이 끝까지 왔으면 그 사유를 그대로 둔다. 화면이 사유마다 다음 할 일을 적는다
@@ -252,6 +294,108 @@ async def generate_from_html(
     raise SelectorGenerationError(
         reason, f"{MAX_ATTEMPTS}회 모두 스키마에 맞지 않았다: {last_error}"
     ) from last_error
+
+
+# 생성 직후 검증에서 0개면 다시 묻는 칸. 목록은 항목과 제목, 상세는 페이지를 봤을 때만
+# 제목과 본문이다. 링크·날짜는 없는 사이트가 있어 넣지 않는다
+_REQUIRED_LIST = ("list.item", "list.title")
+_REQUIRED_DETAIL = ("detail.title", "detail.body")
+# 날짜 칸을 볼 항목 수
+_DATE_SAMPLE = 20
+
+
+def _required_misses(report: VerificationReport, detail_html: str) -> list[str]:
+    required = _REQUIRED_LIST + (_REQUIRED_DETAIL if detail_html.strip() else ())
+    failed = set(report.failed)
+    return [name for name in required if name in failed]
+
+
+def _schema_feedback(exc: SelectorSchemaError) -> str:
+    hint = (
+        " 목록 HTML 안에서 공고 하나에 해당하는 반복 요소를 찾아 그 칸을 채운다."
+        if exc.reason == "missing_field"
+        else ""
+    )
+    return f"\n\n[직전 답이 거절됐다]\n{exc}.{hint} 스키마를 지켜 다시 답한다.\n"
+
+
+def _problems(
+    report: VerificationReport, selectors: SelectorSet, list_html: str, detail_html: str
+) -> list[str]:
+    """생성 직후 다시 물을 거리. 한 줄이 한 칸이고, 모델에게 그대로 보인다."""
+    by_name = {field.name: field for field in report.fields}
+    lines = [
+        f"- {name}: `{by_name[name].selector}` 가 0개 매칭이었다"
+        for name in _required_misses(report, detail_html)
+    ]
+    sample = _number_only_date(selectors, list_html)
+    if sample:
+        lines.append(
+            f"- list.date: `{selectors.list.date}` 가 고른 값이 날짜가 아니라 숫자뿐이다(예: "
+            f"{sample}). 조회수나 순번 칸이다. 모집 기간이나 마감일이 적힌 칸을 고르고, 없으면 "
+            "빈 문자열로 둔다"
+        )
+    return lines
+
+
+def _number_only_date(selectors: SelectorSet, list_html: str) -> str:
+    """목록 날짜 칸이 잡은 값이 전부 숫자뿐이면 그 첫 값. 아니면 빈 문자열.
+
+    카페스 실측(2026-09-22): 모델이 날짜로 표의 마지막 칸(조회수)을 골랐다. 0개 매칭이 아니라
+    검증을 통과했고, 마감 거르기가 조회수를 날짜로 읽지 못해 끝난 공고까지 상세를 열었다.
+    """
+    if not selectors.list.item or not selectors.list.date:
+        return ""
+    try:
+        nodes = BeautifulSoup(list_html, "html.parser").select(selectors.list.item)
+        found = [node.select_one(selectors.list.date) for node in nodes[:_DATE_SAMPLE]]
+    except Exception:  # 셀렉터 문법 오류는 검증이 따로 적는다
+        return ""
+    texts = [node.get_text(" ", strip=True) for node in found if node is not None]
+    texts = [text for text in texts if text]
+    if texts and all(text.replace(",", "").isdigit() for text in texts):
+        return texts[0]
+    return ""
+
+
+def _without_number_date(result: GenerationResult, list_html: str) -> GenerationResult:
+    """다시 물어도 날짜 칸이 숫자뿐이면 비운다. 틀린 날짜보다 없는 날짜가 낫다."""
+    sample = _number_only_date(result.selectors, list_html)
+    if not sample:
+        return result
+    cleared = result.selectors.model_copy(
+        update={"list": result.selectors.list.model_copy(update={"date": ""})}
+    )
+    return replace(
+        result,
+        selectors=cleared,
+        notes=[
+            *result.notes,
+            f"목록 날짜 칸이 날짜가 아니라 숫자({sample})를 잡아 비웠다. 필요하면 손으로 채운다",
+        ],
+    )
+
+
+def _match_feedback(lines: list[str]) -> str:
+    body = "\n".join(lines)
+    return (
+        "\n\n[직전 답을 위 HTML 에 적용해 봤다]\n"
+        f"다음 칸이 틀렸다.\n{body}\n"
+        "CSS 셀렉터 문법을 지킨다 — 클래스는 `.이름`, id 는 `#이름` 이다. 위 HTML 에 실제로 있는 "
+        "요소로 다시 고르고, 맞았던 칸은 그대로 둔다.\n"
+    )
+
+
+def _added(first: Usage, second: Usage) -> Usage:
+    """여러 번 부른 생성의 비용을 합친다. 비용 질문에 답하려면 모두 세야 한다."""
+    return Usage(
+        provider=first.provider,
+        model=first.model,
+        input_tokens=first.input_tokens + second.input_tokens,
+        output_tokens=first.output_tokens + second.output_tokens,
+        total_tokens=first.total_tokens + second.total_tokens,
+        latency_ms=first.latency_ms + second.latency_ms,
+    )
 
 
 def build_client(settings: Settings | None = None) -> Any:

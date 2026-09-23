@@ -291,3 +291,18 @@ def test_없는_인자를_요구하면_그_항목은_실패다() -> None:
 
     assert result.ok is False
     assert "onclick|arg2" in result.reason
+
+
+def test_따옴표_없는_숫자_인자도_읽는다() -> None:
+    """카페스 실측(2026-09-22): `onclick="view(83); return false;"`."""
+    from app.selector.link import js_argument
+
+    assert js_argument("view(83); return false;", 1) == "83"
+
+
+def test_따옴표_인자가_있으면_숫자_인자는_세지_않는다() -> None:
+    """이미 저장된 `{onclick|arg2}` 의 번호가 밀리지 않아야 한다."""
+    from app.selector.link import js_argument
+
+    assert js_argument("goDetail(3, '1000361539', 'C_REC')", 1) == "1000361539"
+    assert js_argument("goDetail(3, '1000361539', 'C_REC')", 2) == "C_REC"

@@ -60,3 +60,19 @@ def without_default_classify(monkeypatch: pytest.MonkeyPatch) -> None:
 
     migrate_up.original = original  # type: ignore[attr-defined]
     monkeypatch.setattr(db, "migrate_up", migrate_up)
+
+
+@pytest.fixture(autouse=True)
+def static_detail_holds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """등록이 상세 셀렉터를 정적 응답에 대 보는 확인을 네트워크 없이 통과시킨다.
+
+    실제로는 공용 fetch 클라이언트로 상세를 한 번 받는다 (`app/api/crawlers.py`). 테스트가 그대로
+    부르면 실사이트로 나가고, 전역 클라이언트가 닫힌 루프에 묶여 뒤 테스트가 깨진다. 확인 자체를
+    보는 테스트는 따로 바꿔 끼운다 (`tests/test_detail_url_optional.py`).
+    """
+    from app.api import crawlers
+
+    async def holds(url: str, selectors: Any) -> bool:
+        return True
+
+    monkeypatch.setattr(crawlers, "_static_detail_holds", holds)

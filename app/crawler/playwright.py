@@ -225,11 +225,36 @@ class RequestLog:
         self._limit = limit
         self._slots: list[ObservedRequest | None] = []
         self._pending: list[asyncio.Future[None]] = []
+        # 페이지 이동 요청의 주소. 리다이렉트 전 주소까지 남는다 — `window.open` 으로 연 새 탭은
+        # 응답 기록이 붙기 전에 첫 요청이 지나가고, 도착한 주소는 리다이렉트 뒤라 공고 번호가
+        # 빠져 있다(GC녹십자, 2026-09-22)
+        self._navigations: list[str] = []
 
     def attach(self, page: Any) -> None:
         """페이지의 응답 이벤트에 붙는다. 같은 로그를 여러 페이지에 붙일 수 있다 —
         새 탭에서 나가는 요청도 같은 자리에 모인다."""
         page.on("response", self._on_response)
+
+    def watch_navigations(self, context: Any) -> None:
+        """컨텍스트의 페이지 이동 요청을 적는다. 새 탭의 첫 요청도 여기서는 놓치지 않는다."""
+        context.on("request", self._on_request)
+
+    def navigation_mark(self) -> int:
+        return len(self._navigations)
+
+    def navigations_since(self, mark: int) -> list[str]:
+        """표시한 자리 뒤에 일어난 페이지 이동의 주소. 같은 주소는 한 번만 담는다."""
+        return list(dict.fromkeys(self._navigations[mark:]))
+
+    def _on_request(self, request: Any) -> None:
+        with suppress(Exception):
+            if not request.is_navigation_request():
+                return
+            if not _top_level(request):
+                return
+            url = str(request.url or "")
+            if is_data_request(url):
+                self._navigations.append(url)
 
     @property
     def requests(self) -> list[ObservedRequest]:
@@ -279,6 +304,18 @@ class RequestLog:
             truncated=len(body) > self._body_limit,
             request_headers=functional_headers(getattr(request, "headers", None)),
         )
+
+
+def _top_level(request: Any) -> bool:
+    """최상위 문서로 가는 이동인가. iframe 안의 이동은 상세가 아니다.
+
+    새 탭의 첫 이동은 탭이 붙기 전이라 frame 을 읽으면 예외가 난다. 그것은 새 탭의 최상위
+    이동이라 참으로 본다.
+    """
+    try:
+        return request.frame.parent_frame is None
+    except Exception:
+        return True
 
 
 def functional_headers(headers: Any) -> dict[str, str]:
@@ -426,6 +463,7 @@ class Renderer:
                 page = await context.new_page()
                 log.attach(page)
                 context.on("page", log.attach)
+                log.watch_navigations(context)
                 await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
                 await _settle(page)
                 await log.drain()
@@ -463,6 +501,7 @@ class Renderer:
                         url, wait_until="domcontentloaded", timeout=timeout_ms
                     )
                     await _settle(page)
+                    await _inline_frames(page)
                     html = await page.content()
                     final_url = page.url
                     if log is not None:
@@ -514,6 +553,33 @@ async def _settle(page: Any) -> None:
             arg=list(_ITEM_HINTS),
             timeout=int(_ITEMS_SECONDS * 1000),
         )
+
+
+# 같은 출처 iframe 의 본문을 그 iframe 바로 뒤에 붙인다. 다른 출처(광고·지도)는 `contentDocument`
+# 가 null 이라 저절로 빠진다
+_INLINE_FRAMES_JS = """
+() => {
+  for (const frame of document.querySelectorAll('iframe')) {
+    let doc = null;
+    try { doc = frame.contentDocument; } catch (e) { continue; }
+    if (!doc || !doc.body || !doc.body.innerHTML.trim()) continue;
+    const box = document.createElement('div');
+    box.setAttribute('data-iframe-content', '');
+    box.innerHTML = doc.body.innerHTML;
+    frame.after(box);
+  }
+}
+"""
+
+
+async def _inline_frames(page: Any) -> None:
+    """iframe 안의 글을 문서에 옮겨 적는다. 안 되어도 실패로 보지 않는다.
+
+    `page.content()` 는 iframe 안을 담지 않는다. 한화 실측(2026-09-22): 공고 본문을 에디터
+    iframe 에 그려 렌더한 HTML 에 본문이 없었고, 본문 셀렉터가 비어 필수 칸 실패로 끝났다.
+    """
+    with suppress(Exception):
+        await page.evaluate(_INLINE_FRAMES_JS)
 
 
 def _status(response: Any) -> int:
