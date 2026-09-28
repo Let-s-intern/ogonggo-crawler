@@ -95,6 +95,15 @@ class Settings(BaseSettings):
     # 저장
     database_path: str = "./data/jobs.db"
 
+    # 로고 파일 저장소(S3). 화면(설정 › 파일 저장소)에 저장한 값이 없을 때 쓴다
+    # (`app/storage/settings.py` 의 `read_config`). 실제 S3 는 엔드포인트를 비운다
+    s3_endpoint: str = ""
+    s3_region: str = ""
+    s3_bucket: str = ""
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+    s3_public_base: str = ""
+
     # 크롤링
     crawl_user_agent: str = "job-crawler-automation (contact: unset)"
     crawl_delay_seconds: float = 3.0
