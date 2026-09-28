@@ -72,7 +72,7 @@ def _problem(conn: sqlite3.Connection, card: CardView) -> str:
 
 
 def _cards(conn: sqlite3.Connection, scheduler: WorkflowScheduler) -> list[CardView]:
-    next_runs = scheduler.next_run_times()
+    next_runs = scheduler.next_run_times(conn)
     return [
         _view(conn, item, next_run_at=next_runs.get(item.id))
         for item in workflows.list_workflows(conn)

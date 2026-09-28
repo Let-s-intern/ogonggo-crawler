@@ -2,11 +2,6 @@
 
    step: form(입력) → queued(걸었음. 창을 닫아도 돈다) / notfound(목록 줄의 `다시 찾기` 로 연다. 무엇이
    안 됐는지와 목록·공고 주소를 고쳐 다시 찾기). 진행은 사이트 목록 맨 위에 보인다 (`site_list.html`) #}
-{% macro interval_select(selected, field_id) %}
-<select id="{{ field_id }}" name="interval_minutes">
-  {% for minutes, label in intervals %}<option value="{{ minutes }}" {% if minutes == selected %}selected{% endif %}>{{ label }}</option>{% endfor %}
-</select>
-{% endmacro %}
 {# 로고 파일 칸. 저장소가 비어 있으면 파일 칸 대신 무엇을 채워야 하는지 적는다 (`app/storage/s3.py`) #}
 {% macro logo_field(field_id) %}
 <p class="my-0">
@@ -43,10 +38,6 @@
           <input id="site-add-company" name="company" type="text" required value="{{ company }}"
                  placeholder="예: 삼성" class="w-full">
           <span class="text-xs text-slate-500">계열사 공고가 함께 올라오는 사이트면 그룹 이름을 적습니다</span>
-        </p>
-        <p class="my-0">
-          <label for="site-add-interval" class="block">수집 주기</label>
-          {{ interval_select(interval, "site-add-interval") }}
         </p>
       </div>
       <p class="my-0">

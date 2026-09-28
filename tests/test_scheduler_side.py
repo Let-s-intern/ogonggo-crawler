@@ -21,14 +21,13 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app import db, settings
 from app.scheduler import (
+    DAILY_JOB_ID,
     SIDE_SCHEDULE,
     WorkflowScheduler,
     _log_skipped_tick,
     get_gate,
-    job_id,
     side_job_id,
     side_workflow_id_of,
-    workflow_id_of,
 )
 from app.side import store
 
@@ -115,39 +114,13 @@ def add_side(
 
 
 def test_잡_id_는_서로의_것을_읽지_않는다() -> None:
-    """앞머리가 종류를 가른다. 남의 잡은 어느 쪽으로도 읽히지 않는다."""
-    assert workflow_id_of(job_id(1)) == 1
+    """앞머리가 종류를 가른다. 남의 잡은 부가 잡으로 읽히지 않는다."""
     assert side_workflow_id_of(side_job_id(1)) == 1
 
-    assert workflow_id_of(side_job_id(1)) is None
-    assert side_workflow_id_of(job_id(1)) is None
-
-    assert workflow_id_of("cleanup:snapshots") is None
+    assert side_workflow_id_of(DAILY_JOB_ID) is None
     assert side_workflow_id_of("cleanup:snapshots") is None
     # 앞머리가 맞아도 뒤가 숫자가 아니면 우리 잡이 아니다
     assert side_workflow_id_of("side:classify") is None
-
-
-def test_같은_id_를_등록해도_잡은_둘이다(scheduler: WorkflowScheduler) -> None:
-    """`workflows` 1번과 `side_workflows` 1번은 다른 잡이다.
-
-    두 표는 저마다 자동 증가라 1번이 둘 있다. 앞머리가 갈리지 않으면 나중에 등록되는 쪽이
-    `replace_existing=True` 로 먼저 있던 잡을 덮는다.
-    """
-
-    async def nothing() -> None:
-        return None
-
-    scheduler.scheduler.add_job(
-        nothing, "interval", minutes=60, id=job_id(1), replace_existing=True
-    )
-    scheduler.scheduler.add_job(
-        nothing, "interval", minutes=30, id=side_job_id(1), replace_existing=True
-    )
-
-    assert len(scheduler.scheduler.get_jobs()) == 2
-    assert scheduler.scheduler.get_job(job_id(1)) is not None
-    assert scheduler.scheduler.get_job(side_job_id(1)) is not None
 
 
 def test_주기로_도는_active_인_것만_등록한다(
@@ -220,33 +193,28 @@ def test_바뀐_것이_없으면_아무것도_하지_않는다(
     assert not synced.sync(conn)
 
 
-def test_부가_잡이_있어도_크롤_쪽은_그대로다(
+def test_부가_잡이_있어도_매일_잡은_그대로다(
     synced: WorkflowScheduler, conn: sqlite3.Connection
 ) -> None:
-    """부가 잡을 크롤 잡으로 읽어 지우지도, 크롤 잡을 못 지우게 되지도 않는다."""
+    """부가 잡을 멈춰도 매일 잡은 남고, 어느 표에도 없는 잡도 남는다."""
 
     async def unrelated() -> None:
         return None
 
     synced.scheduler.add_job(unrelated, "interval", minutes=5, id="cleanup:snapshots")
-    workflow_id = add_workflow(conn, "크롤", 10)
+    add_workflow(conn, "크롤", 10)
     side_id = add_side(conn, "분류", 20)
 
     report = synced.sync(conn)
-    assert report.added == [workflow_id]
+    assert report.daily == "08:30"
     assert report.side_added == [side_id]
-    assert synced.scheduled() == {workflow_id: 10}
-    assert synced.side_scheduled() == {side_id: 20}
 
-    # 크롤만 멈춘다. 크롤 잡은 사라지고 부가 잡은 그대로 있어야 한다
-    conn.execute("UPDATE workflows SET status = 'paused' WHERE id = ?", (workflow_id,))
+    conn.execute("UPDATE side_workflows SET status = 'paused' WHERE id = ?", (side_id,))
     report = synced.sync(conn)
 
-    assert report.removed == [workflow_id]
-    assert report.side_removed == []
-    assert synced.scheduled() == {}
-    assert synced.side_scheduled() == {side_id: 20}
-    # 어느 표에도 없는 잡은 여전히 남는다
+    assert report.side_removed == [side_id]
+    assert report.daily == ""
+    assert synced.scheduler.get_job(DAILY_JOB_ID) is not None
     assert synced.scheduler.get_job("cleanup:snapshots") is not None
 
 
@@ -254,7 +222,6 @@ async def test_부가_잡은_자기_실행_함수를_부른다(
     synced: WorkflowScheduler, conn: sqlite3.Connection, calls: list[str]
 ) -> None:
     """잡에 실린 것은 id 뿐이고, 부가 잡은 크롤 실행 함수로 가지 않는다."""
-    workflow_id = add_workflow(conn, "크롤", 10)
     side_id = add_side(conn, "분류", 20)
     synced.sync(conn)
 
@@ -263,9 +230,8 @@ async def test_부가_잡은_자기_실행_함수를_부른다(
     assert side.max_instances == 1
 
     await side.func(*side.args)
-    await synced.scheduler.get_job(job_id(workflow_id)).func(workflow_id)
 
-    assert calls == [f"side:{side_id}", f"crawl:{workflow_id}"]
+    assert calls == [f"side:{side_id}"]
 
 
 async def test_부가_잡은_크롤_상한을_잡지_않는다(

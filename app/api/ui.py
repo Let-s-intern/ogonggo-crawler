@@ -86,7 +86,7 @@ SETTINGS_SECTIONS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         "시스템",
         (
             ("/side", "자동 분류"),
-            ("/settings/runs", "동시 실행"),
+            ("/settings/runs", "매일 수집·동시 실행"),
             ("/settings/storage", "파일 저장소"),
             ("/settings/export", "스냅샷 내보내기"),
             ("/settings/import", "데이터 가져오기"),

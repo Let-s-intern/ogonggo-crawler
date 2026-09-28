@@ -1,0 +1,33 @@
+{# 매일 수집 설정 (`app/crawler/daily.py`) #}
+{% from "macros.html" import failure, notice_box, wait %}
+{% if error %}
+{{ failure("invalid_input", error, title="저장하지 못했다") }}
+{% endif %}
+{% if message %}
+{{ notice_box(message) }}
+{% endif %}
+
+<form hx-post="/ui/settings/daily" hx-target="#daily-crawl-form" hx-swap="innerHTML"
+      hx-disabled-elt="find button">
+  <fieldset>
+    <legend>매일 수집</legend>
+    <p>
+      <label for="daily-start-time">시작 시각 ({{ zone }})</label>
+      <br>
+      <input id="daily-start-time" name="start_time" type="time" value="{{ config.start_time }}"
+             required>
+    </p>
+    <p>
+      <label for="daily-spread">걸쳐 도는 시간(분)</label>
+      <br>
+      <input id="daily-spread" name="spread_minutes" type="number" step="1" min="0"
+             max="{{ max_spread }}" value="{{ config.spread_minutes }}" size="6">
+      <button type="submit">저장</button>
+      {{ wait("저장하는 중") }}
+    </p>
+    <p>
+      지금 active 인 사이트 {{ count }}곳 — 한 곳씩 약 {{ gap }}분 간격으로 시작한다.
+      {% if next_at %}다음 시작 {{ next_at | as_time }}.{% endif %}
+    </p>
+  </fieldset>
+</form>

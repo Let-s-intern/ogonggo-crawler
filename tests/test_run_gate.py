@@ -16,7 +16,13 @@ import pytest
 from apscheduler.events import EVENT_JOB_MAX_INSTANCES, JobSubmissionEvent
 
 from app import db, settings
-from app.scheduler import RunGate, _configured_limit, _log_skipped_tick, get_gate, job_id
+from app.scheduler import (
+    DAILY_JOB_ID,
+    RunGate,
+    _configured_limit,
+    _log_skipped_tick,
+    get_gate,
+)
 
 
 class Tracker:
@@ -118,17 +124,17 @@ def skip_event(identifier: str) -> JobSubmissionEvent:
     )
 
 
-def test_건너뛴_tick_은_워크플로우_id_와_함께_남는다(
+def test_건너뛴_매일_바퀴가_남는다(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """앞 실행이 끝나지 않아 APScheduler 가 tick 을 버린 경우다."""
-    event = skip_event(job_id(7))
+    """앞 바퀴가 끝나지 않아 APScheduler 가 이번 바퀴를 버린 경우다."""
+    event = skip_event(DAILY_JOB_ID)
 
     with caplog.at_level(logging.WARNING, logger="app.scheduler"):
         _log_skipped_tick(event)
 
     assert len(caplog.records) == 1
-    assert "workflow 7" in caplog.records[0].message
+    assert "매일 수집" in caplog.records[0].message
     assert "건너뛴다" in caplog.records[0].message
 
 

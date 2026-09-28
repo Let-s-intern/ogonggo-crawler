@@ -112,11 +112,6 @@
           <label for="wf-name-{{ crawler.id }}">이름</label>
           <input id="wf-name-{{ crawler.id }}" name="name" type="text" value="{{ crawler.name }}"
                  size="20">
-          <label for="wf-interval-{{ crawler.id }}">주기(분)</label>
-          {# 기본값 360 은 `.claude/docs/data-model.md` 와 `WorkflowCreate.interval_minutes` 가
-             정한다. 비우고 보내면 API 기본값이 그대로 쓰인다 #}
-          <input id="wf-interval-{{ crawler.id }}" name="interval_minutes" type="number"
-                 value="360" min="1" size="5">
           <button type="submit">워크플로우로 승격</button>
           {{ wait("승격하는 중") }}
         </form>

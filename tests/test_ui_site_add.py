@@ -182,7 +182,8 @@ def test_사이트_목록의_추가_버튼이_창을_연다(client: TestClient) 
 
     assert 'hx-get="/ui/sites/new"' in body
     assert 'name="list_url"' in form and 'name="company"' in form
-    assert 'name="interval_minutes"' in form
+    # 사이트마다 주기를 고르지 않는다. 매일 한 바퀴에 들어간다 (`app/crawler/daily.py`)
+    assert 'name="interval_minutes"' not in form
     # 예시 공고 주소도 처음부터 넣을 수 있다 (2026-09-17)
     assert 'name="detail_url"' in form
 
