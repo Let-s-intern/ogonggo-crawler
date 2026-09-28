@@ -38,7 +38,7 @@ from app.classify.schema import (
     JUDGE_FIELDS,
     NUMBER_FIELDS,
     POSTING_TITLE,
-    REGION,
+    REGION_FIELDS,
     TAXONOMY_FIELDS,
 )
 
@@ -68,8 +68,9 @@ RULE_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("education_level", "요구 학력", JUDGE),
     ("closes_when_filled", "채용 시 마감", JUDGE),
     ("application_method", "지원 방법", JUDGE),
-    # 2026-09-21 부터 옮기는 칸이 아니라 큰 지역 목록에서 고르는 칸이다 (`app/regions.py`)
-    ("region", "근무 지역", JUDGE),
+    # 오공고 enum 의 시·도와 시·군·구에서 고른다 (LC-3385, `app/regions.py`)
+    ("region", "근무 시·도", JUDGE),
+    ("sub_region", "근무 시·군·구", JUDGE),
     # 0043. 원문의 이메일 주소를 그대로 옮긴다
     ("application_email", "지원 접수 이메일", JUDGE),
     ("inquiry_email", "채용 문의 이메일", JUDGE),
@@ -87,7 +88,7 @@ def names_of(kind: str) -> tuple[str, ...]:
 
 # 분류가 채우는 칸마다 규칙이 있어야 한다. 칸이 늘었는데 여기 없으면 모델이 그 칸을 모른다
 assert set(names_of(EXTRACT)) == set(EXTRACT_FIELDS)
-assert set(names_of(JUDGE)) == {*JUDGE_FIELDS, *NUMBER_FIELDS, REGION, *EMAIL_FIELDS}
+assert set(names_of(JUDGE)) == {*JUDGE_FIELDS, *NUMBER_FIELDS, *REGION_FIELDS, *EMAIL_FIELDS}
 assert set(names_of(TAXONOMY)) == set(TAXONOMY_FIELDS)
 assert names_of(INDUSTRIES) == (INDUSTRY,)
 assert names_of(TITLE) == (POSTING_TITLE,)
@@ -202,17 +203,39 @@ DEFAULT_RULES = RuleSet(
         "preferred_qualifications": FieldRule("우대사항"),
         "hiring_process": FieldRule("전형 절차"),
         "region": FieldRule(
-            "근무지. 이 직무를 실제로 일하는 곳이 속한 큰 지역을 목록에서 고른다. **여러 곳이면 "
-            "모두 고른다.** 구·시·군이나 사업장 이름만 적혀 있으면 그곳이 속한 큰 지역을 고른다. "
-            "나라 밖이면 `해외` 다. `전국 현장`·`전국 각지` 처럼 곳을 특정하지 않고 전국이라고 "
-            "적혀 있으면 `전국` 하나만 고른다. 근무지가 원문에 없으면 빈 목록으로 둔다 — 이 "
-            "칸만은 비워도 된다. 회사 주소나 본사 소개에만 나온 지역은 근무지가 아니다",
+            "근무지의 시·도. 근무지 주소나 근무 지역 문구에서 찾는다. 회사 본사 주소보다 이 직무를 "
+            "실제로 일하는 곳이 먼저다. **근무지가 여러 곳이면 첫 번째 근무지 하나만 고른다.** "
+            "전체 이름과 줄임말은 같은 값이다(서울특별시·서울 → `SEOUL`, 경상남도·경남 → "
+            "`GYEONGNAM`). 광주광역시·전라남도·전남광주통합특별시는 모두 `JEONNAM_GWANGJU` 다. "
+            "강원도·강원특별자치도 → `GANGWON`, 전라북도·전북특별자치도 → `JEONBUK`. 구·시·군이나 "
+            "사업장 이름만 적혀 있으면 그곳이 속한 시·도를 고른다. 전국 어디서나 일하면(전국 지점 "
+            "순환, 지역 무관) `NATIONWIDE`, 나라 밖이면 `OVERSEAS` 다. 근무지를 알 수 없거나 "
+            "재택·원격만 적혀 있으면(`100% 원격 근무`) 빈 글자로 둔다 — 비슷한 값을 짐작해 넣지 "
+            "않는다",
             (
-                Example("근무지: 성남시 분당구(판교)", "경기"),
-                Example("울산 본사 및 분당 GRC", "울산, 경기"),
-                Example("근무지 : 부산 해운대구 센텀", "부산"),
-                Example("베트남 하노이 법인", "해외"),
-                Example("근무지 : 본사(양재동) / 전국 현장", "전국"),
+                Example("서울 강남구 테헤란로 123", "SEOUL"),
+                Example("근무지: 성남시 분당구(판교)", "GYEONGGI"),
+                Example("울산 본사 및 분당 GRC", "ULSAN"),
+                Example("광주광역시 북구", "JEONNAM_GWANGJU"),
+                Example("근무지 : 본사(양재동) / 전국 현장", "NATIONWIDE"),
+                Example("근무지: 미국 샌프란시스코", "OVERSEAS"),
+            ),
+        ),
+        "sub_region": FieldRule(
+            "근무지의 시·군·구. **`region` 으로 고른 시·도 줄에 있는 값만 고른다** — 다른 시·도의 "
+            "값이면 버려진다. 중구·동구·서구·남구·북구·강서구·고성군처럼 같은 이름이 여러 시·도에 "
+            "있으니 시·도를 먼저 정한다. 수원시 장안구·성남시 분당구·전주시 완산구처럼 시 아래의 "
+            "구는 그 시다(성남시 분당구 → `GYEONGGI_SEONGNAM_SI`). 경기 광주시는 "
+            "`GYEONGGI_GWANGJU_SI` 이고 광주광역시와 다르다. 광주의 구와 전남의 시·군은 "
+            "`JEONNAM_GWANGJU_` 로 시작하는 값이다. 인천은 2026년 개편 뒤의 구다 — 예전 "
+            "중구·동구·서구로만 적혀 있어 제물포구·영종구·서해구·검단구 중 어디인지 정할 수 없으면 "
+            "빈 글자로 둔다. 시·도만 알 수 있거나(`부산 (구 미정)`), 시·군·구가 없는 "
+            "시·도(`SEJONG`)이거나, `region` 이 비었거나 `NATIONWIDE`·`OVERSEAS` 이면 "
+            "빈 글자로 둔다",
+            (
+                Example("서울 강남구 테헤란로 123", "SEOUL_GANGNAM_GU"),
+                Example("경기도 성남시 분당구 판교역로", "GYEONGGI_SEONGNAM_SI"),
+                Example("광주광역시 북구", "JEONNAM_GWANGJU_BUK_GU"),
             ),
         ),
         "application_email": FieldRule(

@@ -70,6 +70,7 @@ from app.classify.schema import (
     NUMBER_FIELDS,
     POSTING_TITLE,
     REGION,
+    SUB_REGION,
 )
 
 # 비교에서 지우는 글자. 공백, 글머리표, 구두점, 괄호, 따옴표다. 뜻을 나르는 글자는 남는다
@@ -95,6 +96,7 @@ _NUMBER = re.compile(r"\d{1,2}")
 # 원문이거나, 원문이 없는 건에서 본문이다 (`app/classify/store.py`)
 NOT_IN_SOURCE = "제목에도 보낸 글에도 없다"
 NOT_IN_LIST = "목록 밖이다"
+OUTSIDE_REGION = "고른 시·도 안에 없다"
 # 직군·직무를 버린 뒤 `기타` 로 채웠을 때 사유 뒤에 붙인다
 ETC_FILLED = " — 기타로 뒀다"
 NO_EVIDENCE = "근거 문장이 제목에도 보낸 글에도 없다"
@@ -231,18 +233,29 @@ def _ground_regions(
     reasons: dict[str, str],
     evidence: dict[str, str],
 ) -> None:
-    """근무지. 큰 지역 목록 안의 이름만 남기고 목록 순서로 잇는다 (2026-09-21 결정).
+    """근무지. 오공고 enum 안의 시·도와, 그 시·도 안의 시·군·구만 남긴다 (LC-3385).
 
-    스키마의 enum 이 이미 막지만, 스키마를 통과하지 않는 경로(예전처럼 원문 조각으로 답한 응답,
-    손으로 넣은 응답)가 남아 있다. 목록 밖 이름이 하나라도 있으면 버린 기록을 남기고, 목록 안
-    이름은 그대로 둔다 — 여러 곳 중 하나가 틀렸다고 나머지를 버리지 않는다.
+    스키마의 enum 이 목록 밖 값은 막지만 시·군·구가 시·도 안에 있는지는 못 막는다. 오공고는 맞지
+    않는 둘을 400 으로 거절하므로 시·군·구만 버린다 — 시·도는 맞을 수 있다. 시·도가 목록 밖이면
+    시·군·구도 둘 곳이 없어 함께 버린다. 근거 문장은 두 칸이 하나를 같이 쓴다.
     """
-    picked = regions.split(fields.get(REGION, ""))
-    kept[REGION] = regions.join(picked)
-    if any(name not in regions.names() for name in picked):
+    region = fields.get(REGION, "").strip()
+    sub_region = fields.get(SUB_REGION, "").strip()
+    if region and region not in regions.names():
         dropped.append(REGION)
         reasons[REGION] = NOT_IN_LIST
-    if kept[REGION]:
+        region = ""
+    if sub_region and sub_region not in regions.sub_names():
+        dropped.append(SUB_REGION)
+        reasons[SUB_REGION] = NOT_IN_LIST
+        sub_region = ""
+    elif sub_region and not regions.fits(region, sub_region):
+        dropped.append(SUB_REGION)
+        reasons[SUB_REGION] = OUTSIDE_REGION
+        sub_region = ""
+    kept[REGION] = region
+    kept[SUB_REGION] = sub_region
+    if region:
         quote = _quote_in(fields, REGION, source)
         if quote:
             evidence[REGION] = quote

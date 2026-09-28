@@ -117,7 +117,7 @@ def job_row(**values: Any) -> dict[str, Any]:
     columns = (
         "company_name parent_company_name title job_field job_role industry cover_image_url"
         " logo_url"
-        " employment_type experience_type experience_min_years education_level region"
+        " employment_type experience_type experience_min_years education_level region sub_region"
         " recruitment_type recruitment_headcount recruitment_start_at recruitment_end_at"
         " closes_when_filled auto_close_enabled company_and_team_introduction responsibilities"
         " qualifications preferred_qualifications compensation benefits hiring_process"

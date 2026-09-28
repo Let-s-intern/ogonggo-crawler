@@ -96,6 +96,8 @@ NORMALIZED_FIELDS: tuple[str, ...] = (
     # 0043 이 더한 지원 접수·채용 문의 이메일. 분류가 원문에서 옮긴다
     "application_email",
     "inquiry_email",
+    # 0046 이 더한 근무 시·군·구. 분류가 오공고 enum 에서 고른다 (`app/regions.py`)
+    "sub_region",
 )
 
 # 규칙도 보정도 걸리지 않고 정규화가 다른 칸에서 정하는 칸. `normalized_jobs` 에만 있다 — 모집

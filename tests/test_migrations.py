@@ -122,6 +122,8 @@ EXPECTED_COLUMNS = {
         "inquiry_email",
         # 0045. 등록한 회사 로고, 없으면 사이트 아이콘
         "logo_url",
+        # 0046. 근무 시·군·구. 오공고 enum 이름이다
+        "sub_region",
     },
     "normalization_rules": {
         "id",
@@ -306,6 +308,7 @@ ALL_VERSIONS = [
     "0043",
     "0044",
     "0045",
+    "0046",
 ]
 
 

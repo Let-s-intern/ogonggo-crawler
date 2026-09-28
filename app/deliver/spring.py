@@ -43,6 +43,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
+from app import regions
 from app.classify.schema import VALUE_LABELS
 from app.config import Settings, get_settings
 from app.deliver import settings as store
@@ -126,7 +127,7 @@ def payload(job: Mapping[str, Any] | sqlite3.Row) -> dict[str, Any]:
 
     회사명은 자회사가 있으면 자회사, 없으면 모회사다. 오공고는 `companyName` 을 실제 채용 주체로
     받고 모회사를 따로 받는다. 목록 밖 판정 값(옛 한글 값)은 null 로 보내 필수 칸 검사에서 걸리게
-    한다.
+    한다. 근무 지역도 목록 밖이면 null 이다 — 선택 칸이라 null 이어도 등록된다.
     """
     company = _text(job["company_name"]) or _text(job["parent_company_name"])
     parent = _text(job["parent_company_name"])
@@ -143,7 +144,8 @@ def payload(job: Mapping[str, Any] | sqlite3.Row) -> dict[str, Any]:
         "experienceType": _choice(job, "experience_type"),
         "experienceMinYears": _integer(job["experience_min_years"]),
         "educationLevel": _choice(job, "education_level"),
-        "region": _text(job["region"]),
+        "region": _choice(job, "region"),
+        "subRegion": _sub_region(job),
         "recruitmentType": _choice(job, "recruitment_type"),
         "recruitmentHeadcount": _integer(job["recruitment_headcount"]),
         "recruitmentStartAt": _datetime(job["recruitment_start_at"]),
@@ -497,6 +499,13 @@ def _text(value: Any) -> str | None:
 def _choice(job: Mapping[str, Any] | sqlite3.Row, name: str) -> str | None:
     value = _text(job[name])
     return value if value in VALUE_LABELS[name] else None
+
+
+def _sub_region(job: Mapping[str, Any] | sqlite3.Row) -> str | None:
+    """시·군·구. 함께 보내는 시·도 안에 없으면 null 이다 — 오공고가 등록을 400 으로 거절한다."""
+    value = _choice(job, "sub_region")
+    region = _choice(job, "region")
+    return value if value and region and regions.fits(region, value) else None
 
 
 def _integer(value: Any) -> int | None:

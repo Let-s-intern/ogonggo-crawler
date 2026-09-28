@@ -84,6 +84,8 @@ from app.classify.schema import (
     NUMBER_FIELDS,
     POSTING_TITLE,
     REGION,
+    REGION_FIELDS,
+    SUB_REGION,
     VALUE_LABELS,
     Classification,
     ClassifySchemaError,
@@ -543,7 +545,7 @@ def posting_only_names(
         "position_name",
         *JUDGE_FIELDS,
         *NUMBER_FIELDS,
-        REGION,
+        *REGION_FIELDS,
         *EMAIL_FIELDS,
     ]
     if taxonomy_tree:
@@ -574,8 +576,17 @@ def _classification_prompt(
         name: " / ".join(f"{value}({VALUE_LABELS[name][value]})" for value in values)
         for name, values in JUDGE_CHOICES.items()
     }
-    # 근무지는 여러 개를 고른다. 이름이 곧 화면 이름이라 괄호를 붙이지 않는다 (`app/regions.py`)
-    choices[REGION] = f"{' / '.join(regions.names())} (여러 개 고를 수 있다)"
+    # 근무지는 오공고 enum 이름으로 고른다. 시·군·구는 시·도마다 한 줄로 묶어 그 시·도 안에서
+    # 고르게 한다 — 중구·동구처럼 같은 이름이 여러 시·도에 있다 (`app/regions.py`)
+    choices[REGION] = " / ".join(f"{name}({label})" for name, label in regions.labels().items())
+    choices[SUB_REGION] = "".join(
+        f"\n  - {region}: "
+        + (
+            " / ".join(f"{sub}({VALUE_LABELS[SUB_REGION][sub].split(' ', 1)[1]})" for sub in subs)
+            or "없음"
+        )
+        for region, subs in regions.subs_of().items()
+    )
     return _PROMPT.format(
         posting_only=", ".join(posting_only_names(taxonomy_tree, industries)),
         body=body,
