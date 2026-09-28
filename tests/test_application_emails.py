@@ -69,5 +69,5 @@ def test_공고_화면과_수집_항목_화면에_두_칸이_보인다(
 
     assert 'name="application_email"' in panel
     assert 'name="inquiry_email"' in panel
-    assert "applicationEmail" in fields
+    assert "applyEmail" in fields
     assert "inquiryEmail" in fields

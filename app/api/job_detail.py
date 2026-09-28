@@ -136,7 +136,7 @@ SPRING_NAMES: dict[str, str] = {
     "recruitment_type": "recruitmentType",
     "recruitment_headcount": "recruitmentHeadcount",
     "application_method": "applicationMethod",
-    "application_email": "applicationEmail",
+    "application_email": "applyEmail",
     "inquiry_email": "inquiryEmail",
     "recruitment_start_at": "recruitmentStartAt",
     "recruitment_end_at": "recruitmentEndAt",

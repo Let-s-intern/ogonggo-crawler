@@ -161,7 +161,7 @@ def test_정규화_행을_오공고_요청_칸으로_옮긴다() -> None:
     assert body["benefits"] is None
     assert body["applicationMethod"] == "EMAIL"
     # 0043. 빈 칸은 null 이다
-    assert (body["applicationEmail"], body["inquiryEmail"]) == ("recruit@ogonggo.com", None)
+    assert (body["applyEmail"], body["inquiryEmail"]) == ("recruit@ogonggo.com", None)
     # 0045. 대표 이미지와 로고는 따로 간다
     assert (body["coverImageUrl"], body["logoUrl"]) == ("https://x/og.png", "https://x/logo.png")
     assert body["sourceUrl"] == "https://x/1#2"
