@@ -17,11 +17,12 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app import db, scheduler
+from app import db
 from app.api import crawlers as crawlers_api
 from app.api import ui_crawlers, ui_posting_add, workflows
 from app.classify.batch import ClassifyProgress
 from app.config import Settings
+from app.crawler import daily
 from app.crawler.fetcher import Fetcher, FetchResult
 from app.crawler.manual import MANUAL_NAME, ManualAddError, add_posting, page_detail
 from app.llm.base import ImageInput
@@ -221,7 +222,7 @@ async def test_직접_추가_워크플로우는_사이트로_보이지_않는다
     conn.execute("UPDATE workflows SET status = 'active' WHERE id = ?", (added.workflow_id,))
 
     assert workflows.list_workflows(conn) == []
-    assert added.workflow_id not in scheduler._active_workflows(conn)
+    assert added.workflow_id not in daily.active_workflows(conn)
     assert conn.execute(ui_crawlers._LIST_QUERY).fetchall() == []
 
 

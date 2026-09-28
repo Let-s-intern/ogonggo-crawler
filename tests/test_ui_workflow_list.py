@@ -25,6 +25,7 @@ from app.api import crawlers as crawlers_api
 from app.api import workflows as workflows_api
 from app.main import app
 from app.scheduler import WorkflowScheduler
+from tests.schedule_helpers import in_round
 
 LIST_URL = "https://www.python.org/jobs/"
 
@@ -112,7 +113,7 @@ def test_승격한_워크플로우가_목록에_나온다(client: TestClient, co
     assert rows_in(html) == [str(workflow_id)]
     assert "python.org 채용" in html  # 이름
     assert LIST_URL in html  # 대상 사이트
-    assert 'value="120"' in html  # 주기
+    assert "매일 08:30부터 한 곳씩" in html  # 언제 도는가
     assert "실행 중" in html  # 상태 (active)
     assert "실행 기록 없음" in html  # 최근 실행
     assert "임계치 없음" in html
@@ -142,9 +143,9 @@ def test_중지와_재개도_누른_카드만_돌려준다(
     assert "중지했다" in paused
     assert "중지됨" in paused
     # 잡까지 가야 실제로 멈춘다. 둘째는 그대로 남는다
-    assert scheduler.scheduled() == {second: 360}
+    assert in_round(conn, scheduler) == [second]
 
     resumed = client.patch(f"/ui/workflows/{first}", data={"status": "active"}).text
     assert rows_in(resumed) == [str(first)]
     assert "재개했다" in resumed
-    assert scheduler.scheduled() == {first: 120, second: 360}
+    assert in_round(conn, scheduler) == [first, second]

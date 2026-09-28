@@ -30,6 +30,7 @@ from app.api import crawlers as crawlers_api
 from app.api import workflows as workflows_api
 from app.main import app
 from app.scheduler import WorkflowScheduler
+from tests.schedule_helpers import in_round
 
 LIST_URL = "https://www.python.org/jobs/"
 
@@ -134,7 +135,7 @@ def test_승격하면_행이_생기고_크롤러가_promoted_가_된다(
     ]
     assert status == "promoted"
     # 승격은 곧 active 다. 잡까지 가지 않으면 다음 기동 전까지 한 번도 돌지 않는다
-    assert scheduler.scheduled() == {int(row["id"]): 120}
+    assert in_round(conn, scheduler) == [int(row["id"])]
 
 
 def test_승격_결과와_워크플로우_화면으로_가는_수단이_같이_온다(
@@ -162,17 +163,13 @@ def test_주기를_비우면_기본값_360_분이다(client: TestClient, conn: s
     assert row["interval_minutes"] == 360
 
 
-def test_화면_기본값은_API_기본값과_같다(client: TestClient, conn: sqlite3.Connection) -> None:
-    """폼에 박힌 360 이 `WorkflowCreate` 기본값과 갈리면 화면이 거짓말을 한다."""
+def test_승격_폼에_주기_칸이_없다(client: TestClient, conn: sqlite3.Connection) -> None:
+    """사이트마다 주기를 고르지 않는다. 승격하면 매일 한 바퀴에 들어간다."""
     crawler_id = add_crawler(conn, "tested")
 
     html = client.get("/ui/test-targets").text
 
-    field = re.search(rf'id="wf-interval-{crawler_id}"[^>]*value="(\d+)"', html, re.S)
-    assert field is not None
-    assert (
-        int(field.group(1)) == workflows_api.WorkflowCreate.model_fields["interval_minutes"].default
-    )
+    assert f'id="wf-interval-{crawler_id}"' not in html
 
 
 def test_draft_크롤러는_승격되지_않고_사유가_뜬다(

@@ -82,7 +82,7 @@ from app.api import crawlers, workflows
 from app.api.ui import format_time, mode_word, render
 from app.api.ui_crawlers import crawler_rows, error_detail
 from app.config import get_settings
-from app.crawler import recollect
+from app.crawler import daily, recollect
 from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchPolicy
 from app.crawler.runner import (
@@ -108,7 +108,7 @@ RUN_WORDS: dict[str, str] = {SUCCESS: "성공", "timeout": "시간 초과", "fai
 # 실행 출처를 사람이 읽는 단어로. `crawl_runs.trigger` 가 NULL 인 옛 행은 `알 수 없음` 이다 —
 # 그 실행이 어디서 왔는지는 기록되지 않았고, 추측해서 적으면 없는 사실을 만드는 것이다
 TRIGGER_WORDS: dict[str, str] = {
-    SCHEDULE: "주기 실행",
+    SCHEDULE: "매일 자동 실행",
     MANUAL: "수동 1회",
     TEST: "테스트",
     RECOLLECT: "원문 다시 수집",
@@ -174,7 +174,7 @@ class CardView:
     reason: str
     # 임계치를 넘겨 자동으로 멈춘 상태면 그 사실 한 줄. 아니면 빈 문자열이다
     auto_stopped: str
-    # 주기와 다음 실행 예정을 한 문장으로. 중지된 워크플로우는 다음 실행이 없다고 적는다
+    # 매일 수집과 다음 실행 예정을 한 문장으로. 중지된 워크플로우는 다음 실행이 없다고 적는다
     schedule: str
     # 가장 최근에 끝난 실행을 무엇이 시작했는가. 실행 기록이 없으면 빈 문자열이다
     last_trigger: str
@@ -255,18 +255,18 @@ def _remaining(when: datetime) -> str:
     return f"약 {hours}시간 {rest}분 뒤"
 
 
-def _schedule(item: workflows.WorkflowItem, next_run_at: datetime | None) -> str:
+def _schedule(item: workflows.WorkflowItem, next_run_at: datetime | None, start_time: str) -> str:
     """이 워크플로우가 언제 도는가. 한 문장으로 적는다.
 
     중지된 워크플로우의 자리를 비워 두지 않는다. 빈 칸은 "다음 실행이 없다" 가 아니라 "아직
     모른다" 로 읽히고, 그 둘은 운영자가 할 일이 정반대다.
 
-    예정 시각을 스케줄러에서 못 읽었으면 그렇다고 적는다. 마지막 실행에 주기를 더해 추측하지
-    않는다 (`app/scheduler.py` 의 `next_run_times`).
+    예정 시각을 스케줄러에서 못 읽었으면 그렇다고 적는다 (`app/scheduler.py` 의
+    `next_run_times`).
     """
-    every = f"{item.interval_minutes}분마다 돈다"
+    every = f"매일 {start_time}부터 한 곳씩 도는 수집에 들어 있다"
     if item.status != "active":
-        return f"중지됨. 다음 실행 없음 — 재개하면 {every}"
+        return f"중지됨. 다음 실행 없음 — 재개하면 다시 {every}"
     if next_run_at is None:
         return f"{every}. 다음 실행 예정 시각을 스케줄러에서 읽지 못했다"
     return f"{every}. 다음 실행 예정 {format_time(next_run_at)} ({_remaining(next_run_at)})"
@@ -388,7 +388,7 @@ def _view(
         reason=_last_failure(conn, item.id),
         last_counts=_counts(last),
         auto_stopped=_auto_stopped(item, streak),
-        schedule=_schedule(item, next_run_at),
+        schedule=_schedule(item, next_run_at, daily.read_config(conn).start_time),
         last_trigger="" if last is None else _trigger_word(last["trigger"]),
         message=message,
         running=_in_flight(conn, item.id) if running is None else running,
@@ -415,7 +415,7 @@ def _card(
             conn,
             item,
             message,
-            next_run_at=scheduler.next_run_times().get(item.id),
+            next_run_at=scheduler.next_run_times(conn).get(item.id),
             running=running,
             settled=settled,
             recollect_preview=recollect_preview,
@@ -563,7 +563,7 @@ def promote_fragment(
         conn,
         (
             f"크롤러 {created.crawler_id} 를 워크플로우 {created.id}({created.name})로 승격했다. "
-            f"주기 {created.interval_minutes}분으로 지금부터 돈다"
+            f"매일 {daily.read_config(conn).start_time}부터 한 곳씩 도는 수집에 들어갔다"
         ),
         notice_href="/workflows",
     )
@@ -577,7 +577,7 @@ def workflow_table_fragment(
 ) -> HTMLResponse:
     """목록 전체. 페이지 로드 때 한 번 들어온다."""
     # 잡 목록은 한 번만 읽는다. 카드마다 물어보면 목록 하나를 그리는 동안 값이 갈릴 수 있다
-    next_runs = scheduler.next_run_times()
+    next_runs = scheduler.next_run_times(conn)
     return render(
         request,
         "fragments/workflow_list.html",

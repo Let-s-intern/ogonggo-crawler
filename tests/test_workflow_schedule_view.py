@@ -1,4 +1,4 @@
-"""카드에 적히는 주기와 실행 출처 (18.2).
+"""카드에 적히는 매일 수집 예정과 실행 출처 (18.2).
 
 2026-08-22 에 5개 워크플로우를 30분 주기로 돌려 놓고 화면을 보니, 입력칸에 숫자는 있어도
 "30분마다 돈다" 는 문장도 다음 실행 시각도 없었다. 최근 실행이 사람이 누른 것인지 스케줄러가
@@ -40,7 +40,7 @@ from app.api.ui import display_zone
 from app.config import Settings
 from app.crawler.fetcher import Fetcher
 from app.main import app
-from app.scheduler import RunGate, WorkflowScheduler, job_id
+from app.scheduler import DAILY_JOB_ID, RunGate, WorkflowScheduler
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 LIST_HTML = (FIXTURES / "pythonorg-jobs-list-20260821.html").read_text(encoding="utf-8")
@@ -188,9 +188,12 @@ def add_run(conn: sqlite3.Connection, workflow_id: int, trigger: str | None) -> 
     conn.execute("UPDATE workflows SET last_run_at = datetime('now') WHERE id = ?", (workflow_id,))
 
 
-def schedule_next(scheduler: WorkflowScheduler, workflow_id: int, when: datetime) -> None:
-    """잡의 다음 실행 예정 시각을 정한다. 기동 전 잡에는 그 값이 아직 없다."""
-    job = scheduler.scheduler.get_job(job_id(workflow_id))
+def schedule_next(scheduler: WorkflowScheduler, when: datetime) -> None:
+    """매일 잡의 다음 실행 예정 시각을 정한다. 기동 전 잡에는 그 값이 아직 없다.
+
+    워크플로우가 하나뿐이면 그 곳의 예정 시각이 곧 이 값이다.
+    """
+    job = scheduler.scheduler.get_job(DAILY_JOB_ID)
     assert job is not None
     job.next_run_time = when
 
@@ -200,7 +203,7 @@ def run_background(sent: list[Coroutine[Any, Any, None]]) -> None:
         asyncio.run(sent.pop(0))
 
 
-def test_주기를_문장으로_적는다(
+def test_매일_수집을_문장으로_적는다(
     client: TestClient, conn: sqlite3.Connection, scheduler: WorkflowScheduler
 ) -> None:
     add_workflow(conn, minutes=30)
@@ -208,16 +211,16 @@ def test_주기를_문장으로_적는다(
 
     html = client.get("/ui/workflows").text
 
-    assert "30분마다 돈다" in html
+    assert "매일 08:30부터 한 곳씩 도는 수집에 들어 있다" in html
 
 
 def test_다음_실행_예정_시각이_카드에_있다(
     client: TestClient, conn: sqlite3.Connection, scheduler: WorkflowScheduler
 ) -> None:
-    workflow_id = add_workflow(conn, minutes=30)
+    add_workflow(conn, minutes=30)
     scheduler.sync(conn)
     when = datetime.now(UTC).replace(microsecond=0) + timedelta(minutes=12)
-    schedule_next(scheduler, workflow_id, when)
+    schedule_next(scheduler, when)
 
     html = client.get("/ui/workflows").text
 
@@ -246,17 +249,17 @@ def test_중지하면_다음_실행이_없다고_적는다(
     """빈 칸으로 두면 언제 도는지 모르는 것과 구분되지 않는다."""
     workflow_id = add_workflow(conn, minutes=30)
     scheduler.sync(conn)
-    schedule_next(scheduler, workflow_id, datetime.now(UTC) + timedelta(minutes=12))
+    schedule_next(scheduler, datetime.now(UTC) + timedelta(minutes=12))
 
     html = client.patch(f"/ui/workflows/{workflow_id}", data={"status": "paused"}).text
 
-    assert "중지됨. 다음 실행 없음 — 재개하면 30분마다 돈다" in html
+    assert "중지됨. 다음 실행 없음 — 재개하면 다시 매일 08:30부터" in html
     assert "다음 실행 예정" not in html
 
 
 @pytest.mark.parametrize(
     ("trigger", "word"),
-    [("schedule", "주기 실행"), ("manual", "수동 1회"), (None, "알 수 없음")],
+    [("schedule", "매일 자동 실행"), ("manual", "수동 1회"), (None, "알 수 없음")],
 )
 def test_최근_실행_옆에_출처가_단어로_붙는다(
     client: TestClient, conn: sqlite3.Connection, trigger: str | None, word: str
@@ -293,4 +296,4 @@ def test_1회_실행을_누르면_출처가_수동_1회로_뜬다(
     html = client.get(f"/ui/workflows/{workflow_id}/card").text
 
     assert "수동 1회" in html
-    assert "주기 실행" not in html
+    assert "매일 자동 실행" not in html

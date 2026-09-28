@@ -2,6 +2,16 @@
 {% from "macros.html" import empty %}
 {% block section %}
 <section>
+  <h3>매일 수집</h3>
+  <p>
+    매일 이 시각에 active 인 사이트를 한 곳씩 돈다. 사이트마다 시작 간격은 걸쳐 도는 시간을
+    사이트 수로 나눈 값이다. 서버는 시작 시각 전에 켜 두고 걸쳐 도는 시간이 끝난 뒤에 끈다.
+  </p>
+  <div id="daily-crawl-form" hx-get="/ui/settings/daily" hx-trigger="load" hx-swap="innerHTML">
+    {{ empty("설정을 불러오는 중") }}
+  </div>
+</section>
+<section>
   <h3>동시 실행 상한</h3>
   <p>
     저장한 값은 다음에 값을 읽는 쪽부터 적용된다. 재시작하지 않는다.

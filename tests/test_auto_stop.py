@@ -22,7 +22,8 @@ from app import db
 from app.config import Settings
 from app.crawler.fetcher import Fetcher
 from app.crawler.runner import run_workflow
-from app.scheduler import WorkflowScheduler, job_id
+from app.scheduler import WorkflowScheduler
+from tests.schedule_helpers import in_round
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 LIST_HTML = (FIXTURES / "pythonorg-jobs-list-20260821.html").read_text(encoding="utf-8")
@@ -192,11 +193,10 @@ async def test_자동_중지된_워크플로우는_잡에서도_빠진다(conn: 
     workflow_id = add_workflow(conn, threshold=1)
     scheduler = WorkflowScheduler()
     scheduler.sync(conn)
-    assert scheduler.scheduled() == {workflow_id: 60}
+    assert in_round(conn, scheduler) == [workflow_id]
 
     use(conn, broken())
     await run(conn, workflow_id)
     scheduler.sync(conn)
 
-    assert scheduler.scheduled() == {}
-    assert scheduler.scheduler.get_job(job_id(workflow_id)) is None
+    assert in_round(conn, scheduler) == []

@@ -31,7 +31,8 @@ from app.api.ui import render
 from app.api.ui_crawlers import error_detail
 from app.api.workflows import get_workflow_scheduler
 from app.config import get_settings
-from app.scheduler import WorkflowScheduler
+from app.crawler import daily
+from app.scheduler import DAILY_JOB_ID, WorkflowScheduler
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,71 @@ def settings_form_fragment(
 ) -> HTMLResponse:
     """저장된 값. 아직 없는 키는 환경변수 값으로 채워진 뒤 돌아온다."""
     return _form(request, conn)
+
+
+def _daily_form(
+    request: Request,
+    conn: sqlite3.Connection,
+    scheduler: WorkflowScheduler,
+    *,
+    message: str = "",
+    error: str = "",
+) -> HTMLResponse:
+    """매일 수집 설정 폼. 지금 사이트 수로 나눈 간격과 다음 시작 시각을 같이 적는다."""
+    config = daily.read_config(conn)
+    count = len(daily.active_workflows(conn))
+    job = scheduler.scheduler.get_job(DAILY_JOB_ID)
+    next_at = getattr(job, "next_run_time", None) if job is not None else None
+    return render(
+        request,
+        "fragments/daily_crawl_form.html",
+        config=config,
+        zone=get_settings().display_timezone,
+        max_spread=daily.MAX_SPREAD_MINUTES,
+        count=count,
+        gap=round(config.spread_minutes / count) if count else 0,
+        next_at=next_at,
+        message=message,
+        error=error,
+    )
+
+
+@router.get("/ui/settings/daily", response_class=HTMLResponse)
+def daily_form_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(settings_api.get_connection)],
+    scheduler: Annotated[WorkflowScheduler, Depends(get_workflow_scheduler)],
+) -> HTMLResponse:
+    return _daily_form(request, conn, scheduler)
+
+
+@router.post("/ui/settings/daily", response_class=HTMLResponse)
+def update_daily_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(settings_api.get_connection)],
+    scheduler: Annotated[WorkflowScheduler, Depends(get_workflow_scheduler)],
+    start_time: Annotated[str, Form()] = "",
+    spread_minutes: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """저장하고 매일 잡의 시각을 바로 맞춘다. 거절된 값은 저장되지 않는다."""
+    try:
+        minutes = int(spread_minutes)
+    except ValueError:
+        return _daily_form(
+            request, conn, scheduler, error=f"걸쳐 도는 시간이 정수가 아니다: {spread_minutes!r}"
+        )
+    config = daily.DailyConfig(start_time=start_time.strip(), spread_minutes=minutes)
+    try:
+        daily.write_config(conn, config)
+    except daily.DailySettingError as exc:
+        return _daily_form(request, conn, scheduler, error=str(exc))
+    scheduler.sync(conn)
+    return _daily_form(
+        request,
+        conn,
+        scheduler,
+        message=f"매일 {config.start_time}부터 {config.spread_minutes}분에 걸쳐 돈다",
+    )
 
 
 @router.put("/ui/settings/{key}", response_class=HTMLResponse)
