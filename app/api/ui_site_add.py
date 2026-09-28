@@ -13,7 +13,8 @@
 
 목록 줄의 `다시 찾기` 가 이 창을 다시 연다. 무엇이 안 됐는지와 두 갈래를 둔다.
 
-- 예시 공고 주소로 다시 찾기: 같은 목록 주소와 그 공고 주소로 새로 건다. 방금 만든 초안
+- 주소를 고쳐 다시 찾기: 목록 주소와 예시 공고 주소를 둘 다 고칠 수 있고, 고친 주소로 새로
+  건다. 목록 주소가 틀려 목록부터 못 찾은 경우도 창을 닫지 않고 다시 건다. 방금 만든 초안
   크롤러는 지운다 — 초안은 워크플로우가 없어 수집한 공고도 없다
 - 셀렉터 직접 고치기: 시험 실행 화면으로 보낸다
 """
@@ -326,7 +327,7 @@ async def site_add_try(
 
 @router.get("/ui/sites/new/{add_id}", response_class=HTMLResponse)
 def site_add_retry_form(request: Request, add_id: int) -> HTMLResponse:
-    """찾지 못한 사이트 추가를 다시 여는 창. 무엇이 안 됐는지와 공고 주소로 다시 찾기를 둔다."""
+    """찾지 못한 사이트 추가를 다시 여는 창. 무엇이 안 됐는지와 주소를 고쳐 다시 찾기를 둔다."""
     add = site_adds.get(add_id)
     if add is None:
         return _form(

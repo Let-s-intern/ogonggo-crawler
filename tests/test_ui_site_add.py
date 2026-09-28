@@ -10,6 +10,7 @@
 | 시험 수집이 되면 고른 주기로 자동 수집까지 시작한다 | 된 사이트를 한 번 더 눌러야 한다 |
 | 안 되면 목록에 쉬운 말 사유와 다시 찾기가 남는다 | 창을 닫으면 실패를 모른다 |
 | 다시 찾기는 초안을 지우고 공고 주소를 넣어 다시 건다 | 초안이 쌓인다 |
+| 다시 찾기에서 목록 주소도 고쳐 다시 건다 | 목록 주소가 틀리면 지우고 처음부터 넣어야 한다 |
 | 지우기는 줄과 초안을 같이 지운다 | 실패한 줄이 계속 남는다 |
 | 공고 주소를 처음부터 넣을 수 있다 | 목록만으로 못 찾는 사이트를 한 번 실패시켜야 한다 |
 | 실패하면 단계마다 본 것과 막힌 곳이 보인다 | 왜 실패했는지 모른다 |
@@ -274,7 +275,8 @@ def test_안_되면_목록에_쉬운_말_사유와_다시_찾기가_남는다(
     assert 'hx-get="/ui/sites/new/1"' in listing
     assert 'hx-trigger="every 3s"' not in listing
     retry = client.get("/ui/sites/new/1").text
-    assert "예시 공고 주소로 다시 찾기" in retry
+    assert "주소를 고쳐 다시 찾기" in retry
+    assert f'name="list_url" required value="{LIST_URL}"' in retry
     # 단계마다 무엇을 봤는지 보인다. 셀렉터·상세 길은 됐고 시험 수집에서 막혔다
     assert "무슨 일이 있었나" in retry
     assert "✓ 1. 목록을 읽고 셀렉터 만들기" in retry
@@ -333,6 +335,32 @@ def test_다시_찾기는_초안을_지우고_공고_주소를_넣어_다시_건
     assert ids == [2]
     assert conn.execute("SELECT count(*) FROM workflows").fetchone()[0] == 1
     assert "site-add-row" not in client.get("/ui/sites").text
+
+
+def test_다시_찾기에서_목록_주소도_고쳐_다시_건다(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    launched: list[Any],
+) -> None:
+    fake = Fake(conn, found=False)
+    install(monkeypatch, fake)
+    client.post("/ui/sites/new", data={"list_url": LIST_URL, "company": "예시"})
+    finish(launched)
+
+    fake.found = True
+    fixed = "https://careers.example.com/recruit"
+    client.post(
+        "/ui/sites/new",
+        data={"list_url": fixed, "company": "예시", "replace_add_id": "1"},
+    )
+    finish(launched)
+
+    assert fake.registered[-1].list_url == fixed
+    assert not fake.registered[-1].detail_url
+    rows = conn.execute("SELECT id, list_url FROM crawlers ORDER BY id").fetchall()
+    assert [(row["id"], row["list_url"]) for row in rows] == [(2, fixed)]
+    assert conn.execute("SELECT count(*) FROM workflows").fetchone()[0] == 1
 
 
 def test_지우기는_줄과_초안을_같이_지운다(
