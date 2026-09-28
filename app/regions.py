@@ -1,63 +1,82 @@
-"""근무지 목록. 분류가 공고마다 이 안에서 고른다 (2026-09-21 결정).
+"""근무 지역. 분류가 공고마다 시·도 하나와 그 안의 시·군·구 하나를 고른다 (LC-3385, 2026-09-28).
 
-근무지는 원문 글자를 그대로 옮기던 칸이었다. 같은 곳이 `울산`, `울산광역시 동구`, `본사(울산)` 로
-제각각 쌓여 소비 측이 그 칸으로 거를 수 없었다. 이제 큰 지역 열아홉 개 중에서 고른다 — `전국`,
-서울부터 제주까지 열일곱 시·도, `해외` 다.
+오공고가 근무 지역을 글자로 받다가 enum 두 칸(`region`, `subRegion`)으로 바꿨다. 크롤러도 그 enum
+이름(`SEOUL`, `SEOUL_GANGNAM_GU`)을 그대로 저장하고 보내며, 화면에만 한글 이름을 보인다 — 다른
+판정 칸과 같은 방법이다 (`app/classify/schema.py`). 목록은 오공고 enum 을 옮긴 씨앗 파일에 있다
+(`seeds/regions-ogonggo-20260928.json`). 오공고 enum 이 바뀌면 그 파일을 다시 뽑는다.
 
-목록은 직행(zighang.com) 채용공고 지역 필터에서 왔다 (`seeds/regions-zighang-20260921.json`).
-그 필터의 `전체` 는 고르는 값이 아니라 필터의 선택지라 뺀다. 구·시·군 목록은 고르는 값이 아니고,
-씨앗 파일에 남겨 둔다.
+## 하나만 고른다
 
-## 여러 개를 고른다
+2026-09-21 부터는 근무지가 여러 곳이면 모두 골라 `서울, 경기` 로 이었다. 오공고 칸은 하나라 이제는
+첫 번째 근무지 하나다. `전국`(`NATIONWIDE`)과 `해외`(`OVERSEAS`)는 시·군·구가 없다.
 
-근무지가 여러 곳인 공고가 흔하다 — HD현대 신입 공채가 울산·분당·대산·영암이다. 그래서 여러 개를
-고르고, `서울, 경기` 처럼 쉼표로 이어 한 칸에 저장한다. 순서는 목록 순서다 — 같은 공고가 분류할
-때마다 다른 순서로 저장되면 바뀐 것이 없는데 바뀐 것으로 보인다.
+## 시·군·구는 시·도 안에서만
 
-## `전국` 은 하나로 둔다
+같은 이름의 구(중구·동구·강서구)가 여러 시·도에 있어 이름이 시·도로 시작한다. 오공고는 시·도와 맞지
+않는 시·군·구를 400 으로 거절하므로, 맞지 않으면 시·군·구만 버린다 (`fits`).
 
-`전국 현장`·`전국 각지` 처럼 곳을 특정하지 않는 공고가 있다. 직행 필터에는 없는 값이라 여기서
-더한다. 전국이 나머지를 다 포함하므로 `전국` 을 고르면 다른 지역은 붙이지 않는다 — `본사(양재동) /
-전국 현장` 은 `서울, 전국` 이 아니라 `전국` 이다 (2026-09-21 결정).
-
-표로 두지 않는다. 직무·산업 분류와 달리 운영 중에 바뀔 일이 없는 목록이다.
+표로 두지 않는다. 직무·산업 분류와 달리 운영 중에 화면에서 바꿀 목록이 아니다.
 """
 
 from __future__ import annotations
 
 import json
 import pathlib
-from collections.abc import Iterable
 from functools import cache
+from typing import Any
 
 SEED_PATH = (
-    pathlib.Path(__file__).resolve().parent.parent / "seeds" / "regions-zighang-20260921.json"
+    pathlib.Path(__file__).resolve().parent.parent / "seeds" / "regions-ogonggo-20260928.json"
 )
-
-# 여러 근무지를 한 칸에 이을 때 쓰는 글자
-SEPARATOR = ", "
-# 곳을 특정하지 않는 공고. 씨앗 파일(직행 필터)에는 없어 코드가 맨 앞에 더한다
-NATIONWIDE = "전국"
 
 
 @cache
+def _seed() -> list[dict[str, Any]]:
+    return list(json.loads(SEED_PATH.read_text(encoding="utf-8"))["regions"])
+
+
+@cache
+def labels() -> dict[str, str]:
+    """시·도 이름과 화면 이름. 순서는 오공고 enum 순서다."""
+    return {str(region["name"]): str(region["label"]) for region in _seed()}
+
+
+@cache
+def sub_labels() -> dict[str, str]:
+    """시·군·구 이름과 화면 이름. 화면 이름에 시·도를 붙인다 — `중구` 만으로는 어디인지 모른다."""
+    return {
+        str(sub["name"]): f"{region['label']} {sub['label']}"
+        for region in _seed()
+        for sub in region["subRegions"]
+    }
+
+
+@cache
+def _parents() -> dict[str, str]:
+    return {
+        str(sub["name"]): str(region["name"]) for region in _seed() for sub in region["subRegions"]
+    }
+
+
 def names() -> tuple[str, ...]:
-    """고를 수 있는 큰 지역. `전국` 이 맨 앞이고 나머지는 씨앗 파일의 순서 그대로다."""
-    data = json.loads(SEED_PATH.read_text(encoding="utf-8"))
-    return (NATIONWIDE, *(str(region["name"]) for region in data["regions"]))
+    """고를 수 있는 시·도."""
+    return tuple(labels())
 
 
-def split(value: str) -> list[str]:
-    """저장된 한 칸을 지역 이름들로. 빈 조각은 버린다."""
-    return [part.strip() for part in value.split(",") if part.strip()]
+def sub_names() -> tuple[str, ...]:
+    """고를 수 있는 시·군·구. 시·도 순서대로다."""
+    return tuple(sub_labels())
 
 
-def join(values: Iterable[str]) -> str:
-    """지역 이름들을 한 칸으로. 목록 밖 이름은 버리고, 겹친 것은 하나로, 순서는 목록 순서다.
+@cache
+def subs_of() -> dict[str, tuple[str, ...]]:
+    """시·도마다 그 안의 시·군·구. 시·군·구가 없는 시·도(`전국`·`세종`·`해외`)는 빈 묶음이다."""
+    return {
+        str(region["name"]): tuple(str(sub["name"]) for sub in region["subRegions"])
+        for region in _seed()
+    }
 
-    `전국` 이 있으면 `전국` 하나다. 나머지를 다 포함한다.
-    """
-    wanted = set(values)
-    if NATIONWIDE in wanted:
-        return NATIONWIDE
-    return SEPARATOR.join(name for name in names() if name in wanted)
+
+def fits(region: str, sub_region: str) -> bool:
+    """시·군·구가 그 시·도 안에 있는가. 시·군·구가 비었으면 맞다."""
+    return not sub_region or _parents().get(sub_region) == region

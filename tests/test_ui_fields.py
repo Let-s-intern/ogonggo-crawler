@@ -44,7 +44,7 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         connection.execute(
             "INSERT INTO normalized_jobs (raw_job_id, source_url, title, body, region)"
             " VALUES (?, ?, ?, '하이브리드 근무', ?)",
-            (seq, f"https://x/{seq}", f"공고 {seq}", "서울" if seq == 1 else None),
+            (seq, f"https://x/{seq}", f"공고 {seq}", "SEOUL" if seq == 1 else None),
         )
     try:
         yield connection
@@ -76,7 +76,7 @@ def test_수집_항목_화면이_목록을_부르고_보내는_칸을_보인다(
 
     assert "오공고로 보내는 칸" in html
     assert "recruitmentEndAt" in html and "jobField" in html
-    region = html[html.index(">근무 지역<") :]
+    region = html[html.index(">근무 시·도<") :]
     assert "50%" in region[: region.index("</tr>")]
 
 

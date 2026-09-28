@@ -156,7 +156,8 @@ def test_패널이_보내는_칸을_한글_이름으로_모두_보인다(client:
         "고용 형태",
         "경력",
         "학력",
-        "근무 지역",
+        "근무 시·도",
+        "근무 시·군·구",
         "모집 인원",
         "모집 유형",
         "모집 시작",
@@ -182,7 +183,7 @@ def test_빈_칸은_비어_있음으로_보인다(client: TestClient) -> None:
     full = client.get("/ui/review/jobs/1/panel").text
     blank = client.get("/ui/review/jobs/2/panel").text
 
-    assert "비어 있음" in full  # 근무 지역·모집 인원·대표 이미지·급여·처우
+    assert "비어 있음" in full  # 근무 시·도·모집 인원·대표 이미지·급여·처우
     # 제목만 찬 공고는 제목 말고 전부 비어 있다
     assert blank.count(">비어 있음<") == len(FIELDS) - 1
     assert "본문이 비어 있다" in blank

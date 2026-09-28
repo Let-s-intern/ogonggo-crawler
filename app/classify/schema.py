@@ -139,10 +139,12 @@ class Posting(BaseModel):
     experience_min_years: str = ""
     experience_min_years_evidence: str = ""
 
-    # 근무지. 큰 지역 목록(`app/regions.py`)에서 여러 개를 고른다 (2026-09-21 결정). 원문 글자를
-    # 옮기던 칸이었는데 같은 곳이 제각각 쌓였다. 목록은 응답 모델을 만들 때 enum 으로 건다
-    # (`build_classification_model`) — 여기서 `Literal` 로 적으면 씨앗 파일과 두 벌이 된다
-    region: list[str] = Field(default_factory=list)
+    # 근무지. 오공고 enum 의 시·도 하나와 그 안의 시·군·구 하나를 고른다 (LC-3385,
+    # `app/regions.py`). 모르면 빈 글자다. 목록은 응답 모델을 만들 때 enum 으로 건다
+    # (`build_classification_model`) — 여기서 `Literal` 로 적으면 씨앗 파일과 두 벌이 된다.
+    # 근거 문장은 두 칸이 하나를 같이 쓴다
+    region: str = ""
+    sub_region: str = ""
     region_evidence: str = ""
 
     # 0043. 공고에 적힌 이메일 주소를 그대로 옮긴다. 원문에 그 주소가 있을 때만 남는다 — 주소 자체가
@@ -263,8 +265,10 @@ JUDGE_FIELDS: tuple[str, ...] = (
 # 원문에 근거가 있을 때만 숫자를 적는 칸. 판정 칸처럼 근거 문장이 따라오지만 목록이 없다
 NUMBER_FIELDS: tuple[str, ...] = ("experience_min_years",)
 
-# 근무지. 목록에서 여러 개를 고르는 칸이라 판정 칸(하나를 고른다)과 따로 둔다 (`app/regions.py`)
+# 근무지. 시·군·구가 시·도 안에 있어야 해서 판정 칸과 따로 둔다 (`app/regions.py`)
 REGION: Final = "region"
+SUB_REGION: Final = "sub_region"
+REGION_FIELDS: tuple[str, ...] = (REGION, SUB_REGION)
 
 # 0043. 지원 접수·채용 문의 이메일. 원문의 주소를 그대로 옮기고, 원문에 있을 때만 남는다
 EMAIL_FIELDS: tuple[str, ...] = ("application_email", "inquiry_email")
@@ -278,6 +282,8 @@ VALUE_LABELS: Final[dict[str, dict[str, str]]] = {
     "application_method": APPLICATION_METHODS,
     "recruitment_type": RECRUITMENT_TYPES,
     "auto_close_enabled": AUTO_CLOSE,
+    REGION: regions.labels(),
+    SUB_REGION: regions.sub_labels(),
 }
 
 # 수집이 채우는 여섯 칸 중, 원문을 읽어 다른 값을 낼 수 있는 셋. `title` 은 이미 `position_name` 의
@@ -341,7 +347,7 @@ FALLBACK_FIELDS: tuple[str, ...] = ("company_name", "recruitment_start_at", "rec
 CLASSIFY_FIELDS: tuple[str, ...] = (
     *JUDGE_FIELDS,
     *NUMBER_FIELDS,
-    REGION,
+    *REGION_FIELDS,
     *EMAIL_FIELDS,
     *EXTRACT_FIELDS,
 )
@@ -418,15 +424,17 @@ def build_classification_model(conn: sqlite3.Connection) -> type[Classification]
     않는다.** 고를 것이 없는 판정 칸을 모델에 보내면 그 자리를 채우라고 강요하는 것과 같다.
     대분류는 있는데 켜진 소분류가 하나도 없으면 `job_role` 없이 `job_field` 만 더한다.
 
-    근무지(`region`)는 표와 상관없이 늘 큰 지역 목록을 enum 으로 건다 (`app/regions.py`).
+    근무지(`region`, `sub_region`)는 표와 상관없이 늘 오공고 enum 목록을 건다 (`app/regions.py`).
+    모를 때 비워 두도록 빈 글자도 고를 수 있다.
     """
     majors = taxonomy.list_majors(conn, enabled_only=True)
     industry_names = industries.enabled_names(conn)
 
     # 근무지는 표와 상관없이 늘 목록에서 고른다. 목록이 코드 밖(씨앗 파일)에 있어 여기서 건다
-    region_names = regions.names()
-    region_type: Any = list[Literal[region_names]]  # type: ignore[valid-type]
-    fields: dict[str, Any] = {REGION: (region_type, Field(default_factory=list))}
+    fields: dict[str, Any] = {
+        REGION: (Literal[("", *regions.names())], ""),
+        SUB_REGION: (Literal[("", *regions.sub_names())], ""),
+    }
     if majors:
         major_names = tuple(major.name for major in majors)
         minor_names = tuple(
@@ -623,10 +631,10 @@ def _text(name: str, raw: Any) -> str:
     if isinstance(raw, int):
         return str(raw)
     if isinstance(raw, list):
-        # 여러 개를 고르는 칸(근무지)이다. 예전처럼 조각(`{"line", "text"}`)으로 와도 그 글자를
-        # 쓴다. 목록 밖 값은 근거 검사가 거른다 (`app/classify/grounding.py`)
+        # 하나를 고르는 칸(근무지)에 목록이 오면 첫 값을 쓴다. 예전 규칙판은 여러 개를 고르게
+        # 했다. 조각(`{"line", "text"}`)이면 그 글자다. 목록 밖 값은 근거 검사가 거른다
         items = [item.get("text", "") if isinstance(item, Mapping) else item for item in raw]
-        return regions.SEPARATOR.join(_text(name, item) for item in items if item not in (None, ""))
+        return next((_text(name, item) for item in items if item not in (None, "")), "")
     if not isinstance(raw, str):
         raise ClassifySchemaError(
             "unparsable", f"`{name}` 이 문자열이 아니다: {type(raw).__name__}"
