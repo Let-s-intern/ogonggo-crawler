@@ -270,7 +270,7 @@ def _panel_row(conn: sqlite3.Connection, normalized_id: int) -> sqlite3.Row | No
     return conn.execute(
         f"""
         SELECT n.*, w.name AS workflow_name, r.crawled_at AS crawled_at,
-               COALESCE(sub.logo_url, par.logo_url) AS logo_url,
+               COALESCE(sub.logo_url, par.logo_url, n.logo_url) AS panel_logo_url,
                {SENT_SQL} AS sent,
                {FAILED_SQL} AS delivery_failed,
                {UNREADY_SQL} AS unready,

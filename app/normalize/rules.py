@@ -91,7 +91,7 @@ NORMALIZED_FIELDS: tuple[str, ...] = (
     "application_method",
     # 0034 가 더한 산업. 분류가 산업 분류표에서 고른다 (`migrations/0034_industries.sql`)
     "industry",
-    # 0035 가 더한 대표 이미지. 규칙이 아니라 정규화가 회사 로고·og:image 로 정한다
+    # 0035 가 더한 대표 이미지. 규칙이 아니라 정규화가 공고 페이지의 og:image 로 정한다
     "cover_image_url",
     # 0043 이 더한 지원 접수·채용 문의 이메일. 분류가 원문에서 옮긴다
     "application_email",
@@ -102,10 +102,16 @@ NORMALIZED_FIELDS: tuple[str, ...] = (
 # 유형과 자동 종료는 마감일에서 정한다 (`app/normalize/engine.py` 의 `settle_fields`, 0033)
 DERIVED_FIELDS: tuple[str, ...] = ("recruitment_type", "auto_close_enabled")
 
+# 회사 표에서 정하는 칸. 로고는 회사 화면에서 등록한 로고, 없으면 사이트 아이콘이다
+# (`app/normalize/engine.py` 의 `logo_image`, 0045). 공고마다 고치는 칸이 아니다 — 고치려면 회사
+# 로고를 등록한다
+COMPANY_FIELDS: tuple[str, ...] = ("logo_url",)
+
 # 규칙 화면이 고르게 두는 칸. 수집이 주고 AI 분류가 덮지 않는 칸만이다 (2026-09-15 결정).
 # 판정 칸·본문 칸·직군·직무·산업은 분류가 규칙이 만든 값 위에 덮어쓰고
-# (`app/normalize/engine.py` 의 `apply_classification`), 대표 이미지는 정규화가 로고로 정한다 — 그
-# 칸에 건 규칙은 아무 일도 하지 않는다. 검증(`build_rule`)은 가져오기와 옛 규칙 때문에 넓게 둔다
+# (`app/normalize/engine.py` 의 `apply_classification`), 대표 이미지는 정규화가 og:image 로
+# 정한다 — 그 칸에 건 규칙은 아무 일도 하지 않는다. 검증(`build_rule`)은 가져오기와 옛 규칙
+# 때문에 넓게 둔다
 RULE_FIELDS: tuple[str, ...] = (
     "company_name",
     "title",

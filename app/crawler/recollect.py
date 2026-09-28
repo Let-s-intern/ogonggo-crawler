@@ -348,7 +348,8 @@ async def _fetch(
     fresh_body = detail.fields.get("body", "") or (listed.extra.get("body", "") if listed else "")
     if not fresh_body.strip():
         raise DetailEmptyError("상세를 열었지만 본문이 비었다. 지금 저장된 값을 둔다")
-    return _record(item, detail.fields, detail.source_text, detail.cover_image), tuple(detail.notes)
+    record = _record(item, detail.fields, detail.source_text, detail.cover_image, detail.site_icon)
+    return record, tuple(detail.notes)
 
 
 def _replace(conn: sqlite3.Connection, row: _Stored, record: dict[str, str], run_id: int) -> None:

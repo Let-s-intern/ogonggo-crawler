@@ -138,6 +138,7 @@ def payload(job: Mapping[str, Any] | sqlite3.Row) -> dict[str, Any]:
         "jobRole": _text(job["job_role"]),
         "industry": _text(job["industry"]),
         "coverImageUrl": _text(job["cover_image_url"]),
+        "logoUrl": _text(job["logo_url"]),
         "employmentType": _choice(job, "employment_type"),
         "experienceType": _choice(job, "experience_type"),
         "experienceMinYears": _integer(job["experience_min_years"]),

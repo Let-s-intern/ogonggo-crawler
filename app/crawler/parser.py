@@ -125,6 +125,8 @@ class DetailParseResult:
     images: tuple[str, ...] = ()
     # 페이지의 대표 이미지(`og:image`). 적힌 그대로라 상대 주소일 수 있다 (`app/crawler/runner.py`)
     cover_image: str = ""
+    # 사이트 아이콘. 회사 로고를 등록하지 않았을 때 로고로 쓴다. 적힌 그대로라 상대 주소일 수 있다
+    site_icon: str = ""
     # 공고는 적재하지만 실행 기록에 남길 일. 이미지를 읽지 못한 것이 그렇다
     notes: tuple[str, ...] = ()
 
@@ -260,6 +262,7 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
         source_text=f"{container}\n{structured}" if structured else container,
         images=images,
         cover_image=og_image(soup),
+        site_icon=site_icon(soup),
         notes=(FALLBACK_NOTE,) if fallback is not None else (),
     )
 
@@ -454,7 +457,8 @@ def _images_in(container: Tag) -> tuple[str, ...]:
 def og_image(soup: BeautifulSoup) -> str:
     """페이지의 대표 이미지 주소(`og:image`). 없으면 빈 문자열이다 (2026-09-15 결정).
 
-    회사 로고가 없는 공고의 대표 이미지로 쓴다 (`app/normalize/engine.py` 의 `cover_image`).
+    공고의 대표 이미지로 쓴다. 없을 때만 회사 로고가 대신한다 (2026-09-28 결정,
+    `app/normalize/engine.py` 의 `cover_image`).
     `data:` 로 박힌 값은 받을 주소가 아니라 뺀다. `property` 가 표준이지만 `name` 으로 적는 사이트도
     받는다.
     """
@@ -467,6 +471,40 @@ def og_image(soup: BeautifulSoup) -> str:
         if value and not value.startswith("data:"):
             return value
     return ""
+
+
+# 애플 터치 아이콘은 180px 안팎이라 16px 파비콘보다 로고에 가깝다
+_APPLE_ICON_RELS = frozenset({"apple-touch-icon", "apple-touch-icon-precomposed"})
+_ICON_SIZE = re.compile(r"(\d+)\s*[xX]\s*\d+")
+
+
+def site_icon(soup: BeautifulSoup) -> str:
+    """사이트 아이콘 주소. 없으면 빈 문자열이다 (2026-09-28 결정).
+
+    회사 로고를 등록하지 않은 공고의 로고로 쓴다 (`app/normalize/engine.py` 의 `logo_image`).
+    애플 터치 아이콘을 먼저 보고, 없으면 일반 아이콘이다. 같은 종류가 여럿이면 `sizes` 가 가장 큰
+    것이다. `/favicon.ico` 를 짐작해 적지 않는다 — 있는지 모르는 주소가 로고로 나간다.
+    """
+    best: tuple[int, int] | None = None
+    found = ""
+    for link in soup.find_all("link", href=True):
+        if not isinstance(link, Tag):
+            continue
+        rels = {str(rel).lower() for rel in (link.get("rel") or [])}
+        href = str(link.get("href") or "").strip()
+        if not href or href.startswith("data:"):
+            continue
+        if rels & _APPLE_ICON_RELS:
+            kind = 0
+        elif "icon" in rels:
+            kind = 1
+        else:
+            continue
+        sizes = _ICON_SIZE.findall(str(link.get("sizes") or ""))
+        key = (kind, -max((int(value) for value in sizes), default=0))
+        if best is None or key < best:
+            best, found = key, href
+    return found
 
 
 def _source_container(soup: BeautifulSoup, body_selector: str) -> Tag | None:

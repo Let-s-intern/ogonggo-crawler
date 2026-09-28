@@ -72,7 +72,8 @@ def add_job(conn: sqlite3.Connection, seq: int, **values: Any) -> str:
         "industry": "IT·정보통신업",
         "job_field": "IT·개발",
         "job_role": "서버·백엔드",
-        "cover_image_url": "https://x/logo.png",
+        "cover_image_url": "https://x/og.png",
+        "logo_url": "https://x/logo.png",
         "region": "서울",
         "application_method": "EXTERNAL_PAGE",
         "recruitment_start_at": "2026-09-01 00:00:00",
@@ -115,6 +116,7 @@ def delivery(conn: sqlite3.Connection, source_url: str) -> sqlite3.Row:
 def job_row(**values: Any) -> dict[str, Any]:
     columns = (
         "company_name parent_company_name title job_field job_role industry cover_image_url"
+        " logo_url"
         " employment_type experience_type experience_min_years education_level region"
         " recruitment_type recruitment_headcount recruitment_start_at recruitment_end_at"
         " closes_when_filled auto_close_enabled company_and_team_introduction responsibilities"
@@ -144,6 +146,8 @@ def test_정규화_행을_오공고_요청_칸으로_옮긴다() -> None:
             benefits="  ",
             application_method="EMAIL",
             application_email="recruit@ogonggo.com",
+            cover_image_url="https://x/og.png",
+            logo_url="https://x/logo.png",
             source_url="https://x/1#2",
         )
     )
@@ -158,6 +162,8 @@ def test_정규화_행을_오공고_요청_칸으로_옮긴다() -> None:
     assert body["applicationMethod"] == "EMAIL"
     # 0043. 빈 칸은 null 이다
     assert (body["applicationEmail"], body["inquiryEmail"]) == ("recruit@ogonggo.com", None)
+    # 0045. 대표 이미지와 로고는 따로 간다
+    assert (body["coverImageUrl"], body["logoUrl"]) == ("https://x/og.png", "https://x/logo.png")
     assert body["sourceUrl"] == "https://x/1#2"
     assert "body" not in body
     assert spring.missing(body) == []

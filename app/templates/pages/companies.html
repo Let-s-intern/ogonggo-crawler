@@ -5,7 +5,7 @@
 {% block content %}
 <section>
   <p>
-    회사명마다 로고를 한 번 넣으면 그 이름의 공고 전부에 붙고, 오공고로 보내는 대표 이미지가 된다.
+    회사명마다 로고를 한 번 넣으면 그 이름의 공고 전부에 붙어 오공고로 보내는 로고가 된다. 넣지 않은 회사는 공고 사이트의 아이콘이 로고로 나간다.
     파일은 <span class="font-semibold text-slate-900">{{ accepted }}</span>,
     <span class="font-semibold text-slate-900">{{ max_label }}</span>까지 받는다.
   </p>
@@ -13,7 +13,7 @@
     <summary>도움말</summary>
     <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
       <li>회사 행은 정규화가 만든다. 처음 보는 회사명이 들어오면 로고가 빈 행이 생긴다.</li>
-      <li>형식은 파일 이름이 아니라 내용으로 정해 확장자만 바꾼 파일은 거절된다. SVG 는 받지 않는다. 이미 올려 둔 주소를 붙여넣어도 된다.</li>
+      <li>형식은 파일 이름이 아니라 내용으로 정해 확장자만 바꾼 파일은 거절된다. BMP·TIFF·ICO 같은 형식은 PNG 로 바꿔 올리고, 스크립트가 든 SVG 는 받지 않는다. 이미 올려 둔 주소를 붙여넣어도 된다.</li>
       <li><span class="font-semibold text-slate-900">옛 저장소</span>가 붙은 행은 로고 주소가 지금 저장소의 공개 주소로 시작하지 않는다. 저장소를 바꿨다면 다시 올린다. 밖에 올려 둔 주소를 붙여넣은 것이면 그대로 두어도 된다.</li>
       <li>자회사에 로고가 없으면 모회사 로고로 대신한다. 모회사 로고는 <span class="font-semibold text-slate-900">모회사 로고</span> 탭에서 넣는다.</li>
     </ul>

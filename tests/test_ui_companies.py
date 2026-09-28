@@ -554,7 +554,7 @@ def test_화면이_받는_형식과_상한을_적는다(client: TestClient) -> N
 
     assert s3.ACCEPTED in body
     assert s3.MAX_IMAGE_LABEL in body
-    assert "SVG 는 받지 않는다" in body
+    assert "스크립트가 든 SVG 는 받지 않는다" in body
 
 
 def test_밖에_올려_둔_주소를_붙여넣으면_저장되고_미리보기가_뜬다(

@@ -537,7 +537,7 @@ async def _collect(
         return ItemResult(source_url=item.link, state=KNOWN, fields={})
 
     detail = await collectors.detail.collect(item)
-    record = _record(item, detail.fields, detail.source_text, detail.cover_image)
+    record = _record(item, detail.fields, detail.source_text, detail.cover_image, detail.site_icon)
     if not record["body"].strip():
         # 상세는 열렸는데 본문이 없다. 나머지 필드가 채워져 있어도 적재하지 않는다.
         if detail.images:
@@ -621,7 +621,11 @@ def _normalize(
 
 
 def _record(
-    item: ListItem, detail: dict[str, str], source_text: str = "", cover_image: str = ""
+    item: ListItem,
+    detail: dict[str, str],
+    source_text: str = "",
+    cover_image: str = "",
+    site_icon: str = "",
 ) -> dict[str, str]:
     """`raw_jobs.raw_data_json` 에 그대로 들어가는 값. 정제하지 않는다.
 
@@ -648,8 +652,9 @@ def _record(
     똑같은 모양으로 적재된다 — 원문이 없다고 공고를 버리지 않는다. 이 값은
     `content_hash` 에 들어가지 않는다 (`app/crawler/hashing.py`).
 
-    `og_image_url` 은 상세 페이지의 `og:image` 를 그 페이지 주소에 맞춰 절대 주소로 편 값이다. 있을
-    때만 넣고, 해시에 들어가지 않는다. 회사 로고가 없는 공고의 대표 이미지가 된다 (2026-09-15 결정).
+    `og_image_url` 은 상세 페이지의 `og:image` 를, `site_icon_url` 은 사이트 아이콘을 그 페이지
+    주소에 맞춰 절대 주소로 편 값이다. 있을 때만 넣고, 해시에 들어가지 않는다. 앞의 것은 공고의 대표
+    이미지가, 뒤의 것은 회사 로고를 등록하지 않은 공고의 로고가 된다 (2026-09-28 결정).
     """
     carried = item.extra
     record = {
@@ -668,10 +673,11 @@ def _record(
     }
     if source_text.strip():
         record["source_text"] = source_text
-    if cover_image.strip():
-        cover = urljoin(item.link, cover_image.strip())
-        if cover.startswith(("http://", "https://")):
-            record["og_image_url"] = cover
+    for key, value in (("og_image_url", cover_image), ("site_icon_url", site_icon)):
+        if value.strip():
+            absolute = urljoin(item.link, value.strip())
+            if absolute.startswith(("http://", "https://")):
+                record[key] = absolute
     return record
 
 
@@ -681,7 +687,7 @@ def raw_record(item: ListItem, detail: DetailParseResult) -> dict[str, str]:
     주소로 직접 넣은 공고가 쓴다 (`app/crawler/manual.py`). 모양이 갈리면 정규화와 분류가 두 모양을
     알아야 한다.
     """
-    return _record(item, detail.fields, detail.source_text, detail.cover_image)
+    return _record(item, detail.fields, detail.source_text, detail.cover_image, detail.site_icon)
 
 
 def _is_known(conn: sqlite3.Connection, workflow_id: int | None, column: str, value: str) -> bool:
