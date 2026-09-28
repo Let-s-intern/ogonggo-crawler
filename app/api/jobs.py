@@ -105,7 +105,7 @@ class JobOut(BaseModel):
     auto_close_enabled: str | None
     # 0034. 산업 분류표에서 고른 이름이다
     industry: str | None
-    # 0035. 회사 로고, 없으면 공고 페이지의 og:image 다
+    # 0035. 공고 페이지의 og:image 다. 로고는 오공고 전송(`app/deliver/spring.py`)만 싣는다
     cover_image_url: str | None
     source_url: str
     normalized_at: str

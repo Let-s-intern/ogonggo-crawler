@@ -1,11 +1,23 @@
 {# 사이트 추가 창 (`app/api/ui_site_add.py`). 틀은 base.html 의 모달이고 이 조각이 안을 채운다.
 
    step: form(입력) → queued(걸었음. 창을 닫아도 돈다) / notfound(목록 줄의 `다시 찾기` 로 연다. 무엇이
-   안 됐는지와 공고 주소로 다시 찾기). 진행은 사이트 목록 맨 위에 보인다 (`site_list.html`) #}
+   안 됐는지와 목록·공고 주소를 고쳐 다시 찾기). 진행은 사이트 목록 맨 위에 보인다 (`site_list.html`) #}
 {% macro interval_select(selected, field_id) %}
 <select id="{{ field_id }}" name="interval_minutes">
   {% for minutes, label in intervals %}<option value="{{ minutes }}" {% if minutes == selected %}selected{% endif %}>{{ label }}</option>{% endfor %}
 </select>
+{% endmacro %}
+{# 로고 파일 칸. 저장소가 비어 있으면 파일 칸 대신 무엇을 채워야 하는지 적는다 (`app/storage/s3.py`) #}
+{% macro logo_field(field_id) %}
+<p class="my-0">
+  <label for="{{ field_id }}" class="block">회사 로고 <span class="font-normal text-slate-500">(선택)</span></label>
+  {% if storage_ready %}
+  <input id="{{ field_id }}" name="logo" type="file" accept="{{ accept_attr }}" class="w-full text-sm">
+  <span class="text-xs text-slate-500">{{ accepted }}, {{ max_label }}까지. 이 회사 공고 전부의 로고로 나갑니다. 비워 두면 지금 로고를 그대로 두고, 등록한 로고가 없으면 사이트 아이콘을 씁니다</span>
+  {% else %}
+  <span class="block text-xs text-slate-500">로고를 올리려면 <a href="/settings/storage" class="underline">설정 › 파일 저장소</a>를 먼저 채워 주세요</span>
+  {% endif %}
+</p>
 {% endmacro %}
 <div class="modal-body">
   <div class="modal-head flex items-center justify-between">
@@ -18,7 +30,8 @@
     {% if step == "form" %}
     <p class="text-sm text-slate-600">채용공고 목록 페이지 주소만 넣으면 나머지는 자동으로 찾습니다. 공고 몇 건을 시험으로 가져와 되면 자동 수집까지 시작합니다. 창을 닫아도 계속 돌고, 여러 곳을 이어서 넣어도 됩니다</p>
     <form class="space-y-3" hx-post="/ui/sites/new" hx-target="#app-modal-body" hx-swap="innerHTML"
-          hx-disabled-elt="find button">
+          hx-encoding="multipart/form-data" hx-disabled-elt="find button">
+      {% if replace_add_id %}<input type="hidden" name="replace_add_id" value="{{ replace_add_id }}">{% endif %}
       <p class="my-0">
         <label for="site-add-url" class="block">목록 페이지 주소</label>
         <input id="site-add-url" name="list_url" type="url" required value="{{ list_url }}"
@@ -42,6 +55,7 @@
                placeholder="https://careers.example.com/jobs/123" class="w-full">
         <span class="text-xs text-slate-500">사이트에서 공고 하나를 눌러 열었을 때 주소창의 주소입니다. 비워 두면 목록에서 찾고, 넣으면 그 페이지를 보고 상세를 더 잘 찾습니다</span>
       </p>
+      {{ logo_field("site-add-logo") }}
       <p class="my-0 flex justify-end"><button type="submit">추가</button></p>
     </form>
 
@@ -84,15 +98,23 @@
     {% endif %}
 
     <div class="rounded-md border border-slate-200 p-3">
-      <p class="text-sm font-medium text-slate-900">예시 공고 주소로 다시 찾기</p>
-      <p class="text-xs text-slate-500">사이트에서 공고 하나를 열고, 브라우저 주소창의 주소를 붙여 넣어 주세요. 그 주소를 보고 다시 만듭니다</p>
+      <p class="text-sm font-medium text-slate-900">주소를 고쳐 다시 찾기</p>
+      <p class="text-xs text-slate-500">목록이 안 잡혔으면 목록 주소를, 상세로 못 들어갔으면 예시 공고 주소를 고쳐 주세요. 고친 주소로 처음부터 다시 만듭니다</p>
       <form class="mt-2 space-y-2" hx-post="/ui/sites/new" hx-target="#app-modal-body" hx-swap="innerHTML"
-            hx-disabled-elt="find button">
-        <input type="hidden" name="list_url" value="{{ list_url }}">
+            hx-encoding="multipart/form-data" hx-disabled-elt="find button">
         <input type="hidden" name="company" value="{{ company }}">
         <input type="hidden" name="interval_minutes" value="{{ interval }}">
         <input type="hidden" name="replace_add_id" value="{{ add.id }}">
-        <input type="url" name="detail_url" required value="{{ detail_url }}" placeholder="https://…/예시 공고 주소" class="w-full">
+        <p class="my-0">
+          <label for="site-retry-url" class="block">목록 페이지 주소</label>
+          <input id="site-retry-url" type="url" name="list_url" required value="{{ list_url }}" placeholder="https://careers.example.com/jobs" class="w-full">
+        </p>
+        <p class="my-0">
+          <label for="site-retry-detail" class="block">예시 공고 주소 <span class="font-normal text-slate-500">(선택)</span></label>
+          <input id="site-retry-detail" type="url" name="detail_url" value="{{ detail_url }}" placeholder="https://…/예시 공고 주소" class="w-full">
+          <span class="text-xs text-slate-500">사이트에서 공고 하나를 열었을 때 브라우저 주소창의 주소입니다</span>
+        </p>
+        {{ logo_field("site-retry-logo") }}
         <p class="my-0 flex justify-end"><button type="submit" class="mt-0">다시 찾기</button></p>
       </form>
     </div>

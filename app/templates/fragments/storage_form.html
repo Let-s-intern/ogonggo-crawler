@@ -19,6 +19,10 @@
 </div>
 {% endif %}
 
+{% if from_env %}
+{{ notice_box("서버 환경변수(S3_*)의 값으로 돌고 있다. 여기서 저장하면 저장한 값이 환경변수보다 먼저다") }}
+{% endif %}
+
 <form hx-put="/ui/storage" hx-target="#storage-form" hx-swap="innerHTML"
       hx-disabled-elt="find button">
   <fieldset>

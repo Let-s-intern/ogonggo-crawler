@@ -60,7 +60,7 @@
           hx-disabled-elt="find button">
       <input type="hidden" name="name" value="{{ row.name }}">
       <input name="file" type="file" required
-             accept="image/png,image/jpeg,image/webp"
+             accept="{{ accept_attr }}"
              aria-label="{{ row.name }} 로고 파일">
       <button type="submit">올리기</button>
       {{ wait("올리는 중") }}

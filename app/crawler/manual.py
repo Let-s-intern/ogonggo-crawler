@@ -48,6 +48,7 @@ from app.crawler.parser import (
     ListItem,
     block_text,
     og_image,
+    site_icon,
     structured_text,
 )
 from app.crawler.runner import raw_record
@@ -181,6 +182,7 @@ def page_detail(html: str) -> DetailParseResult:
     soup = BeautifulSoup(html, "html.parser")
     title = _title(soup)
     cover = og_image(soup)
+    icon = site_icon(soup)
     for node in soup.select(f"{_NOT_CONTENT}, {PAGE_FURNITURE}"):
         node.decompose()
     container = _container(soup)
@@ -196,6 +198,7 @@ def page_detail(html: str) -> DetailParseResult:
         source_text=f"{text}\n{structured}" if structured else text,
         images=images,
         cover_image=cover,
+        site_icon=icon,
     )
 
 

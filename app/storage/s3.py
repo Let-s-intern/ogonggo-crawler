@@ -7,13 +7,22 @@
 공용 fetch 클라이언트를 지나지 않는 두 번째 자리다. 우리가 올린 객체만 만지므로 robots 를
 물을 상대가 아니고 지킬 딜레이도 없다 (`.claude/rules/crawling.md`, 2026-08-28).
 
-받는 것은 이미지뿐이고 크기 상한이 있다. 어느 형식인지는 파일 이름이 아니라 앞 몇 바이트로
+받는 것은 이미지뿐이고 크기 상한이 있다. 어느 형식인지는 파일 이름이 아니라 내용으로
 정한다 — `.png` 로 이름만 바꾼 실행 파일이 우리 도메인에서 서비스되게 두지 않는다.
+
+## 받는 형식 (2026-09-28 결정)
+
+예전에는 PNG·JPEG·WebP 셋만 받았다. 운영자가 가진 로고 파일 형식이 제각각이라 웬만한 이미지는
+다 받는다. 브라우저가 그대로 그리는 형식(PNG·JPEG·WebP·GIF·AVIF·SVG)은 그대로 올리고, 그 밖에
+Pillow 가 여는 형식(BMP·TIFF·ICO 등)은 PNG 로 바꿔 올린다 — 오공고 화면이 그리지 못하는 파일을
+대표 이미지로 보내지 않는다.
 """
 
 from __future__ import annotations
 
+import io
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
@@ -21,27 +30,40 @@ from uuid import uuid4
 import boto3
 from botocore.config import Config as BotoConfig
 from botocore.exceptions import BotoCoreError, ClientError
+from PIL import Image, UnidentifiedImageError
 
 from app.storage.settings import StorageConfig
 
 logger = logging.getLogger(__name__)
 
-# 받는 형식 셋. 앞 바이트로 판정한다.
-#
-# SVG 는 받지 않는다. 텍스트라 앞 바이트로 가릴 수 없고, 스크립트를 품은 SVG 가 우리 공개
-# 주소에서 열리면 그것이 곧 XSS 다. 로고를 벡터로 갖고 있으면 PNG 로 내보내 올린다.
+# 그대로 올리는 형식. 앞 바이트로 판정한다
 PNG = b"\x89PNG\r\n\x1a\n"
 JPEG = b"\xff\xd8\xff"
 RIFF = b"RIFF"
 WEBP = b"WEBP"
+GIF = (b"GIF87a", b"GIF89a")
+# AVIF 는 ISO 미디어 상자다. 4바이트 크기 뒤에 `ftyp` 와 브랜드가 온다
+FTYP = b"ftyp"
+AVIF_BRANDS = (b"avif", b"avis")
 
-# 로고는 200px 안팎으로 그린다. 그 크기의 PNG 는 수십 KB 다. 2MiB 는 디자인 도구에서
-# 생각 없이 내보낸 파일도 지나가게 두면서, 사진을 잘못 고른 것은 막는다
-MAX_IMAGE_BYTES = 2 * 1024 * 1024
+# SVG 는 텍스트라 앞 바이트가 아니라 여는 태그로 본다. 스크립트를 품은 SVG 가 공개 주소에서
+# 열리면 그것이 곧 XSS 라, 스크립트·이벤트 속성·외부 문서를 품은 것은 받지 않는다
+_SVG_OPEN = re.compile(
+    rb"^\s*(<\?xml[^>]*>\s*)?(<!--.*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s>]", re.S | re.I
+)
+_SVG_ACTIVE = re.compile(
+    rb"<\s*(script|foreignObject|iframe|embed|object)\b|\son[a-z]+\s*=|javascript:", re.I
+)
+
+# 로고는 200px 안팎으로 그린다. 5MiB 는 디자인 도구에서 생각 없이 내보낸 파일이나 무압축
+# BMP·TIFF 도 지나가게 두면서, 사진을 잘못 고른 것은 막는다
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 # 화면에 적는 문구. 형식과 상한을 두 곳에서 따로 쓰지 않는다
-ACCEPTED = "PNG, JPEG, WebP"
-MAX_IMAGE_LABEL = "2MB"
+ACCEPTED = "PNG, JPEG, WebP, GIF, AVIF, SVG, BMP, TIFF, ICO 등 대부분의 이미지"
+MAX_IMAGE_LABEL = "5MB"
+# 파일 고르기 창이 보여 주는 형식. 내용 검사는 서버가 따로 한다
+ACCEPT_ATTR = "image/*,.svg,.ico,.bmp,.tif,.tiff"
 
 # 저장소가 답하지 않을 때 오래 매달리지 않는다. 운영자가 화면 앞에서 기다리는 동작이다
 _CONNECT_TIMEOUT = 5
@@ -69,8 +91,12 @@ class ImageKind:
     content_type: str
 
 
-def detect_image(data: bytes) -> ImageKind:
-    """앞 바이트로 형식을 정한다. 셋 중 하나가 아니면 거절한다."""
+PNG_KIND = ImageKind("png", "image/png")
+# 앞 바이트로 모르는 형식일 때의 문장. `prepare_image` 가 이 문장일 때만 Pillow 로 열어 본다
+NOT_ACCEPTED = f"받는 형식이 아니다. {ACCEPTED} 를 올릴 수 있다"
+
+
+def _check_size(data: bytes) -> None:
     if not data:
         raise StorageError("not_an_image", "파일이 비어 있다")
     if len(data) > MAX_IMAGE_BYTES:
@@ -78,13 +104,52 @@ def detect_image(data: bytes) -> ImageKind:
             "too_large",
             f"파일이 상한 {MAX_IMAGE_LABEL} 를 넘는다: {len(data)}바이트",
         )
+
+
+def detect_image(data: bytes) -> ImageKind:
+    """브라우저가 그대로 그리는 형식이면 그 형식이다. 아니면 거절한다 (변환은 `prepare_image`)."""
+    _check_size(data)
     if data.startswith(PNG):
-        return ImageKind("png", "image/png")
+        return PNG_KIND
     if data.startswith(JPEG):
         return ImageKind("jpg", "image/jpeg")
     if data[:4] == RIFF and data[8:12] == WEBP:
         return ImageKind("webp", "image/webp")
-    raise StorageError("not_an_image", f"받는 형식이 아니다. {ACCEPTED} 만 올릴 수 있다")
+    if data.startswith(GIF):
+        return ImageKind("gif", "image/gif")
+    if data[4:8] == FTYP and data[8:12] in AVIF_BRANDS:
+        return ImageKind("avif", "image/avif")
+    head = data.lstrip(b"\xef\xbb\xbf")
+    if _SVG_OPEN.match(head[:4096]):
+        if _SVG_ACTIVE.search(data):
+            raise StorageError(
+                "not_an_image",
+                "스크립트나 이벤트 속성이 든 SVG 는 받지 않는다. PNG 로 내보내 올린다",
+            )
+        return ImageKind("svg", "image/svg+xml")
+    raise StorageError("not_an_image", NOT_ACCEPTED)
+
+
+def prepare_image(data: bytes) -> tuple[bytes, ImageKind]:
+    """올릴 바이트와 형식. 브라우저가 못 그리는 형식은 Pillow 로 열어 PNG 로 바꾼다."""
+    try:
+        return data, detect_image(data)
+    except StorageError as exc:
+        if exc.message != NOT_ACCEPTED:
+            raise
+        refused = exc
+    try:
+        with Image.open(io.BytesIO(data)) as opened:
+            opened.load()
+            # 팔레트·CMYK 등은 PNG 가 받는 모드로 편다. 투명도는 남긴다
+            image = opened if opened.mode in ("RGB", "RGBA", "L", "LA") else opened.convert("RGBA")
+            out = io.BytesIO()
+            image.save(out, format="PNG", optimize=True)
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise refused from exc
+    converted = out.getvalue()
+    _check_size(converted)
+    return converted, PNG_KIND
 
 
 def client(config: StorageConfig) -> Any:
@@ -116,7 +181,7 @@ def upload_image(config: StorageConfig, *, data: bytes, name: str) -> str:
     """
     if not config.configured:
         raise StorageError("not_configured", "저장소 설정이 아직 채워지지 않았다")
-    kind = detect_image(data)
+    data, kind = prepare_image(data)
     key = f"{name}.{kind.extension}"
     try:
         client(config).put_object(

@@ -50,6 +50,8 @@ def _form(
         request,
         "fragments/storage_form.html",
         config=config,
+        # 화면에서 저장한 값이 없고 환경변수로 도는 중인지. 폼에 무엇이 어디서 왔는지 적는다
+        from_env=not store.stored_keys(conn) and store.env_config() is not None,
         secret_tail=store.mask(config.secret_key),
         accepted=s3.ACCEPTED,
         max_label=s3.MAX_IMAGE_LABEL,

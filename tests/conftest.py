@@ -22,6 +22,7 @@ TestClient 에 정상 서명된 쿠키를 하나 넣어 준다 — 미들웨어�
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -76,3 +77,22 @@ def static_detail_holds(monkeypatch: pytest.MonkeyPatch) -> None:
         return True
 
     monkeypatch.setattr(crawlers, "_static_detail_holds", holds)
+
+
+@pytest.fixture(autouse=True)
+def _no_storage_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """로컬 `.env` 의 `S3_*` 가 테스트에 새지 않게 한다. 저장소 설정은 테스트가 DB 에 넣는다."""
+    from app.config import get_settings
+
+    for name in (
+        "S3_ENDPOINT",
+        "S3_REGION",
+        "S3_BUCKET",
+        "S3_ACCESS_KEY",
+        "S3_SECRET_KEY",
+        "S3_PUBLIC_BASE",
+    ):
+        monkeypatch.setenv(name, "")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()

@@ -10,9 +10,12 @@
 | 시험 수집이 되면 고른 주기로 자동 수집까지 시작한다 | 된 사이트를 한 번 더 눌러야 한다 |
 | 안 되면 목록에 쉬운 말 사유와 다시 찾기가 남는다 | 창을 닫으면 실패를 모른다 |
 | 다시 찾기는 초안을 지우고 공고 주소를 넣어 다시 건다 | 초안이 쌓인다 |
+| 다시 찾기에서 목록 주소도 고쳐 다시 건다 | 목록 주소가 틀리면 지우고 처음부터 넣어야 한다 |
 | 지우기는 줄과 초안을 같이 지운다 | 실패한 줄이 계속 남는다 |
 | 공고 주소를 처음부터 넣을 수 있다 | 목록만으로 못 찾는 사이트를 한 번 실패시켜야 한다 |
 | 실패하면 단계마다 본 것과 막힌 곳이 보인다 | 왜 실패했는지 모른다 |
+| 로고 파일을 같이 올리면 그 회사 로고가 된다 | 회사 화면에 따로 가서 올려야 한다 |
+| 저장소가 비면 파일 칸 대신 할 일을 적고, 올리기가 실패하면 걸지 않는다 | 로고 없이 조용히 걸린다 |
 """
 
 from __future__ import annotations
@@ -28,12 +31,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from app import db
+from app import companies, db
 from app.api import crawlers as crawlers_api
 from app.api import site_adds, ui_site_add
 from app.api import workflows as workflows_api
 from app.main import app
 from app.scheduler import WorkflowScheduler
+from app.storage import s3
+from app.storage import settings as store
 
 LIST_URL = "https://careers.example.com/jobs"
 
@@ -274,7 +279,8 @@ def test_안_되면_목록에_쉬운_말_사유와_다시_찾기가_남는다(
     assert 'hx-get="/ui/sites/new/1"' in listing
     assert 'hx-trigger="every 3s"' not in listing
     retry = client.get("/ui/sites/new/1").text
-    assert "예시 공고 주소로 다시 찾기" in retry
+    assert "주소를 고쳐 다시 찾기" in retry
+    assert f'name="list_url" required value="{LIST_URL}"' in retry
     # 단계마다 무엇을 봤는지 보인다. 셀렉터·상세 길은 됐고 시험 수집에서 막혔다
     assert "무슨 일이 있었나" in retry
     assert "✓ 1. 목록을 읽고 셀렉터 만들기" in retry
@@ -335,6 +341,32 @@ def test_다시_찾기는_초안을_지우고_공고_주소를_넣어_다시_건
     assert "site-add-row" not in client.get("/ui/sites").text
 
 
+def test_다시_찾기에서_목록_주소도_고쳐_다시_건다(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    launched: list[Any],
+) -> None:
+    fake = Fake(conn, found=False)
+    install(monkeypatch, fake)
+    client.post("/ui/sites/new", data={"list_url": LIST_URL, "company": "예시"})
+    finish(launched)
+
+    fake.found = True
+    fixed = "https://careers.example.com/recruit"
+    client.post(
+        "/ui/sites/new",
+        data={"list_url": fixed, "company": "예시", "replace_add_id": "1"},
+    )
+    finish(launched)
+
+    assert fake.registered[-1].list_url == fixed
+    assert not fake.registered[-1].detail_url
+    rows = conn.execute("SELECT id, list_url FROM crawlers ORDER BY id").fetchall()
+    assert [(row["id"], row["list_url"]) for row in rows] == [(2, fixed)]
+    assert conn.execute("SELECT count(*) FROM workflows").fetchone()[0] == 1
+
+
 def test_지우기는_줄과_초안을_같이_지운다(
     client: TestClient,
     conn: sqlite3.Connection,
@@ -350,3 +382,69 @@ def test_지우기는_줄과_초안을_같이_지운다(
     assert response.headers["HX-Trigger"] == "site-added"
     assert "site-add-row" not in client.get("/ui/sites").text
     assert conn.execute("SELECT count(*) FROM crawlers").fetchone()[0] == 0
+
+
+def fill_storage(conn: sqlite3.Connection) -> None:
+    store.write_config(
+        conn,
+        store.StorageConfig(
+            endpoint="http://minio:9000",
+            region="us-east-1",
+            bucket="logos",
+            access_key="minioadmin",
+            secret_key="minioadmin",
+            public_base="http://localhost:9000/logos",
+        ),
+    )
+    conn.commit()
+
+
+def test_로고_파일을_같이_올리면_그_회사_로고가_된다(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    launched: list[Any],
+) -> None:
+    fill_storage(conn)
+    uploaded: list[bytes] = []
+
+    def upload(config: store.StorageConfig, *, data: bytes, name: str) -> str:
+        uploaded.append(data)
+        return f"http://localhost:9000/logos/{name}.png"
+
+    monkeypatch.setattr(s3, "upload_image", upload)
+    install(monkeypatch, Fake(conn, found=True))
+
+    assert 'name="logo" type="file"' in client.get("/ui/sites/new").text
+    client.post(
+        "/ui/sites/new",
+        data={"list_url": LIST_URL, "company": "예시"},
+        files={"logo": ("logo.bmp", b"BM-logo", "image/bmp")},
+    )
+
+    assert uploaded == [b"BM-logo"]
+    company = companies.read(conn, "예시")
+    assert company is not None and (company.logo_url or "").startswith("http://localhost:9000/")
+    assert len(launched) == 1
+
+
+def test_저장소가_비면_할_일을_적고_올리기가_실패하면_걸지_않는다(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    launched: list[Any],
+) -> None:
+    form = client.get("/ui/sites/new").text
+    assert 'name="logo"' not in form
+    assert "파일 저장소" in form
+
+    install(monkeypatch, Fake(conn, found=True))
+    body = client.post(
+        "/ui/sites/new",
+        data={"list_url": LIST_URL, "company": "예시"},
+        files={"logo": ("logo.png", b"not an image", "image/png")},
+    ).text
+
+    assert "로고를 올리지 못했어요" in body
+    assert launched == []
+    assert companies.read(conn, "예시") is None

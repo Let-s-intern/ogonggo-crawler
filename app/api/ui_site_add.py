@@ -13,9 +13,20 @@
 
 목록 줄의 `다시 찾기` 가 이 창을 다시 연다. 무엇이 안 됐는지와 두 갈래를 둔다.
 
-- 예시 공고 주소로 다시 찾기: 같은 목록 주소와 그 공고 주소로 새로 건다. 방금 만든 초안
+- 주소를 고쳐 다시 찾기: 목록 주소와 예시 공고 주소를 둘 다 고칠 수 있고, 고친 주소로 새로
+  건다. 목록 주소가 틀려 목록부터 못 찾은 경우도 창을 닫지 않고 다시 건다. 방금 만든 초안
   크롤러는 지운다 — 초안은 워크플로우가 없어 수집한 공고도 없다
 - 셀렉터 직접 고치기: 시험 실행 화면으로 보낸다
+
+## 로고
+
+추가 창과 다시 찾기 창에서 회사 로고 파일을 함께 받는다 (2026-09-28 결정). 회사 화면의 파일
+올리기와 같은 길이다 — 저장소에 올리고 그 주소를 창에 적은 회사 이름의 행에 적는다
+(`app/api/ui_companies.py`). 그 이름은 공고의 모회사로 들어가므로 자기 로고가 없는 계열사
+공고에도 붙는다. 오공고에는 `logoUrl` 로 가고, 등록하면 사이트 아이콘 대신 이 로고를 쓴다.
+주소를 붙여 넣는 칸은 두지 않는다 — 남의 주소는 언제 사라질지 모른다.
+
+로고는 건 요청 안에서 올린다. 올리기가 실패하면 사이트 추가도 걸지 않고 창에 사유를 적는다.
 """
 
 from __future__ import annotations
@@ -25,17 +36,21 @@ import logging
 import sqlite3
 from collections.abc import Callable, Coroutine
 from typing import Annotated, Any
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
-from app import db
+from app import companies, db
 from app.api import crawlers, site_adds, workflows
 from app.api.ui import render
+from app.api.ui_companies import UPLOAD_PREFIX, refresh_postings
 from app.api.ui_crawlers import error_detail
 from app.api.ui_sites import PROBLEMS, UNKNOWN_PROBLEM
 from app.crawler.fetcher import FetchPolicy
 from app.scheduler import WorkflowScheduler
+from app.storage import s3
+from app.storage import settings as store
 
 logger = logging.getLogger(__name__)
 
@@ -68,14 +83,47 @@ REGISTER_PROBLEMS: dict[str, str] = {
 }
 
 
-def _form(request: Request, **context: object) -> HTMLResponse:
-    return render(request, "fragments/site_add.html", intervals=INTERVALS, **context)
+def _form(request: Request, conn: sqlite3.Connection, **context: object) -> HTMLResponse:
+    return render(
+        request,
+        "fragments/site_add.html",
+        intervals=INTERVALS,
+        storage_ready=store.read_config(conn).configured,
+        accept_attr=s3.ACCEPT_ATTR,
+        accepted=s3.ACCEPTED,
+        max_label=s3.MAX_IMAGE_LABEL,
+        **context,
+    )
 
 
 @router.get("/ui/sites/new", response_class=HTMLResponse)
-def site_add_form(request: Request) -> HTMLResponse:
+def site_add_form(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+) -> HTMLResponse:
     """사이트 추가 창의 첫 화면. 목록 주소와 회사 이름, 수집 주기만 받는다."""
-    return _form(request, step="form", list_url="", company="", interval=DEFAULT_INTERVAL)
+    return _form(request, conn, step="form", list_url="", company="", interval=DEFAULT_INTERVAL)
+
+
+def _save_logo(conn: sqlite3.Connection, company: str, logo: UploadFile | None) -> str:
+    """고른 로고 파일을 올리고 그 회사 행에 적는다. 파일을 고르지 않았으면 아무것도 하지 않는다.
+
+    실패하면 `s3.StorageError` 를 그대로 올린다. 사유 문장이 곧 창에 적을 말이다.
+    """
+    if logo is None or not logo.filename:
+        return ""
+    # 상한보다 한 바이트만 더 읽는다. 다 읽고 나서 재면 이미 다 쓴 뒤다
+    data = logo.file.read(s3.MAX_IMAGE_BYTES + 1)
+    if not data:
+        return ""
+    public_url = s3.upload_image(
+        store.read_config(conn), data=data, name=f"{UPLOAD_PREFIX}{uuid4().hex}"
+    )
+    companies.ensure(conn, company)
+    companies.set_logo_url(conn, company, public_url)
+    refresh_postings(conn, company)
+    logger.info("사이트 추가: %s 로고를 올렸다 -> %s", company, public_url)
+    return public_url
 
 
 def _drop_draft(conn: sqlite3.Connection, crawler_id: int) -> None:
@@ -283,6 +331,7 @@ async def site_add_try(
     detail_url: Annotated[str, Form()] = "",
     interval_minutes: Annotated[int, Form()] = DEFAULT_INTERVAL,
     replace_add_id: Annotated[str, Form()] = "",
+    logo: Annotated[UploadFile | None, File()] = None,
 ) -> HTMLResponse:
     """사이트 추가를 걸고 곧바로 돌아온다. 창을 닫거나 다른 곳을 또 걸어도 된다."""
     list_url, company, detail_url = list_url.strip(), company.strip(), detail_url.strip()
@@ -295,6 +344,7 @@ async def site_add_try(
     if not list_url.startswith(("http://", "https://")) or not company:
         return _form(
             request,
+            conn,
             step="form",
             error="목록 페이지 주소(http:// 나 https://)와 회사 이름을 모두 넣어 주세요",
             **kept,
@@ -302,8 +352,21 @@ async def site_add_try(
     if detail_url and not detail_url.startswith(("http://", "https://")):
         return _form(
             request,
+            conn,
             step="form",
             error="공고 주소는 http:// 나 https:// 로 시작해야 합니다",
+            **kept,
+        )
+    try:
+        _save_logo(conn, company, logo)
+    except s3.StorageError as exc:
+        logger.info("사이트 추가: 로고를 올리지 못했다: %s / %s", exc.reason, exc.message)
+        return _form(
+            request,
+            conn,
+            step="form",
+            error=f"로고를 올리지 못했어요. 다시 골라 주세요: {exc.message}",
+            replace_add_id=replace_add_id.strip(),
             **kept,
         )
     if replace_add_id.strip().isdigit():
@@ -319,18 +382,23 @@ async def site_add_try(
         interval_minutes if interval_minutes in allowed else DEFAULT_INTERVAL,
     )
     launch(_work(add, connect, generate, discover, fetcher, scheduler))
-    response = _form(request, step="queued", add=add)
+    response = _form(request, conn, step="queued", add=add)
     response.headers["HX-Trigger"] = "site-added"
     return response
 
 
 @router.get("/ui/sites/new/{add_id}", response_class=HTMLResponse)
-def site_add_retry_form(request: Request, add_id: int) -> HTMLResponse:
-    """찾지 못한 사이트 추가를 다시 여는 창. 무엇이 안 됐는지와 공고 주소로 다시 찾기를 둔다."""
+def site_add_retry_form(
+    request: Request,
+    add_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+) -> HTMLResponse:
+    """찾지 못한 사이트 추가를 다시 여는 창. 무엇이 안 됐는지와 주소를 고쳐 다시 찾기를 둔다."""
     add = site_adds.get(add_id)
     if add is None:
         return _form(
             request,
+            conn,
             step="form",
             error="그 사이트 추가 기록이 없어요. 서버가 다시 떴을 수 있어요. 처음부터 넣어 주세요",
             list_url="",
@@ -339,6 +407,7 @@ def site_add_retry_form(request: Request, add_id: int) -> HTMLResponse:
         )
     return _form(
         request,
+        conn,
         step="notfound",
         add=add,
         list_url=add.list_url,

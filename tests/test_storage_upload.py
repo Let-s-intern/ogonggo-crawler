@@ -18,7 +18,21 @@ from app.storage.settings import StorageConfig
 PNG_BYTES = s3.PNG + b"\x00" * 32
 JPEG_BYTES = s3.JPEG + b"\x00" * 32
 WEBP_BYTES = s3.RIFF + b"\x00\x00\x00\x00" + s3.WEBP + b"\x00" * 32
+GIF_BYTES = b"GIF89a" + b"\x00" * 32
+AVIF_BYTES = b"\x00\x00\x00\x1cftypavif" + b"\x00" * 32
 SVG_BYTES = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+PLAIN_SVG = b'<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>'
+
+
+def bmp_bytes() -> bytes:
+    """Pillow 로 만든 진짜 BMP. 브라우저가 그리지 않는 형식의 대표다."""
+    import io
+
+    from PIL import Image
+
+    out = io.BytesIO()
+    Image.new("RGB", (4, 4), (255, 0, 0)).save(out, format="BMP")
+    return out.getvalue()
 
 
 def config() -> StorageConfig:
@@ -49,6 +63,9 @@ class FakeClient:
         (PNG_BYTES, "png", "image/png"),
         (JPEG_BYTES, "jpg", "image/jpeg"),
         (WEBP_BYTES, "webp", "image/webp"),
+        (GIF_BYTES, "gif", "image/gif"),
+        (AVIF_BYTES, "avif", "image/avif"),
+        (PLAIN_SVG, "svg", "image/svg+xml"),
     ],
 )
 def test_detects_accepted_formats(data: bytes, extension: str, content_type: str) -> None:
@@ -57,10 +74,32 @@ def test_detects_accepted_formats(data: bytes, extension: str, content_type: str
     assert kind.content_type == content_type
 
 
-def test_refuses_svg() -> None:
-    """텍스트라 앞 바이트로 가릴 수 없고, 스크립트를 품으면 공개 주소에서 그대로 돈다."""
+@pytest.mark.parametrize(
+    "svg",
+    [
+        SVG_BYTES,
+        b'<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>',
+        b'<svg><a href="javascript:alert(1)"><rect/></a></svg>',
+    ],
+)
+def test_refuses_svg_with_script(svg: bytes) -> None:
+    """스크립트를 품은 SVG 는 공개 주소에서 열면 그대로 돈다."""
     with pytest.raises(s3.StorageError) as caught:
-        s3.detect_image(SVG_BYTES)
+        s3.prepare_image(svg)
+    assert caught.value.reason == "not_an_image"
+    assert "SVG" in caught.value.message
+
+
+def test_converts_other_images_to_png() -> None:
+    """브라우저가 그리지 않는 형식은 PNG 로 바꿔 올린다."""
+    data, kind = s3.prepare_image(bmp_bytes())
+    assert kind == s3.PNG_KIND
+    assert data.startswith(s3.PNG)
+
+
+def test_refuses_what_is_not_an_image() -> None:
+    with pytest.raises(s3.StorageError) as caught:
+        s3.prepare_image(b"MZ\x90\x00 not an image at all")
     assert caught.value.reason == "not_an_image"
     assert s3.ACCEPTED in caught.value.message
 
@@ -146,3 +185,37 @@ def test_endpoint_url_is_none_when_empty() -> None:
     )
     built = s3.client(aws)
     assert built.meta.endpoint_url == "https://s3.ap-northeast-2.amazonaws.com"
+
+
+def test_환경변수로_실제_S3_설정을_읽는다() -> None:
+    from app.config import Settings
+    from app.storage import settings as store
+
+    env = Settings(
+        s3_region="ap-northeast-2",
+        s3_bucket="ogonggo-logos",
+        s3_access_key="AKIA-test",
+        s3_secret_key="secret-test",
+    )
+    config = store.env_config(env)
+
+    assert config is not None and config.configured
+    # 실제 S3 는 엔드포인트를 비우고, 공개 주소는 버킷 주소다
+    assert config.endpoint == ""
+    assert config.public_base == "https://ogonggo-logos.s3.ap-northeast-2.amazonaws.com"
+    assert store.env_config(Settings()) is None
+
+
+def test_화면에_저장한_값이_환경변수보다_먼저다(tmp_path: Any) -> None:
+    from app import db
+    from app.config import Settings
+    from app.storage import settings as store
+
+    env = Settings(s3_bucket="env-bucket", s3_access_key="a-env", s3_secret_key="s-env")
+    conn = db.connect(tmp_path / "jobs.db")
+    db.migrate_up(conn)
+
+    assert store.read_config(conn, env).bucket == "env-bucket"
+    store.write_config(conn, config())
+    assert store.read_config(conn, env).bucket == "logos"
+    conn.close()

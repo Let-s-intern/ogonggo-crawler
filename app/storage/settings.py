@@ -3,8 +3,12 @@
 `app/notify/settings.py` 와 같은 방식이다. 저장소를 따로 두는 이유도 같다 — `/api/settings`
 가 내보내는 `dict[str, int]` 에 주소와 키를 섞으면 이미 있는 화면이 같이 흔들린다.
 
-환경변수 짝을 두지 않는다. 이 값을 바꾸는 것이 곧 저장소를 갈아끼우는 것이고, 그것을 운영자가
-화면에서 하게 하는 것이 이 Push 의 목적이다. 짝을 만들면 같은 설정이 두 곳에 생긴다.
+## 환경변수 (2026-09-28 결정)
+
+처음에는 환경변수 짝을 두지 않았다. 운영에서 키를 DB 에 두면 DB 내보내기에 키가 같이 나가고, DB 를
+새로 만들면 다시 넣어야 해서 `S3_*` 환경변수를 읽는다 (`app/config.py`). AI 키와 같은 순서다 —
+화면에서 저장한 값이 있으면 그 값이고, 없으면 환경변수다. 환경변수에 버킷이 있으면 실제 S3 로 보고
+엔드포인트를 비우고, 공개 주소가 없으면 버킷 주소(`https://버킷.s3.지역.amazonaws.com`)로 만든다.
 
 여섯이 한 벌이다. 엔드포인트만 비울 수 있고, 그때는 SDK 가 지역으로 주소를 만든다 (실제 S3).
 주소 형식을 운영자가 고르게 하지 않는다 (`.claude/tasks/todo/prd-fields-and-logo.md` 5장).
@@ -18,6 +22,8 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+
+from app.config import Settings, get_settings
 
 ENDPOINT = "s3_endpoint"
 REGION = "s3_region"
@@ -90,16 +96,42 @@ class StorageConfig:
             raise StorageSettingError("비밀 키가 비어 있다")
 
 
-def read_config(conn: sqlite3.Connection) -> StorageConfig:
-    """저장된 설정. 값이 없으면 기본값이다. 읽는 김에 채워 넣지 않는다."""
-    stored = {
+def env_config(settings: Settings | None = None) -> StorageConfig | None:
+    """환경변수의 설정. 버킷이 없으면 None 이다 — 그때는 로컬 MinIO 기본값을 쓴다."""
+    base = settings or get_settings()
+    bucket = base.s3_bucket.strip()
+    if not bucket:
+        return None
+    region = base.s3_region.strip() or DEFAULT_REGION
+    public_base = base.s3_public_base.strip() or f"https://{bucket}.s3.{region}.amazonaws.com"
+    return StorageConfig(
+        endpoint=base.s3_endpoint.strip(),
+        region=region,
+        bucket=bucket,
+        access_key=base.s3_access_key.strip(),
+        secret_key=base.s3_secret_key.strip(),
+        public_base=public_base,
+    )
+
+
+def stored_keys(conn: sqlite3.Connection) -> dict[str, str]:
+    """화면에서 저장한 값. 저장한 적이 없으면 빈 사전이다."""
+    return {
         str(row["key"]): str(row["value"])
         for row in conn.execute(
             f"SELECT key, value FROM app_settings WHERE key IN ({','.join('?' * len(KEYS))})",
             KEYS,
         )
     }
-    default = StorageConfig()
+
+
+def read_config(conn: sqlite3.Connection, settings: Settings | None = None) -> StorageConfig:
+    """쓸 설정. 화면에서 저장한 값, 없으면 환경변수, 그것도 없으면 기본값이다.
+
+    읽는 김에 채워 넣지 않는다.
+    """
+    stored = stored_keys(conn)
+    default = env_config(settings) or StorageConfig()
     return StorageConfig(
         endpoint=stored.get(ENDPOINT, default.endpoint),
         region=stored.get(REGION, default.region),

@@ -27,8 +27,8 @@
   <div class="border-b border-slate-200 px-6 py-4">
     <div class="flex items-start gap-3">
       <div class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-slate-50">
-        {% if job.logo_url or job.cover_image_url %}
-        <img src="{{ job.logo_url or job.cover_image_url }}" alt="{{ job.company_name or job.parent_company_name }} 로고"
+        {% if job.panel_logo_url or job.cover_image_url %}
+        <img src="{{ job.panel_logo_url or job.cover_image_url }}" alt="{{ job.company_name or job.parent_company_name }} 로고"
              class="h-full w-full object-contain p-0.5">
         {% endif %}
       </div>
@@ -142,7 +142,7 @@
               <span class="text-amber-600">비어 있음</span>
             {% elif field.kind == "long" %}
               <span class="block whitespace-pre-line leading-relaxed">{{ raw | tidy_text }}</span>
-            {% elif field.name == "cover_image_url" %}
+            {% elif field.name in ("cover_image_url", "logo_url") %}
               <a href="{{ raw }}" target="_blank" rel="noreferrer" class="text-sky-700 hover:underline">이미지 열기</a>
             {% else %}
               {{ shown }}
