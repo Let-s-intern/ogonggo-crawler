@@ -200,8 +200,12 @@ def normalize_fields(
     rules: Sequence[Rule],
     parent_company_name: str | None = None,
     classification: Mapping[str, str] | None = None,
+    collected_on: date | None = None,
 ) -> dict[str, str | None]:
     """원문 필드에서 `normalized_jobs` 의 값들을 만든다. 값이 없는 필드는 None 이다.
+
+    마감 칸의 `D-32` 는 규칙 전에 `collected_on`(없으면 오늘)에서 센 날짜로 바꾼다
+    (`loose_date.settle_counted`).
 
     `parent_company_name` 는 규칙을 타지 않고 받은 값 그대로 나온다. 빈 값은 NULL 이다 — 빈
     문자열로 채우면 "모회사를 모른다" 와 "모회사가 빈 이름이다" 가 구분되지 않는다.
@@ -210,7 +214,7 @@ def normalize_fields(
     메우지 않는다.
     """
     ordered = _by_field(rules)
-    raw = _with_period_start(raw)
+    raw = _with_period_start(_with_counted_end(raw, collected_on or date.today()))
     result: dict[str, str | None] = {}
     for field_name in NORMALIZED_FIELDS:
         raw_value = raw.get(field_name)
@@ -231,13 +235,26 @@ START = "recruitment_start_at"
 END = "recruitment_end_at"
 
 
-def normalize_value(field_name: str, value: str, rules: Sequence[Rule]) -> str | None:
+def normalize_value(
+    field_name: str, value: str, rules: Sequence[Rule], collected_on: date | None = None
+) -> str | None:
     """칸 하나에 그 칸의 규칙만 태운다. 빈 값은 None 이다.
 
     마감 거르기가 목록의 마감일 하나를 읽을 때 쓴다 (`app/crawler/deadline.py`). 공고 전체를
     정규화하면 기간 앞쪽에서 나눈 시작일까지 읽다가, 그 칸의 실패 때문에 마감일을 못 읽는다.
     """
+    if field_name == END:
+        value = loose_date.settle_counted(value, collected_on or date.today())
     return _run_rules(value, _by_field(rules).get(field_name, ()))
+
+
+def _with_counted_end(raw: Mapping[str, object], collected_on: date) -> Mapping[str, object]:
+    """마감 칸의 `D-32` 를 규칙이 읽을 수 있는 날짜로 (2026-09-29 결정, `loose_date`)."""
+    end = raw.get(END)
+    if not isinstance(end, str) or not end.strip():
+        return raw
+    settled = loose_date.settle_counted(end, collected_on)
+    return raw if settled == end else {**raw, END: settled}
 
 
 def _run_rules(value: str, rules: Sequence[Rule]) -> str | None:
@@ -534,13 +551,15 @@ def normalized_values(
     part = part or PostingPart()
     source_url, data = read_raw(conn, raw_job_id)
     classification = read_classification(conn, raw_job_id, part.number)
+    collected_on = _collected_on(conn, raw_job_id)
     fields = normalize_fields(
         data,
         rules,
         read_parent_company(conn, raw_job_id),
         classification,
+        collected_on,
     )
-    fill_fallbacks(fields, classification, _collected_on(conn, raw_job_id))
+    fill_fallbacks(fields, classification, collected_on)
     if part.split:
         source_url = f"{source_url}#{part.number}"
     ai_title = classification.get(POSTING_TITLE, "").strip()

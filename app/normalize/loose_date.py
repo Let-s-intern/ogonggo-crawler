@@ -13,6 +13,10 @@
 있으면 날짜가 먼저다. 시작일은 세지 않는다 — 적힌 날짜가 없으면 빈 값이고, 그때 정규화가 수집한
 날을 시작일로 둔다 (`app/normalize/engine.py` 의 `fill_fallbacks`).
 
+사이트 셀렉터가 마감 칸에서 `D-32` 를 읽는 경우도 같은 셈을 쓴다 (`settle_counted`). 규칙의
+`date_parse` 는 `D-32` 를 읽지 못해 그 공고의 정규화가 통째로 멈추므로, 규칙을 태우기 전에 날짜로
+바꾼다. 날짜가 함께 적혀 있으면(`2026.10.31 (D-32)`) 남은 날 글자만 뗀다.
+
 마감일에 시각이 없으면 그날 23:59:59 다 — 시작일은 00:00 이다. 사이트 규칙과 같은 기준이다
 (`app/normalize/engine.py` 의 `_DAY_BOUNDARY`). `18시`, `오후 6시` 도 시각으로 읽는다.
 """
@@ -38,6 +42,11 @@ _TIME = re.compile(
     r"(?::\s*(?P<minute>\d{2})|시(?:\s*(?P<minutes>\d{1,2})\s*분)?)",
     re.IGNORECASE,
 )
+# 날짜 옆에 붙은 남은 날 글자. 괄호째 뗀다
+_COUNTED_WORDS = re.compile(
+    r"\(?\s*(?:(?<![A-Za-z])D\s*-\s*(?:\d{1,3}(?!\d)|day)|(?:오늘|금일|내일)\s*마감)\s*\)?",
+    re.IGNORECASE,
+)
 _HALF_YEAR = timedelta(days=183)
 _END_OF_DAY = time(23, 59, 59)
 
@@ -59,6 +68,20 @@ def read(text: str, collected_on: date, *, end: bool = False) -> str | None:
     if clock is None:
         clock = _END_OF_DAY if end else time()
     return datetime.combine(day, clock).strftime(OUTPUT_FORMAT)
+
+
+def settle_counted(text: str, collected_on: date) -> str:
+    """사이트에서 읽은 마감 글자의 `D-32`·`오늘 마감` 을 규칙이 읽을 수 있게 바꾼다.
+
+    남은 날 글자가 없으면 그대로다. 날짜가 함께 있으면 남은 날 글자만 떼고, 날짜가 없으면 수집한
+    날에서 센 날짜(`2026-10-19`)로 바꾼다. 그 뒤는 사이트 규칙이 읽는다.
+    """
+    if _D_DAY.search(text) is None and _TODAY.search(text) is None:
+        return text
+    if _date(text, collected_on) is not None:
+        return _COUNTED_WORDS.sub(" ", text).strip()
+    counted = _counted(text, collected_on)
+    return text if counted is None else counted.isoformat()
 
 
 def _date(text: str, collected_on: date) -> tuple[date, int] | None:
