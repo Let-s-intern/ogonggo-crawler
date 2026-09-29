@@ -1,6 +1,6 @@
 {# 사이트 하나의 오른쪽 패널 (`app/api/ui_sites.py` 의 `site_panel_fragment`).
 
-   위에서부터 문제(있을 때) → 주소 → 조작과 설정(워크플로우 카드 그대로) → 고치기 → 최근 수집 순이다.
+   위에서부터 문제(있을 때) → 주소 → 로고 → 조작과 설정(워크플로우 카드 그대로) → 고치기 → 최근 수집 순이다.
    고치기는 시험 수집 → AI 로 고치기(단서) → 고친 셀렉터 저장 → 다시 실행이고, 그 조각은 시험 실행
    화면과 같다 (`fragments/test_result.html`, `fragments/test_repair.html`) #}
 {% from "macros.html" import notice_box, wait %}
@@ -52,6 +52,31 @@
       <p class="text-xs text-slate-500">예시 공고 주소는 목록에서 공고 상세로 들어가는 길을 AI가 찾을 때 씁니다</p>
       {% if url_error %}<p class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">{{ url_error }}</p>{% elif url_message %}{{ notice_box(url_message) }}{% endif %}
       <button type="submit" class="mt-0">주소 저장</button>
+    </form>
+
+    {# 회사 로고. 사이트 추가 창과 같은 길로 올린다 (`app/api/ui_companies.py` 의 `save_logo_file`) #}
+    <form class="space-y-2 rounded-md border border-slate-200 p-3 text-sm" hx-post="/ui/sites/{{ item.id }}/logo"
+          hx-target="#app-panel-body" hx-swap="innerHTML" hx-encoding="multipart/form-data" hx-disabled-elt="find button">
+      <h4 class="mb-0 mt-0 text-sm font-semibold text-slate-900">회사 로고{% if company %} <span class="font-normal text-slate-500">· {{ company }}</span>{% endif %}</h4>
+      <div class="flex items-center gap-3">
+        {% if logo_url %}
+        <img src="{{ logo_url }}" alt="{{ company }} 로고" class="h-12 w-12 shrink-0 rounded border border-slate-200 bg-white object-contain">
+        {% else %}
+        <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded border border-dashed border-slate-300 text-xs text-slate-400">없음</span>
+        {% endif %}
+        <p class="my-0 text-xs text-slate-500">{% if logo_url %}이 로고가 이 회사 공고 전부에 붙습니다{% else %}등록한 로고가 없어 공고마다 사이트 아이콘을 씁니다{% endif %}</p>
+      </div>
+      {% if not company %}
+      <p class="text-xs text-slate-500">이 사이트에 회사 이름이 없어 로고를 붙일 곳이 없어요. <a href="/crawlers" class="underline">크롤러 직접 편집</a>에서 회사 이름을 먼저 넣어 주세요</p>
+      {% elif storage_ready %}
+      <label for="site-logo" class="block">새 로고 파일</label>
+      <input id="site-logo" name="logo" type="file" required accept="{{ accept_attr }}" class="mt-0 w-full text-sm">
+      <p class="text-xs text-slate-500">{{ accepted }}, {{ max_label }}까지. 올리면 앞으로 수집하는 공고부터 이 로고로 나가고, 이미 모은 공고도 함께 바뀝니다</p>
+      {% else %}
+      <p class="text-xs text-slate-500">로고를 올리려면 <a href="/settings/storage" class="underline">설정 › 파일 저장소</a>를 먼저 채워 주세요</p>
+      {% endif %}
+      {% if logo_error %}<p class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">{{ logo_error }}</p>{% elif logo_message %}{{ notice_box(logo_message) }}{% endif %}
+      {% if company and storage_ready %}<button type="submit" class="mt-0">로고 올리기</button>{% endif %}
     </form>
 
     {% include "fragments/workflow_card.html" %}

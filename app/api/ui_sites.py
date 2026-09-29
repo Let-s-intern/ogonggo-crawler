@@ -20,6 +20,13 @@
 하나를 열어 그 주소를 주면, 목록 주소와 그 주소로 셀렉터를 다시 만든다 — 등록할 때 상세 URL 을
 넣는 것과 같은 생성 경로다(`app/api/crawlers.py` 의 `get_generator`). 만든 셀렉터는 저장하지 않고
 편집기에 올린다. 시험해 보고 저장하는 것은 운영자다 (`.claude/rules/llm.md` 의 "모델은 제안자").
+
+## 로고
+
+패널에서도 회사 로고 파일을 올린다 (2026-09-29 결정). 사이트 추가 창과 같은 길이다
+(`app/api/ui_companies.py` 의 `save_logo_file`). 로고는 크롤러의 회사 이름
+(`crawlers.default_company`) 행에 적고, 그 이름은 이 사이트 공고의 모회사로 들어가므로 앞으로
+수집하는 공고는 이 로고로 나간다. 이미 쌓인 공고도 다시 정규화해 로고를 바꾼다.
 """
 
 from __future__ import annotations
@@ -29,15 +36,19 @@ import logging
 import sqlite3
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
+from app import companies
 from app.api import crawlers, site_adds, workflows
 from app.api.ui import render
+from app.api.ui_companies import save_logo_file
 from app.api.ui_crawlers import error_detail
 from app.api.ui_tests import repair_panel
 from app.api.ui_workflows import TRIGGER_WORDS, UNKNOWN_TRIGGER, CardView, _last_run, _view
 from app.scheduler import WorkflowScheduler
+from app.storage import s3
+from app.storage import settings as store
 
 logger = logging.getLogger(__name__)
 
@@ -145,10 +156,14 @@ def _panel(
     *,
     message: str = "",
     error: str = "",
+    logo_message: str = "",
+    logo_error: str = "",
 ) -> HTMLResponse:
     row = conn.execute(
-        "SELECT detail_url FROM crawlers WHERE id = ?", (card.item.crawler_id,)
+        "SELECT detail_url, default_company FROM crawlers WHERE id = ?", (card.item.crawler_id,)
     ).fetchone()
+    company = str(row["default_company"] or "").strip() if row else ""
+    saved = companies.read(conn, company) if company else None
     return render(
         request,
         "fragments/site_panel.html",
@@ -159,6 +174,14 @@ def _panel(
         detail_url=str(row["detail_url"] or "") if row else "",
         url_message=message,
         url_error=error,
+        company=company,
+        logo_url=saved.logo_url if saved else None,
+        logo_message=logo_message,
+        logo_error=logo_error,
+        storage_ready=store.read_config(conn).configured,
+        accept_attr=s3.ACCEPT_ATTR,
+        accepted=s3.ACCEPTED,
+        max_label=s3.MAX_IMAGE_LABEL,
     )
 
 
@@ -204,6 +227,52 @@ def urls_fragment(
     logger.info("사이트 %s: 주소를 고쳤다 list=%s detail=%s", workflow_id, list_url, detail_url)
     card = next(card for card in _cards(conn, scheduler) if card.item.id == workflow_id)
     return _panel(request, conn, card, workflow_id, message="주소를 저장했어요")
+
+
+@router.post("/ui/sites/{workflow_id}/logo", response_class=HTMLResponse)
+def logo_fragment(
+    request: Request,
+    workflow_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(workflows.get_connection)],
+    scheduler: Annotated[WorkflowScheduler, Depends(workflows.get_workflow_scheduler)],
+    logo: Annotated[UploadFile | None, File()] = None,
+) -> HTMLResponse:
+    """이 사이트 회사의 로고 파일을 올린다. 다음 수집부터 이 사이트 공고의 로고가 된다."""
+    card = next((card for card in _cards(conn, scheduler) if card.item.id == workflow_id), None)
+    if card is None:
+        return render(request, "fragments/site_panel.html", card=None, workflow_id=workflow_id)
+    row = conn.execute(
+        "SELECT default_company FROM crawlers WHERE id = ?", (card.item.crawler_id,)
+    ).fetchone()
+    company = str(row["default_company"] or "").strip() if row else ""
+    if not company:
+        return _panel(
+            request,
+            conn,
+            card,
+            workflow_id,
+            logo_error="이 사이트에 회사 이름이 없어 로고를 붙일 곳이 없어요",
+        )
+    try:
+        public_url = save_logo_file(conn, company, logo)
+    except s3.StorageError as exc:
+        logger.info("사이트 %s: 로고를 못 올렸다: %s / %s", workflow_id, exc.reason, exc.message)
+        return _panel(
+            request,
+            conn,
+            card,
+            workflow_id,
+            logo_error=f"로고를 올리지 못했어요. 다시 골라 주세요: {exc.message}",
+        )
+    if not public_url:
+        return _panel(request, conn, card, workflow_id, logo_error="올릴 로고 파일을 골라 주세요")
+    return _panel(
+        request,
+        conn,
+        card,
+        workflow_id,
+        logo_message="로고를 바꿨어요. 이 회사 공고는 이제 이 로고로 나갑니다",
+    )
 
 
 @router.post("/ui/sites/{workflow_id}/detail-url", response_class=HTMLResponse)

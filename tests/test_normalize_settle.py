@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 from app.normalize.engine import (
@@ -142,3 +144,29 @@ def test_칸_하나는_그_칸의_규칙만_태운다() -> None:
     assert normalize_value("recruitment_end_at", "", rules) is None
     with pytest.raises(NormalizeError):
         normalize_fields({"recruitment_end_at": value}, rules)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("D-32", "2026-10-19 23:59:59"),
+        ("D-day", "2026-09-17 23:59:59"),
+        ("오늘 마감", "2026-09-17 23:59:59"),
+        # 날짜가 함께 있으면 남은 날 글자만 뗀다
+        ("2026.10.31 (D-44)", "2026-10-31 23:59:59"),
+        ("2026.09.01 ~ 2026.10.31 D-44", "2026-10-31 23:59:59"),
+    ],
+)
+def test_셀렉터가_읽은_D_day_도_수집한_날에서_세어_마감으로_읽는다(
+    value: str, expected: str
+) -> None:
+    collected = date(2026, 9, 17)
+    # 시드의 마감 규칙처럼 `%Y-%m-%d` 를 읽는다 (`seeds/normalization-rules.json`)
+    rules = [
+        PERIOD,
+        build_rule("recruitment_end_at", "date_parse", {"formats": ["%Y-%m-%d", "%Y.%m.%d"]}),
+    ]
+    fields = normalize_fields({"recruitment_end_at": value}, rules, collected_on=collected)
+
+    assert fields["recruitment_end_at"] == expected
+    assert normalize_value("recruitment_end_at", value, rules, collected) == expected

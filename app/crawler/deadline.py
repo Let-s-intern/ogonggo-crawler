@@ -48,19 +48,23 @@ def is_closed(value: str, rules: Sequence[Rule], on: date | None = None) -> bool
 
     `on` 은 시험이 오늘을 고정하려고 주는 값이다. 주지 않으면 표시 시간대의 오늘이다.
     """
-    parsed = _as_date(value, rules)
+    day = on or today()
+    parsed = _as_date(value, rules, day)
     if parsed is None:
         return False
-    return parsed < (on or today())
+    return parsed < day
 
 
-def _as_date(value: str, rules: Sequence[Rule]) -> date | None:
-    """정규화 규칙을 태운 뒤 날짜로 읽는다. 어느 단계에서든 읽지 못하면 None 이다."""
+def _as_date(value: str, rules: Sequence[Rule], day: date) -> date | None:
+    """정규화 규칙을 태운 뒤 날짜로 읽는다. 어느 단계에서든 읽지 못하면 None 이다.
+
+    `D-32` 는 `day` 에서 센다 (`app/normalize/loose_date.py`).
+    """
     if not value.strip():
         return None
 
     try:
-        normalized = normalize_value(DEADLINE, value, rules)
+        normalized = normalize_value(DEADLINE, value, rules, day)
     except NormalizeError:
         # 규칙이 어느 형식으로도 읽지 못한 값이다. 사이트가 표기를 바꿨을 수 있으므로
         # 버리지 않고 진행 중으로 둔다

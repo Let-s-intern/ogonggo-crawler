@@ -358,6 +358,32 @@ def upload_logo_fragment(
     return _row(request, conn, saved, message=attach_note(saved, cleared=False) + refreshed)
 
 
+def save_logo_file(conn: sqlite3.Connection, company: str, logo: UploadFile | None) -> str:
+    """고른 로고 파일을 올리고 그 회사 행에 적는다. 파일을 고르지 않았으면 아무것도 하지 않는다.
+
+    사이트 추가 창과 사이트 패널이 쓴다 (`app/api/ui_site_add.py`, `app/api/ui_sites.py`). 회사
+    행이 없으면 만든다 — 사이트를 막 넣어 아직 정규화한 공고가 없어도 로고는 먼저 받는다.
+    올린 뒤 그 회사 공고를 다시 정규화한다 (`refresh_postings`). 돌려주는 값은 공개 주소이고,
+    파일이 없으면 빈 문자열이다.
+
+    실패하면 `s3.StorageError` 를 그대로 올린다. 사유 문장이 곧 창에 적을 말이다.
+    """
+    if logo is None or not logo.filename:
+        return ""
+    # 상한보다 한 바이트만 더 읽는다. 다 읽고 나서 재면 이미 다 쓴 뒤다
+    data = logo.file.read(s3.MAX_IMAGE_BYTES + 1)
+    if not data:
+        return ""
+    public_url = s3.upload_image(
+        store.read_config(conn), data=data, name=f"{UPLOAD_PREFIX}{uuid4().hex}"
+    )
+    companies.ensure(conn, company)
+    companies.set_logo_url(conn, company, public_url)
+    refresh_postings(conn, company)
+    logger.info("%s 로고를 올렸다 -> %s", company, public_url)
+    return public_url
+
+
 # 모회사를 여기서 사람이 고치는 라우트(`PUT /ui/companies/parent`)는 2026-08-29 에 뺐다.
 # 크롤러 등록 화면이 모회사 이름을 필수로 받게 되면서(`app/api/crawlers.py`) 정규화가 모회사를
 # 못 정해 사람이 바로잡을 일이 없어졌다 — 고칠 곳은 크롤러 등록 화면이지 이 화면이 아니다.

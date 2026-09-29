@@ -36,15 +36,14 @@ import logging
 import sqlite3
 from collections.abc import Callable, Coroutine
 from typing import Annotated, Any
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
-from app import companies, db
+from app import db
 from app.api import crawlers, site_adds, workflows
 from app.api.ui import render
-from app.api.ui_companies import UPLOAD_PREFIX, refresh_postings
+from app.api.ui_companies import save_logo_file
 from app.api.ui_crawlers import error_detail
 from app.api.ui_sites import PROBLEMS, UNKNOWN_PROBLEM
 from app.crawler.fetcher import FetchPolicy
@@ -103,27 +102,6 @@ def site_add_form(
 ) -> HTMLResponse:
     """사이트 추가 창의 첫 화면. 목록 주소와 회사 이름, 수집 주기만 받는다."""
     return _form(request, conn, step="form", list_url="", company="", interval=DEFAULT_INTERVAL)
-
-
-def _save_logo(conn: sqlite3.Connection, company: str, logo: UploadFile | None) -> str:
-    """고른 로고 파일을 올리고 그 회사 행에 적는다. 파일을 고르지 않았으면 아무것도 하지 않는다.
-
-    실패하면 `s3.StorageError` 를 그대로 올린다. 사유 문장이 곧 창에 적을 말이다.
-    """
-    if logo is None or not logo.filename:
-        return ""
-    # 상한보다 한 바이트만 더 읽는다. 다 읽고 나서 재면 이미 다 쓴 뒤다
-    data = logo.file.read(s3.MAX_IMAGE_BYTES + 1)
-    if not data:
-        return ""
-    public_url = s3.upload_image(
-        store.read_config(conn), data=data, name=f"{UPLOAD_PREFIX}{uuid4().hex}"
-    )
-    companies.ensure(conn, company)
-    companies.set_logo_url(conn, company, public_url)
-    refresh_postings(conn, company)
-    logger.info("사이트 추가: %s 로고를 올렸다 -> %s", company, public_url)
-    return public_url
 
 
 def _drop_draft(conn: sqlite3.Connection, crawler_id: int) -> None:
@@ -358,7 +336,7 @@ async def site_add_try(
             **kept,
         )
     try:
-        _save_logo(conn, company, logo)
+        save_logo_file(conn, company, logo)
     except s3.StorageError as exc:
         logger.info("사이트 추가: 로고를 올리지 못했다: %s / %s", exc.reason, exc.message)
         return _form(
