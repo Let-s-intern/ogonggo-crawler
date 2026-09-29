@@ -33,6 +33,9 @@ LIST_PATH = "/sesac/course/offline/courseList.do"
 DETAIL_PATH = "/sesac/course/offline/courseDetail.do"
 # 한 쪽에 12개가 나온다. 2026-09-22 에 192건, 16쪽이다. 끝없이 넘기지 않게 상한을 둔다
 MAX_PAGES = 30
+# 캠퍼스마다 운영 회사가 `새싹 ○○캠퍼스` 이고 모회사가 이것이다. 회사 화면에서 이 이름에 로고를
+# 하나 올리면 모든 캠퍼스 과정에 붙는다 (2026-09-29 결정, LC-3389)
+PARENT_COMPANY = "새싹(SeSAC)"
 # 새싹 모집 상태 중 아직 신청할 수 있는 것. 나머지(운영중·과정종료·운영대기)는 모집 마감이다
 OPEN_STATUSES = frozenset({"모집중", "모집예정"})
 
@@ -85,6 +88,12 @@ class Course:
 
 def list_url(page: int = 1) -> str:
     return f"{BASE_URL}{LIST_PATH}?cPage={page}"
+
+
+def company_name(campus: str) -> str:
+    """과정을 운영하는 회사명. 캠퍼스를 모르면 모회사다."""
+    cleaned = campus.strip()
+    return f"새싹 {cleaned}캠퍼스" if cleaned else PARENT_COMPANY
 
 
 def spring_status(label: str) -> str:

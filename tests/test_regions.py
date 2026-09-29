@@ -167,7 +167,7 @@ def test_목록_밖이거나_시도와_맞지_않는_값은_null_로_보낸다()
 def _at_0045(tmp_path: pathlib.Path) -> sqlite3.Connection:
     connection = db.connect(tmp_path / "region.db")
     db.migrate_up(connection)
-    db.migrate_down(connection, steps=1)
+    _down_to_0045(connection)
     connection.execute("INSERT INTO crawlers (id, name, list_url) VALUES (1, 'x', 'https://x')")
     connection.execute("INSERT INTO workflows (id, crawler_id, name) VALUES (1, 1, 'x')")
     for seq, region in enumerate(("경기, 울산", "광주", "울산광역시 동구", None), start=1):
@@ -192,6 +192,12 @@ def _at_0045(tmp_path: pathlib.Path) -> sqlite3.Connection:
     return connection
 
 
+def _down_to_0045(connection: sqlite3.Connection) -> None:
+    """0046 과 그 뒤에 더한 마이그레이션을 되돌린다."""
+    later = [version for version in db.applied_versions(connection) if version >= "0046"]
+    db.migrate_down(connection, steps=len(later))
+
+
 def test_쌓인_근무_지역은_첫_지역의_enum_이름이_된다(tmp_path: pathlib.Path) -> None:
     """`경기, 울산` 은 `GYEONGGI`, 광주는 `JEONNAM_GWANGJU`. 옛 원문 글자는 옮길 곳이 없다."""
     connection = _at_0045(tmp_path)
@@ -214,7 +220,7 @@ def test_되돌리면_한글_이름으로_돌아가고_시군구는_지워진다
         " VALUES (3, 'sub_region', 'SEOUL_JUNG_GU')"
     )
 
-    db.migrate_down(connection, steps=1)
+    _down_to_0045(connection)
 
     rows = connection.execute("SELECT region FROM normalized_jobs ORDER BY raw_job_id")
     assert [row["region"] for row in rows] == ["경기", "광주", None, None]

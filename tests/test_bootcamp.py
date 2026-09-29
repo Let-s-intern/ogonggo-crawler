@@ -14,6 +14,8 @@
 | 상태와 상관없이 모으고, 끝난 과정은 모집 마감으로 보낸다 | 끝난 과정이 모집중으로 보인다 |
 | 모은 과정의 상태가 바뀌면 상세 없이 다시 보낸다 | 개강한 과정이 모집중으로 남는다 |
 | 한 번에 정리하는 수에 상한을 두고 모집중부터 채운다 | 첫 수집이 한 시간 넘게 돈다 |
+| 캠퍼스를 새싹 아래 회사로 두고 로고를 대표 이미지와 따로 보낸다 | 로고가 빈다 |
+| 보낸 뒤 로고를 올리면 같은 id 로 다시 보낸다 | 먼저 보낸 과정엔 로고가 없다 |
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app import db
+from app import companies, db
 from app.api import settings as settings_api
 from app.bootcamp import deliver, schedule, sesac, store
 from app.bootcamp import settings as bootcamp_settings
@@ -463,9 +465,9 @@ async def test_한_번에_정리하는_수에_상한을_두고_모집중부터_�
     assert any("8건은 다음 묶음에서" in note for note in first.notes)
     row = conn.execute("SELECT * FROM bootcamps WHERE external_id = '1202'").fetchone()
     assert row["status_label"] == "운영중"
-    assert deliver.payload(row)["status"] == "CLOSED"
+    assert deliver.payload(conn, row)["status"] == "CLOSED"
     recruiting = conn.execute("SELECT * FROM bootcamps WHERE external_id = '1197'").fetchone()
-    assert deliver.payload(recruiting)["status"] == "RECRUITING"
+    assert deliver.payload(conn, recruiting)["status"] == "RECRUITING"
 
 
 class AnyDetailFetcher(SesacFetcher):
@@ -547,6 +549,55 @@ async def test_모집_상태가_바뀌면_상세_없이_같은_id_로_다시_보
         ("PUT", "/api/v1/internal/bootcamps/101")
     ]
     assert json.loads(seen[0].content)["status"] == "CLOSED"
+    assert deliver.pending(conn) == []
+
+
+async def test_캠퍼스를_모회사_새싹_아래_회사로_두고_로고_없이_보낸다(
+    conn: sqlite3.Connection,
+) -> None:
+    await run_sesac(conn, fetcher=SesacFetcher(), filler=FakeFiller(), settings=SETTINGS)
+    seen = _spring(lambda _: httpx.Response(201, json={"data": {"bootcampId": 1}}))
+
+    await deliver.deliver_pending(conn, settings=SETTINGS)
+
+    campus = companies.read(conn, "새싹 성동캠퍼스")
+    assert campus is not None and campus.parent_name == sesac.PARENT_COMPANY
+    assert companies.read(conn, sesac.PARENT_COMPANY) is not None
+    body = json.loads(seen[0].content)
+    assert body["logoUrl"] is None
+    assert body["representativeImageUrl"].startswith("https://sesac.seoul.kr/uploadData/")
+
+
+async def test_로고를_올리면_이미_보낸_과정도_같은_id_로_다시_보낸다(
+    conn: sqlite3.Connection,
+) -> None:
+    await run_sesac(conn, fetcher=SesacFetcher(), filler=FakeFiller(), settings=SETTINGS)
+    ids = iter(range(101, 200))
+    seen = _spring(
+        lambda request: httpx.Response(
+            201 if request.method == "POST" else 200,
+            json={"data": {"bootcampId": next(ids)} if request.method == "POST" else None},
+        )
+    )
+    await deliver.deliver_pending(conn, settings=SETTINGS)
+    seen.clear()
+    parent_logo = "https://cdn.example.com/logos/sesac.png"
+    campus_logo = "https://cdn.example.com/logos/seongdong.png"
+    companies.set_logo_url(conn, sesac.PARENT_COMPANY, parent_logo)
+    companies.set_logo_url(conn, "새싹 성동캠퍼스", campus_logo)
+
+    resent = await deliver.deliver_pending(conn, settings=SETTINGS)
+
+    assert resent.sent == 3
+    assert {request.method for request in seen} == {"PUT"}
+    logos = {
+        json.loads(request.content)["companyName"]: json.loads(request.content)["logoUrl"]
+        for request in seen
+    }
+    assert logos["새싹 성동캠퍼스"] == campus_logo
+    assert {logo for name, logo in logos.items() if name != "새싹 성동캠퍼스"} <= {parent_logo}
+    body = json.loads(seen[0].content)
+    assert body["representativeImageUrl"] != body["logoUrl"]
     assert deliver.pending(conn) == []
 
 

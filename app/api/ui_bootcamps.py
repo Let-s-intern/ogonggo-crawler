@@ -51,7 +51,9 @@ def _panel(
         ).fetchall(),
         rows=rows,
         payloads={
-            int(row["id"]): deliver.payload(row) for row in rows if row["filled_hash"] is not None
+            int(row["id"]): deliver.payload(conn, row)
+            for row in rows
+            if row["filled_hash"] is not None
         },
         pending=deliver.pending_count(conn),
         running=_busy(conn),

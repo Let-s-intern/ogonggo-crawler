@@ -181,6 +181,7 @@
         <dt class="text-slate-500">정원</dt><dd>{{ payload.capacity if payload.capacity is not none else blank() }}</dd>
         <dt class="text-slate-500">담당자 이메일</dt><dd>{{ payload.managerEmail or blank() }}</dd>
         <dt class="text-slate-500">대표 이미지</dt><dd class="truncate"><a href="{{ payload.representativeImageUrl }}" target="_blank" rel="noopener">{{ payload.representativeImageUrl }}</a></dd>
+        <dt class="text-slate-500">로고</dt><dd class="truncate">{% if payload.logoUrl %}<a href="{{ payload.logoUrl }}" target="_blank" rel="noopener">{{ payload.logoUrl }}</a>{% else %}{{ blank() }}{% endif %}</dd>
       </dl>
       <p class="mt-3 text-xs text-slate-500">상세 내용</p>
       <div class="whitespace-pre-line rounded border border-slate-200 p-3 text-sm">{{ payload.content }}</div>
