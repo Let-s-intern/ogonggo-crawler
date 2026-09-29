@@ -1,0 +1,1340 @@
+{
+  "note": "오공고(ogonggo-server) `JobField`·`JobRole` enum 을 옮겼다 (LC-3385, 2026-09-29). 크롤러는 한글 이름으로 저장하고 보낼 때 이 파일로 enum 이름을 찾는다. 오공고 enum 이 바뀌면 이 파일을 다시 뽑는다 (`ogonggo-core/.../job/domain/JobRole.kt`).",
+  "source": "ogonggo-server 8fb7500",
+  "jobFields": [
+    {
+      "name": "IT_DEVELOPMENT",
+      "label": "IT·개발",
+      "roles": [
+        {
+          "name": "IT_BACKEND",
+          "label": "서버·백엔드"
+        },
+        {
+          "name": "IT_FRONTEND",
+          "label": "프론트엔드"
+        },
+        {
+          "name": "IT_FULLSTACK",
+          "label": "웹풀스택"
+        },
+        {
+          "name": "IT_ANDROID",
+          "label": "안드로이드"
+        },
+        {
+          "name": "IT_IOS",
+          "label": "iOS"
+        },
+        {
+          "name": "IT_CROSS_PLATFORM",
+          "label": "크로스플랫폼"
+        },
+        {
+          "name": "IT_DBA",
+          "label": "DBA"
+        },
+        {
+          "name": "IT_DEVOPS_SRE",
+          "label": "DevOps·SRE"
+        },
+        {
+          "name": "IT_SYSTEM_NETWORK",
+          "label": "시스템·네트워크"
+        },
+        {
+          "name": "IT_SYSTEM_SOFTWARE",
+          "label": "시스템소프트웨어"
+        },
+        {
+          "name": "IT_SOFTWARE_ENGINEER",
+          "label": "소프트웨어엔지니어"
+        },
+        {
+          "name": "IT_SECURITY",
+          "label": "정보보호·보안"
+        },
+        {
+          "name": "IT_EMBEDDED",
+          "label": "임베디드소프트웨어"
+        },
+        {
+          "name": "IT_ROBOTICS_SOFTWARE",
+          "label": "로봇SW"
+        },
+        {
+          "name": "IT_QA",
+          "label": "QA·테스트"
+        },
+        {
+          "name": "IT_IOT",
+          "label": "사물인터넷·IoT"
+        },
+        {
+          "name": "IT_APPLICATION",
+          "label": "응용프로그램"
+        },
+        {
+          "name": "IT_BLOCKCHAIN",
+          "label": "블록체인"
+        },
+        {
+          "name": "IT_DEV_PM",
+          "label": "개발PM"
+        },
+        {
+          "name": "IT_WEB_PUBLISHING",
+          "label": "웹퍼블리싱"
+        },
+        {
+          "name": "D",
+          "label": "VR·AR·3D"
+        },
+        {
+          "name": "IT_ERP_SAP",
+          "label": "ERP·SAP"
+        },
+        {
+          "name": "IT_GRAPHICS",
+          "label": "그래픽스"
+        },
+        {
+          "name": "IT_HARDWARE_ENGINEER",
+          "label": "하드웨어엔지니어"
+        },
+        {
+          "name": "IT_ETC",
+          "label": "기타IT·개발"
+        }
+      ]
+    },
+    {
+      "name": "AI_DATA",
+      "label": "AI·데이터",
+      "roles": [
+        {
+          "name": "AI_DATA_ANALYST",
+          "label": "데이터분석가"
+        },
+        {
+          "name": "AI_DATA_SCIENTIST",
+          "label": "데이터사이언티스트"
+        },
+        {
+          "name": "AI_DATA_ENGINEER",
+          "label": "데이터엔지니어"
+        },
+        {
+          "name": "AI_ML_ENGINEER",
+          "label": "머신러닝엔지니어"
+        },
+        {
+          "name": "AI_MULTIMODAL_ENGINEER",
+          "label": "멀티모달엔지니어"
+        },
+        {
+          "name": "AI_GENERATIVE_AI",
+          "label": "생성형AI"
+        },
+        {
+          "name": "AI_VISION_SPEECH",
+          "label": "영상·음성AI"
+        },
+        {
+          "name": "AI_AUTONOMOUS_DRIVING",
+          "label": "자율주행"
+        },
+        {
+          "name": "AI_COMPUTER_VISION",
+          "label": "컴퓨터비전"
+        },
+        {
+          "name": "AI_BUSINESS",
+          "label": "AI비즈니스"
+        },
+        {
+          "name": "AI_SERVICE_PLANNING",
+          "label": "AI서비스기획"
+        },
+        {
+          "name": "AI_RESEARCH",
+          "label": "AI리서치"
+        },
+        {
+          "name": "AI_NLP",
+          "label": "NLP"
+        },
+        {
+          "name": "AI_LLM",
+          "label": "LLM"
+        },
+        {
+          "name": "AI_MLOPS",
+          "label": "MLOps"
+        },
+        {
+          "name": "AI_RAG",
+          "label": "RAG"
+        },
+        {
+          "name": "AI_ETC",
+          "label": "기타AI·데이터"
+        }
+      ]
+    },
+    {
+      "name": "GAME",
+      "label": "게임",
+      "roles": [
+        {
+          "name": "GAME_PLANNING_PM",
+          "label": "게임기획·PM"
+        },
+        {
+          "name": "GAME_OPERATION",
+          "label": "게임운영"
+        },
+        {
+          "name": "GAME_QA",
+          "label": "게임QA"
+        },
+        {
+          "name": "GAME_CLIENT",
+          "label": "게임개발·클라이언트"
+        },
+        {
+          "name": "GAME_SERVER",
+          "label": "게임개발·서버"
+        },
+        {
+          "name": "GAME_MOBILE",
+          "label": "게임개발·모바일"
+        },
+        {
+          "name": "GAME_TECHNICAL_ARTIST",
+          "label": "테크니컬아티스트"
+        },
+        {
+          "name": "GAME_ART",
+          "label": "게임아트"
+        },
+        {
+          "name": "D",
+          "label": "게임3D모델링"
+        },
+        {
+          "name": "GAME_ANIMATION",
+          "label": "게임애니메이션"
+        },
+        {
+          "name": "GAME_EFFECT_FX",
+          "label": "게임이펙트·FX"
+        },
+        {
+          "name": "GAME_UI",
+          "label": "게임인터페이스"
+        },
+        {
+          "name": "GAME_DIRECTING_VIDEO",
+          "label": "게임연출·영상"
+        },
+        {
+          "name": "GAME_SOUND",
+          "label": "게임사운드"
+        },
+        {
+          "name": "GAME_ETC",
+          "label": "기타게임"
+        }
+      ]
+    },
+    {
+      "name": "DESIGN",
+      "label": "디자인",
+      "roles": [
+        {
+          "name": "DESIGN_WEB",
+          "label": "웹디자인"
+        },
+        {
+          "name": "DESIGN_UX_UI_PRODUCT",
+          "label": "UXUI·프로덕트"
+        },
+        {
+          "name": "DESIGN_RESEARCH",
+          "label": "디자인리서치"
+        },
+        {
+          "name": "DESIGN_GRAPHIC_VISUAL",
+          "label": "그래픽·시각"
+        },
+        {
+          "name": "DESIGN_ILLUSTRATOR",
+          "label": "일러스트레이터"
+        },
+        {
+          "name": "DESIGN_BRANDING",
+          "label": "브랜딩·BI·BX"
+        },
+        {
+          "name": "DESIGN_SPACE_INTERIOR_VMD",
+          "label": "공간·실내·VMD"
+        },
+        {
+          "name": "DESIGN_INDUSTRIAL_PRODUCT",
+          "label": "산업·제품"
+        },
+        {
+          "name": "DESIGN_PACKAGE",
+          "label": "패키지"
+        },
+        {
+          "name": "DESIGN_ADVERTISING_CONTENT",
+          "label": "광고·콘텐츠"
+        },
+        {
+          "name": "DESIGN_VIDEO_MOTION",
+          "label": "영상·모션"
+        },
+        {
+          "name": "D",
+          "label": "3D·VFX"
+        },
+        {
+          "name": "DESIGN_PUBLISHING_EDITORIAL",
+          "label": "출판·편집"
+        },
+        {
+          "name": "DESIGN_ARCHITECTURE_LANDSCAPE",
+          "label": "건축·공공·조경디자인"
+        },
+        {
+          "name": "DESIGN_FASHION_TEXTILE",
+          "label": "패션·텍스타일"
+        },
+        {
+          "name": "DESIGN_ETC",
+          "label": "기타디자인"
+        }
+      ]
+    },
+    {
+      "name": "PLANNING_STRATEGY",
+      "label": "기획·전략",
+      "roles": [
+        {
+          "name": "PLANNING_PM_PO",
+          "label": "PM·PO"
+        },
+        {
+          "name": "PLANNING_SERVICE_PRODUCT_PLANNING",
+          "label": "서비스·상품기획"
+        },
+        {
+          "name": "PLANNING_BUSINESS_STRATEGY",
+          "label": "사업·전략기획"
+        },
+        {
+          "name": "PLANNING_CONSULTING",
+          "label": "컨설팅"
+        },
+        {
+          "name": "PLANNING_TECH_PLANNING",
+          "label": "기술기획"
+        },
+        {
+          "name": "PLANNING_BUSINESS_DEVELOPMENT",
+          "label": "사업개발·분석"
+        },
+        {
+          "name": "PLANNING_PROJECT_MANAGER",
+          "label": "프로젝트매니저"
+        },
+        {
+          "name": "PLANNING_OPERATIONS_MANAGEMENT",
+          "label": "운영관리·OM"
+        },
+        {
+          "name": "PLANNING_MANAGEMENT_SUPPORT",
+          "label": "경영지원"
+        },
+        {
+          "name": "PLANNING_ETC",
+          "label": "기타기획·전략·경영"
+        }
+      ]
+    },
+    {
+      "name": "MARKETING_ADVERTISING",
+      "label": "마케팅·광고",
+      "roles": [
+        {
+          "name": "MARKETING_STRATEGY",
+          "label": "마케팅기획·전략"
+        },
+        {
+          "name": "MARKETING_PERFORMANCE",
+          "label": "퍼포먼스마케팅"
+        },
+        {
+          "name": "MARKETING_CONTENT",
+          "label": "콘텐츠마케팅"
+        },
+        {
+          "name": "MARKETING_SNS",
+          "label": "SNS마케팅"
+        },
+        {
+          "name": "MARKETING_BRAND",
+          "label": "브랜드마케팅"
+        },
+        {
+          "name": "MARKETING_CRM",
+          "label": "CRM마케팅"
+        },
+        {
+          "name": "MARKETING_GLOBAL",
+          "label": "글로벌마케팅"
+        },
+        {
+          "name": "MARKETING_AD_PLANNING_AE",
+          "label": "광고기획·AE"
+        },
+        {
+          "name": "MARKETING_PR",
+          "label": "홍보·PR"
+        },
+        {
+          "name": "MARKETING_EXHIBITION_EVENT",
+          "label": "전시·행사마케팅"
+        },
+        {
+          "name": "MARKETING_ETC",
+          "label": "기타마케팅"
+        }
+      ]
+    },
+    {
+      "name": "MERCHANDISING",
+      "label": "상품기획·MD",
+      "roles": [
+        {
+          "name": "MD_PRODUCT_PLANNING",
+          "label": "상품기획"
+        },
+        {
+          "name": "MD_ONLINE",
+          "label": "온라인MD"
+        },
+        {
+          "name": "MD_FOOD",
+          "label": "식품MD"
+        },
+        {
+          "name": "MD_FASHION",
+          "label": "패션MD"
+        },
+        {
+          "name": "MD_BEAUTY",
+          "label": "뷰티MD"
+        },
+        {
+          "name": "MD_SALES",
+          "label": "영업MD"
+        },
+        {
+          "name": "MD_RETAIL",
+          "label": "리테일MD"
+        },
+        {
+          "name": "MD_ETC",
+          "label": "기타상품기획·MD"
+        }
+      ]
+    },
+    {
+      "name": "SALES",
+      "label": "영업",
+      "roles": [
+        {
+          "name": "C",
+          "label": "B2C영업"
+        },
+        {
+          "name": "B",
+          "label": "B2B영업"
+        },
+        {
+          "name": "SALES_GENERAL",
+          "label": "일반영업"
+        },
+        {
+          "name": "SALES_MANAGEMENT_SUPPORT",
+          "label": "영업관리·지원"
+        },
+        {
+          "name": "SALES_TECH_IT",
+          "label": "기술·IT영업"
+        },
+        {
+          "name": "SALES_FINANCE_INSURANCE",
+          "label": "금융·보험영업"
+        },
+        {
+          "name": "SALES_OVERSEAS",
+          "label": "해외영업"
+        },
+        {
+          "name": "SALES_PHARMA_MEDICAL",
+          "label": "제약·의료영업"
+        },
+        {
+          "name": "SALES_ETC",
+          "label": "기타영업"
+        }
+      ]
+    },
+    {
+      "name": "TRADE_LOGISTICS",
+      "label": "무역·물류",
+      "roles": [
+        {
+          "name": "TRADE_OVERSEAS_TRADING_SALES",
+          "label": "해외·상사영업"
+        },
+        {
+          "name": "TRADE_IMPORT_EXPORT",
+          "label": "수출입관리·사무"
+        },
+        {
+          "name": "TRADE_CUSTOMS_BROKER",
+          "label": "관세사"
+        },
+        {
+          "name": "TRADE_TRADE_FINANCE",
+          "label": "무역금융"
+        },
+        {
+          "name": "TRADE_FORWARDING",
+          "label": "포워딩"
+        },
+        {
+          "name": "TRADE_PURCHASING",
+          "label": "구매·조달"
+        },
+        {
+          "name": "TRADE_LOGISTICS_SCM",
+          "label": "물류·SCM"
+        },
+        {
+          "name": "TRADE_WAREHOUSE_PACKING",
+          "label": "입출고·포장"
+        },
+        {
+          "name": "TRADE_INVENTORY",
+          "label": "자재·재고관리"
+        },
+        {
+          "name": "TRADE_TRANSPORTATION",
+          "label": "운송"
+        },
+        {
+          "name": "TRADE_DISTRIBUTION",
+          "label": "유통관리"
+        },
+        {
+          "name": "TRADE_FACILITY_MANAGEMENT",
+          "label": "설비·시설관리"
+        },
+        {
+          "name": "TRADE_ETC",
+          "label": "기타무역·물류·유통"
+        }
+      ]
+    },
+    {
+      "name": "TRANSPORT_DELIVERY",
+      "label": "운송·배송",
+      "roles": [
+        {
+          "name": "TRANSPORT_DELIVERY",
+          "label": "배송·배달"
+        },
+        {
+          "name": "TRANSPORT_PASSENGER",
+          "label": "승객운송"
+        },
+        {
+          "name": "TRANSPORT_FREIGHT",
+          "label": "물류운송"
+        },
+        {
+          "name": "TRANSPORT_PROFESSIONAL_DRIVING",
+          "label": "전문운전"
+        },
+        {
+          "name": "TRANSPORT_DISPATCH",
+          "label": "배차관리"
+        },
+        {
+          "name": "TRANSPORT_ETC",
+          "label": "기타운전·운송"
+        }
+      ]
+    },
+    {
+      "name": "LEGAL",
+      "label": "법률·법무",
+      "roles": [
+        {
+          "name": "LEGAL_LAWYER",
+          "label": "변호사"
+        },
+        {
+          "name": "LEGAL_PATENT_ATTORNEY",
+          "label": "변리사"
+        },
+        {
+          "name": "LEGAL_LEGAL_AFFAIRS",
+          "label": "법무"
+        },
+        {
+          "name": "LEGAL_COMPLIANCE",
+          "label": "컴플라이언스"
+        },
+        {
+          "name": "LEGAL_INTERNAL_AUDIT",
+          "label": "내부감사"
+        },
+        {
+          "name": "LEGAL_ESG_ETHICS",
+          "label": "ESG·윤리"
+        },
+        {
+          "name": "LEGAL_PATENT_IP",
+          "label": "특허·IP"
+        },
+        {
+          "name": "LEGAL_ETC",
+          "label": "기타법률"
+        }
+      ]
+    },
+    {
+      "name": "HR_GENERAL_AFFAIRS",
+      "label": "HR·총무",
+      "roles": [
+        {
+          "name": "HR_PLANNING",
+          "label": "인사기획"
+        },
+        {
+          "name": "HR_COMPENSATION",
+          "label": "평가·보상"
+        },
+        {
+          "name": "HR_HRD_CULTURE",
+          "label": "HRD·조직문화"
+        },
+        {
+          "name": "HR_RECRUITER",
+          "label": "리크루터·헤드헌터"
+        },
+        {
+          "name": "HR_LABOR_RELATIONS",
+          "label": "노무관리"
+        },
+        {
+          "name": "HR_GENERAL_AFFAIRS_SECRETARY",
+          "label": "총무·비서"
+        },
+        {
+          "name": "HR_ETC",
+          "label": "기타HR·총무"
+        }
+      ]
+    },
+    {
+      "name": "ACCOUNTING_TAX_FINANCE",
+      "label": "회계·세무·재무",
+      "roles": [
+        {
+          "name": "ACCOUNTING_FINANCE",
+          "label": "재무"
+        },
+        {
+          "name": "ACCOUNTING_ACCOUNTING",
+          "label": "회계"
+        },
+        {
+          "name": "ACCOUNTING_TAX",
+          "label": "세무"
+        },
+        {
+          "name": "ACCOUNTING_IR_DISCLOSURE",
+          "label": "IR·공시"
+        },
+        {
+          "name": "ACCOUNTING_BOOKKEEPING",
+          "label": "경리·회계보조"
+        },
+        {
+          "name": "ACCOUNTING_ETC",
+          "label": "기타회계·재무·세무"
+        }
+      ]
+    },
+    {
+      "name": "SECURITIES_ASSET_MANAGEMENT",
+      "label": "증권·운용",
+      "roles": [
+        {
+          "name": "SECURITIES_TRADING",
+          "label": "운용·트레이딩"
+        },
+        {
+          "name": "SECURITIES_RISK_COMPLIANCE_REVIEW",
+          "label": "리스크·준법·심사"
+        },
+        {
+          "name": "SECURITIES_VC_PE",
+          "label": "VC·PE"
+        },
+        {
+          "name": "SECURITIES_INVESTMENT_BANKING",
+          "label": "증권IB"
+        },
+        {
+          "name": "SECURITIES_REAL_ESTATE_INFRA_FINANCE",
+          "label": "부동산·인프라금융"
+        },
+        {
+          "name": "SECURITIES_PB_WM",
+          "label": "PB·WM"
+        },
+        {
+          "name": "SECURITIES_MANAGEMENT_SUPPORT",
+          "label": "경영지원·관리"
+        },
+        {
+          "name": "SECURITIES_PRODUCT_DEVELOPMENT_SALES",
+          "label": "금융상품개발·영업"
+        },
+        {
+          "name": "SECURITIES_ETC",
+          "label": "기타증권·운용"
+        }
+      ]
+    },
+    {
+      "name": "BANKING_CARD_INSURANCE",
+      "label": "은행·카드·보험",
+      "roles": [
+        {
+          "name": "BANKING_BANK",
+          "label": "은행"
+        },
+        {
+          "name": "BANKING_CARD",
+          "label": "카드사"
+        },
+        {
+          "name": "BANKING_CAPITAL",
+          "label": "캐피탈"
+        },
+        {
+          "name": "BANKING_INSURANCE_PLANNER",
+          "label": "보험설계"
+        },
+        {
+          "name": "BANKING_ACTUARY",
+          "label": "계리"
+        },
+        {
+          "name": "BANKING_CLAIMS_ADJUSTER",
+          "label": "손해사정"
+        },
+        {
+          "name": "BANKING_UNDERWRITING",
+          "label": "언더라이팅·심사"
+        },
+        {
+          "name": "BANKING_CLAIMS",
+          "label": "청구·보상"
+        },
+        {
+          "name": "BANKING_INSURANCE_PRODUCT",
+          "label": "보험상품개발"
+        },
+        {
+          "name": "BANKING_ETC",
+          "label": "기타은행·보험"
+        }
+      ]
+    },
+    {
+      "name": "ENGINEERING_RND",
+      "label": "엔지니어링·R&D",
+      "roles": [
+        {
+          "name": "ENGINEERING_SEMICONDUCTOR_DISPLAY",
+          "label": "반도체·디스플레이"
+        },
+        {
+          "name": "ENGINEERING_ELECTRICAL_ELECTRONIC_CONTROL",
+          "label": "전기·전자·제어"
+        },
+        {
+          "name": "ENGINEERING_TELECOM_NETWORK",
+          "label": "통신기술·네트워크구축"
+        },
+        {
+          "name": "ENGINEERING_MECHANICAL",
+          "label": "기계"
+        },
+        {
+          "name": "ENGINEERING_MECHANICAL_DESIGN_CAD",
+          "label": "기계설계·CAD"
+        },
+        {
+          "name": "ENGINEERING_AUTOMOTIVE",
+          "label": "자동차"
+        },
+        {
+          "name": "ENGINEERING_SHIPBUILDING_AEROSPACE",
+          "label": "조선·항공·우주"
+        },
+        {
+          "name": "ENGINEERING_METAL_STEEL",
+          "label": "금속·철강"
+        },
+        {
+          "name": "ENGINEERING_CHEMICAL",
+          "label": "화학"
+        },
+        {
+          "name": "ENGINEERING_COSMETICS",
+          "label": "화장품"
+        },
+        {
+          "name": "ENGINEERING_BIO_PHARMA",
+          "label": "바이오·제약"
+        },
+        {
+          "name": "ENGINEERING_FOOD",
+          "label": "식품"
+        },
+        {
+          "name": "ENGINEERING_ENERGY",
+          "label": "에너지"
+        },
+        {
+          "name": "ENGINEERING_ENVIRONMENT",
+          "label": "환경"
+        },
+        {
+          "name": "ENGINEERING_ETC",
+          "label": "기타엔지니어링·RND"
+        }
+      ]
+    },
+    {
+      "name": "CONSTRUCTION_ARCHITECTURE",
+      "label": "건설·건축",
+      "roles": [
+        {
+          "name": "CONSTRUCTION_ARCHITECTURAL_DESIGN",
+          "label": "건축설계·시공"
+        },
+        {
+          "name": "CONSTRUCTION_CIVIL_SURVEY_LANDSCAPE",
+          "label": "토목·측량·조경·환경"
+        },
+        {
+          "name": "CONSTRUCTION_MEP_FIRE",
+          "label": "기계·전기·소방·설비"
+        },
+        {
+          "name": "CONSTRUCTION_DESIGN_SUPERVISION",
+          "label": "설계·감리·시공·공무"
+        },
+        {
+          "name": "CONSTRUCTION_SAFETY_QUALITY_MATERIAL",
+          "label": "안전·품질·재료"
+        },
+        {
+          "name": "CONSTRUCTION_OFFICE_ADMIN",
+          "label": "사무·관리·전산"
+        },
+        {
+          "name": "CONSTRUCTION_SPECIAL_DAILY_LABOR",
+          "label": "건설특수·일용직"
+        },
+        {
+          "name": "CONSTRUCTION_ETC",
+          "label": "기타건설·건축"
+        }
+      ]
+    },
+    {
+      "name": "PRODUCTION_SKILLED_TRADES",
+      "label": "생산·기능직",
+      "roles": [
+        {
+          "name": "PRODUCTION_PRODUCTION",
+          "label": "생산"
+        },
+        {
+          "name": "PRODUCTION_PLANT_ADMIN",
+          "label": "공무"
+        },
+        {
+          "name": "PRODUCTION_EQUIPMENT",
+          "label": "설비"
+        },
+        {
+          "name": "PRODUCTION_ENVIRONMENT_SAFETY",
+          "label": "환경안전"
+        },
+        {
+          "name": "PRODUCTION_LOGISTICS",
+          "label": "물류"
+        },
+        {
+          "name": "PRODUCTION_QUALITY",
+          "label": "품질"
+        },
+        {
+          "name": "PRODUCTION_CONSTRUCTION_PROJECT",
+          "label": "건설·공사·프로젝트"
+        },
+        {
+          "name": "PRODUCTION_DESIGN_CAD_CAM",
+          "label": "설계·CAD·CAM"
+        },
+        {
+          "name": "PRODUCTION_FACILITY_MANAGEMENT",
+          "label": "시설관리"
+        },
+        {
+          "name": "PRODUCTION_ETC",
+          "label": "기타생산·기능직"
+        }
+      ]
+    },
+    {
+      "name": "MEDICAL_HEALTH",
+      "label": "의료·보건",
+      "roles": [
+        {
+          "name": "MEDICAL_DOCTOR",
+          "label": "의사"
+        },
+        {
+          "name": "MEDICAL_KOREAN_MEDICINE_DOCTOR",
+          "label": "한의사"
+        },
+        {
+          "name": "MEDICAL_VETERINARIAN",
+          "label": "수의사"
+        },
+        {
+          "name": "MEDICAL_PHARMACIST",
+          "label": "약사·약무보조"
+        },
+        {
+          "name": "MEDICAL_NURSE",
+          "label": "간호사"
+        },
+        {
+          "name": "MEDICAL_NURSE_AIDE",
+          "label": "간호조무사"
+        },
+        {
+          "name": "MEDICAL_DENTAL_HYGIENIST",
+          "label": "치위생사"
+        },
+        {
+          "name": "MEDICAL_EMT",
+          "label": "응급구조사"
+        },
+        {
+          "name": "MEDICAL_PHYSICAL_OCCUPATIONAL_THERAPY",
+          "label": "물리치료·작업치료"
+        },
+        {
+          "name": "MEDICAL_RADIOLOGY_CLINICAL_LAB",
+          "label": "영상의학·임상병리·검사"
+        },
+        {
+          "name": "MEDICAL_DIETITIAN",
+          "label": "영양사·임상영양사"
+        },
+        {
+          "name": "MEDICAL_MEDICAL_AESTHETICS",
+          "label": "의료미용·에스테틱"
+        },
+        {
+          "name": "MEDICAL_HOSPITAL_ADMIN",
+          "label": "병원행정·접수·수납"
+        },
+        {
+          "name": "MEDICAL_CARE_WORKER",
+          "label": "요양보호사"
+        },
+        {
+          "name": "MEDICAL_POSTPARTUM_CARE",
+          "label": "조리원"
+        },
+        {
+          "name": "MEDICAL_OPTICIAN",
+          "label": "안경·검안사"
+        },
+        {
+          "name": "MEDICAL_ETC",
+          "label": "기타의료·보건"
+        }
+      ]
+    },
+    {
+      "name": "PUBLIC_WELFARE",
+      "label": "공공·복지",
+      "roles": [
+        {
+          "name": "PUBLIC_ADMINISTRATION",
+          "label": "행정·사무·운영"
+        },
+        {
+          "name": "PUBLIC_TECH_IT_FACILITY",
+          "label": "기술·전산·시설"
+        },
+        {
+          "name": "PUBLIC_SOCIAL_SERVICE",
+          "label": "복지·사회서비스"
+        },
+        {
+          "name": "PUBLIC_EDUCATION_RESEARCH",
+          "label": "교육·연구"
+        },
+        {
+          "name": "PUBLIC_PUBLIC_SAFETY",
+          "label": "공공안전"
+        },
+        {
+          "name": "PUBLIC_COUNSELING",
+          "label": "상담·심리"
+        },
+        {
+          "name": "PUBLIC_RELIGION",
+          "label": "종교"
+        },
+        {
+          "name": "PUBLIC_CHILD_YOUTH_WELFARE",
+          "label": "아동·청소년복지"
+        },
+        {
+          "name": "PUBLIC_ELDERLY_WOMEN_WELFARE",
+          "label": "노인·여성복지"
+        },
+        {
+          "name": "PUBLIC_VOLUNTEER",
+          "label": "자원봉사"
+        },
+        {
+          "name": "PUBLIC_ETC",
+          "label": "기타공공·복지"
+        }
+      ]
+    },
+    {
+      "name": "EDUCATION",
+      "label": "교육",
+      "roles": [
+        {
+          "name": "EDUCATION_KINDERGARTEN_CHILDCARE",
+          "label": "유치원·보육교사"
+        },
+        {
+          "name": "EDUCATION_CONTRACT_PRIVATE_TEACHER",
+          "label": "기간제·사립교사"
+        },
+        {
+          "name": "EDUCATION_AFTER_SCHOOL_PART_TIME",
+          "label": "방과후·시간교사"
+        },
+        {
+          "name": "EDUCATION_PROFESSOR_LECTURER",
+          "label": "대학교수·강사"
+        },
+        {
+          "name": "EDUCATION_STAFF_ASSISTANT",
+          "label": "교직원·조교"
+        },
+        {
+          "name": "EDUCATION_ACADEMY_EXAM_INSTRUCTOR",
+          "label": "입시학원강사"
+        },
+        {
+          "name": "EDUCATION_LANGUAGE_INSTRUCTOR",
+          "label": "국어·외국어강사"
+        },
+        {
+          "name": "EDUCATION_TECHNICAL_INSTRUCTOR",
+          "label": "기술·전문강사"
+        },
+        {
+          "name": "EDUCATION_HOME_VISIT_TEACHER",
+          "label": "학습지·방문교사"
+        },
+        {
+          "name": "EDUCATION_ACADEMY_COUNSELING_OPERATION",
+          "label": "학원상담·운영"
+        },
+        {
+          "name": "EDUCATION_INSTRUCTIONAL_DESIGN",
+          "label": "교재개발·교수설계"
+        },
+        {
+          "name": "EDUCATION_ETC",
+          "label": "기타교육"
+        }
+      ]
+    },
+    {
+      "name": "MEDIA_ENTERTAINMENT",
+      "label": "미디어·엔터",
+      "roles": [
+        {
+          "name": "MEDIA_PD_DIRECTOR",
+          "label": "PD·감독"
+        },
+        {
+          "name": "MEDIA_CONTENT_PLANNING_EDITOR",
+          "label": "콘텐츠기획·에디터"
+        },
+        {
+          "name": "MEDIA_BROADCAST_WRITER",
+          "label": "방송작가"
+        },
+        {
+          "name": "MEDIA_CINEMATOGRAPHER",
+          "label": "촬영감독·카메라"
+        },
+        {
+          "name": "MEDIA_VIDEO_EDITOR",
+          "label": "영상편집"
+        },
+        {
+          "name": "MEDIA_CG_MOTION_GRAPHICS",
+          "label": "CG·모션그래픽"
+        },
+        {
+          "name": "MEDIA_SOUND_DESIGNER",
+          "label": "사운드디자이너"
+        },
+        {
+          "name": "MEDIA_REPORTER",
+          "label": "기자·리포터"
+        },
+        {
+          "name": "MEDIA_ANNOUNCER_SHOW_HOST",
+          "label": "아나운서·쇼호스트"
+        },
+        {
+          "name": "MEDIA_VOICE_ACTOR_NARRATOR",
+          "label": "성우·나래이터"
+        },
+        {
+          "name": "MEDIA_CREATOR_INFLUENCER",
+          "label": "크리에이터·인플루언서"
+        },
+        {
+          "name": "MEDIA_MODEL_ACTOR",
+          "label": "모델·연기자"
+        },
+        {
+          "name": "MEDIA_PHOTOGRAPHER",
+          "label": "사진작가"
+        },
+        {
+          "name": "MEDIA_BROADCAST_ENGINEERING",
+          "label": "방송기술·중계"
+        },
+        {
+          "name": "MEDIA_TRANSMISSION_PROGRAMMING",
+          "label": "송출·편성"
+        },
+        {
+          "name": "MEDIA_ARTIST_MANAGEMENT",
+          "label": "아티스트매니지먼트"
+        },
+        {
+          "name": "MEDIA_DISTRIBUTION_PRODUCTION",
+          "label": "배급·제작사"
+        },
+        {
+          "name": "MEDIA_MUSIC_RECORDS",
+          "label": "음원·음반"
+        },
+        {
+          "name": "MEDIA_WEBTOON_WEB_NOVEL",
+          "label": "웹툰·웹소설"
+        },
+        {
+          "name": "MEDIA_PUBLISHING",
+          "label": "출판"
+        },
+        {
+          "name": "MEDIA_TRANSLATION_INTERPRETATION",
+          "label": "통·번역"
+        },
+        {
+          "name": "MEDIA_EXHIBITION_CURATOR",
+          "label": "전시기획·큐레이터"
+        },
+        {
+          "name": "MEDIA_ETC",
+          "label": "기타미디어·엔터"
+        }
+      ]
+    },
+    {
+      "name": "CUSTOMER_SERVICE_TM",
+      "label": "고객상담·TM",
+      "roles": [
+        {
+          "name": "CS_INBOUND",
+          "label": "인바운드"
+        },
+        {
+          "name": "CS_OUTBOUND",
+          "label": "아웃바운드"
+        },
+        {
+          "name": "CS_CS",
+          "label": "CS"
+        },
+        {
+          "name": "CS_CX_MANAGER",
+          "label": "CX매니저"
+        },
+        {
+          "name": "CS_ETC",
+          "label": "기타고객상담"
+        }
+      ]
+    },
+    {
+      "name": "SERVICE",
+      "label": "서비스",
+      "roles": [
+        {
+          "name": "SERVICE_INSTALLATION_REPAIR",
+          "label": "설치·수리기사"
+        },
+        {
+          "name": "SERVICE_PARKING_FUEL",
+          "label": "주차·주유"
+        },
+        {
+          "name": "SERVICE_HOUSEKEEPER",
+          "label": "가사도우미"
+        },
+        {
+          "name": "SERVICE_PET_GROOMING_TRAINING",
+          "label": "애견미용·훈련"
+        },
+        {
+          "name": "SERVICE_SECURITY_GUARD",
+          "label": "경호·경비"
+        },
+        {
+          "name": "SERVICE_HOTEL",
+          "label": "호텔서비스"
+        },
+        {
+          "name": "SERVICE_TOURISM",
+          "label": "관광서비스"
+        },
+        {
+          "name": "SERVICE_AIRLINE",
+          "label": "항공서비스"
+        },
+        {
+          "name": "SERVICE_STORE_MANAGEMENT",
+          "label": "매장관리"
+        },
+        {
+          "name": "SERVICE_RECEPTION",
+          "label": "안내·리셉션"
+        },
+        {
+          "name": "SERVICE_HAIR_DESIGNER",
+          "label": "헤어디자이너"
+        },
+        {
+          "name": "SERVICE_MAKEUP_NAIL",
+          "label": "메이크업·네일"
+        },
+        {
+          "name": "SERVICE_SKIN_CARE",
+          "label": "피부관리"
+        },
+        {
+          "name": "SERVICE_MASSAGE_BODY_CARE",
+          "label": "마사지·체형관리"
+        },
+        {
+          "name": "SERVICE_WEDDING_PLANNER",
+          "label": "웨딩플래너"
+        },
+        {
+          "name": "SERVICE_SANITATION",
+          "label": "환경미화원"
+        },
+        {
+          "name": "SERVICE_ETC",
+          "label": "기타서비스"
+        }
+      ]
+    },
+    {
+      "name": "FOOD_BEVERAGE",
+      "label": "식음료",
+      "roles": [
+        {
+          "name": "FOOD_FOOD_PROCESSING_DEVELOPMENT",
+          "label": "식품가공·개발"
+        },
+        {
+          "name": "FOOD_KITCHEN_COOKING",
+          "label": "주방조리"
+        },
+        {
+          "name": "FOOD_BAKERY",
+          "label": "제과·제빵"
+        },
+        {
+          "name": "FOOD_BEVERAGE_LIQUOR",
+          "label": "음료·주류"
+        },
+        {
+          "name": "FOOD_STORE_OPERATION",
+          "label": "매장운영"
+        },
+        {
+          "name": "FOOD_HALL_STAFF",
+          "label": "서비스·홀스태프"
+        },
+        {
+          "name": "FOOD_CONSULTING_SUPPORT",
+          "label": "식음컨설팅·지원"
+        },
+        {
+          "name": "FOOD_ETC",
+          "label": "기타식음료"
+        }
+      ]
+    }
+  ]
+}

@@ -169,6 +169,17 @@ def test_정규화_행을_오공고_요청_칸으로_옮긴다() -> None:
     assert spring.missing(body) == []
 
 
+def test_직군_직무는_오공고_enum_이름으로_보낸다() -> None:
+    body = spring.payload(job_row(job_field="IT·개발", job_role="서버·백엔드"))
+    assert (body["jobField"], body["jobRole"]) == ("IT_DEVELOPMENT", "IT_BACKEND")
+
+    # 직군에 속하지 않는 직무나 목록 밖 직군은 보내지 않는다. 오공고가 400 으로 거절한다
+    body = spring.payload(job_row(job_field="디자인", job_role="서버·백엔드"))
+    assert (body["jobField"], body["jobRole"]) == ("DESIGN", None)
+    body = spring.payload(job_row(job_field="옛 직군", job_role="서버·백엔드"))
+    assert (body["jobField"], body["jobRole"]) == (None, None)
+
+
 def test_회사명이_모회사뿐이면_모회사가_회사명이고_상시채용은_마감일이_없다() -> None:
     body = spring.payload(
         job_row(
