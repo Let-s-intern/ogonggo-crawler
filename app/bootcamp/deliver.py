@@ -6,13 +6,20 @@
 `GET ?sourceUrl=` 로 id 를 찾아 `PUT /{id}` 로 크롤러 값을 싣는다. id 를 적기 전에 크롤러가 죽었거나
 DB 를 옮긴 경우다.
 
+## 로고
+
+대표 이미지는 과정마다의 썸네일이고, 로고는 운영 회사의 것이다 (2026-09-29 결정, LC-3389). 오공고
+`Bootcamp` 도 둘을 따로 받는다. 로고는 회사 화면에서 `새싹 ○○캠퍼스` 나 모회사 `새싹(SeSAC)` 에
+올린 것이다 (`store.logo_url`). 보낸 로고(`sent_logo_url`)와 지금 로고가 다르면 다시 보낸다 — 로고를
+나중에 올려도 이미 보낸 과정에 붙는다.
+
 오공고 주소와 키는 공고 전송과 같은 것이다 (`app/deliver/settings.py`, `OGONGGO_INTERNAL_API_KEY`).
 
 ## 보내지 않는 과정
 
 - AI 가 아직 채우지 않은 과정(`filled_hash != page_hash`). 다음 수집이 채운다
 - 이미 지금 안내로 보낸 과정(`sent_hash = page_hash`)
-- 세 번 실패한 과정. 화면의 `지금 보내기` 는 보낸다
+- 세 번 연달아 실패한 과정. 화면의 `지금 보내기` 는 보낸다. 보내는 데 성공하면 다시 센다
 
 ## 고정 값
 
@@ -73,11 +80,20 @@ class BootcampDeliveryResult:
 
 
 def pending(conn: sqlite3.Connection, *, retry_failed: bool = False) -> list[sqlite3.Row]:
-    """보낼 과정. `retry_failed` 면 시도 상한을 넘은 것도 고른다 — 사람이 누른 `지금 보내기` 다."""
+    """보낼 과정. `retry_failed` 면 시도 상한을 넘은 것도 고른다 — 사람이 누른 `지금 보내기` 다.
+
+    보낸 뒤 로고가 바뀐 과정도 고른다. 로고는 회사 표에 있어 SQL 한 줄로 비교하지 않는다.
+    """
     limit = "" if retry_failed else f" AND send_attempts < {MAX_ATTEMPTS}"
-    return conn.execute(
-        f"SELECT * FROM bootcamps WHERE {_READY} AND {_UNSENT}{limit} ORDER BY id"
+    rows = conn.execute(
+        f"SELECT *, {_UNSENT} AS unsent FROM bootcamps WHERE {_READY}{limit} ORDER BY id"
     ).fetchall()
+    return [
+        row
+        for row in rows
+        if row["unsent"]
+        or (row["sent_logo_url"] or "") != (store.logo_url(conn, str(row["campus"])) or "")
+    ]
 
 
 def pending_count(conn: sqlite3.Connection) -> int:
@@ -122,13 +138,13 @@ async def deliver_pending(
         _running.release()
 
 
-def payload(row: sqlite3.Row) -> dict[str, Any]:
+def payload(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
     """오공고 크롤러 부트캠프 요청 본문. 칸 이름은 오공고 `Bootcamp` 엔티티 그대로다."""
     start = row["recruitment_start_date"]
     end = row["recruitment_end_date"]
-    campus = str(row["campus"] or "").strip()
+    campus = str(row["campus"] or "")
     return {
-        "companyName": f"새싹 {campus}캠퍼스" if campus else "새싹(SeSAC)",
+        "companyName": sesac.company_name(campus),
         "title": str(row["title"]),
         "programType": str(row["category"] or "").strip() or "기타",
         "operationType": "OFFLINE",
@@ -143,6 +159,7 @@ def payload(row: sqlite3.Row) -> dict[str, Any]:
         "tuitionType": "FREE",
         "tuitionAmount": None,
         "representativeImageUrl": str(row["thumbnail_url"] or ""),
+        "logoUrl": store.logo_url(conn, campus),
         "shortDescription": str(row["short_description"] or ""),
         "content": str(row["content"] or ""),
         "eligibilityAndSelectionProcess": row["eligibility"] or None,
@@ -203,7 +220,7 @@ async def _deliver_one(
     result: BootcampDeliveryResult,
 ) -> None:
     source_url = str(row["source_url"])
-    body = payload(row)
+    body = payload(conn, row)
     if not body["representativeImageUrl"]:
         _fail(conn, row, "대표 이미지가 없다", result)
         return
@@ -235,11 +252,11 @@ async def _deliver_one(
         """
         UPDATE bootcamps
            SET spring_bootcamp_id = ?, sent_hash = page_hash, sent_status_label = status_label,
-               send_status = 'sent',
-               send_attempts = send_attempts + 1, send_error = '', sent_at = datetime('now')
+               sent_logo_url = ?, send_status = 'sent',
+               send_attempts = 0, send_error = '', sent_at = datetime('now')
          WHERE id = ?
         """,
-        (bootcamp_id, row["id"]),
+        (bootcamp_id, body["logoUrl"] or "", row["id"]),
     )
     result.sent += 1
 

@@ -14,6 +14,8 @@ from dataclasses import asdict
 from datetime import date
 from typing import Any
 
+from app import companies
+from app.bootcamp import sesac
 from app.bootcamp.fill import BootcampFill
 from app.bootcamp.sesac import Course, CurriculumGroup
 
@@ -109,6 +111,30 @@ def touch(conn: sqlite3.Connection, source_url: str, status_label: str) -> bool:
             (source_url,),
         )
     return changed
+
+
+def register_companies(conn: sqlite3.Connection) -> None:
+    """모은 과정의 캠퍼스를 회사 표에 모회사 `새싹(SeSAC)` 아래로 둔다. 있는 행은 고치지 않는다.
+
+    회사 화면에서 로고를 올릴 자리를 만든다. 공고는 정규화가 회사 행을 만들지만 부트캠프는 그
+    길을 지나지 않는다. 수집마다 모든 과정을 보는 것은 정리까지 끝나 다시 읽지 않는 과정의
+    캠퍼스도 빠뜨리지 않기 위해서다.
+    """
+    for row in conn.execute("SELECT DISTINCT campus FROM bootcamps").fetchall():
+        companies.register(conn, sesac.company_name(str(row["campus"])), sesac.PARENT_COMPANY)
+
+
+def logo_url(conn: sqlite3.Connection, campus: str) -> str | None:
+    """과정에 붙일 로고. 캠퍼스 회사에 등록한 로고가 먼저이고, 없으면 모회사 로고다.
+
+    공고 로고(`app/normalize/engine.py` 의 `logo_image`)와 같은 순서다. 새싹 페이지에는 사이트
+    아이콘이 없어 둘 다 없으면 None 이다. 읽기 전용이다.
+    """
+    for name in (sesac.company_name(campus), sesac.PARENT_COMPANY):
+        company = companies.read(conn, name)
+        if company is not None and company.logo_url:
+            return company.logo_url
+    return None
 
 
 def needs_fill(conn: sqlite3.Connection, bootcamp_id: int) -> bool:

@@ -237,6 +237,7 @@ async def _collect(
             f"한 번에 AI 로 정리하는 상한({max_fills}건)에 닿아"
             f" {summary.deferred}건은 다음 묶음에서 모은다"
         )
+    store.register_companies(conn)
     if summary.status_changed:
         summary.notes.append(f"모집 상태가 바뀐 과정 {summary.status_changed}건")
 
