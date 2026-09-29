@@ -8,6 +8,7 @@
 | 실패 사유를 쉬운 말로 적고 `고치기` 를 붙인다 | `detail_unreachable` 같은 코드만 보인다 |
 | 패널에 조작(카드)·고치기·최근 수집이 있다 | 목록에서 할 수 있던 일을 잃는다 |
 | 공고 주소로 셀렉터를 다시 만들어 저장 없이 편집기에 올린다 | 확인 없이 셀렉터가 바뀐다 |
+| 패널에서 올린 로고가 그 사이트 회사의 로고가 된다 | 로고를 바꾸려고 회사 화면을 뒤진다 |
 """
 
 from __future__ import annotations
@@ -20,11 +21,13 @@ import pytest
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi.testclient import TestClient
 
-from app import db
+from app import companies, db
 from app.api import crawlers as crawlers_api
 from app.api import workflows as workflows_api
 from app.main import app
 from app.scheduler import WorkflowScheduler
+from app.storage import s3
+from app.storage import settings as store
 
 LIST_URL = "https://careers.example.com/jobs"
 
@@ -251,3 +254,68 @@ def test_주소가_http_가_아니면_저장하지_않는다(
     assert (
         conn.execute("SELECT list_url FROM crawlers WHERE id = 2").fetchone()[0] == f"{LIST_URL}/2"
     )
+
+
+def fill_storage(conn: sqlite3.Connection) -> None:
+    store.write_config(
+        conn,
+        store.StorageConfig(
+            endpoint="http://minio:9000",
+            region="us-east-1",
+            bucket="logos",
+            access_key="minioadmin",
+            secret_key="minioadmin",
+            public_base="http://localhost:9000/logos",
+        ),
+    )
+    conn.commit()
+
+
+def test_패널에서_올린_로고가_그_사이트_회사의_로고가_된다(
+    client: TestClient, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conn.execute("UPDATE crawlers SET default_company = '예시' WHERE id = 1")
+    conn.commit()
+    fill_storage(conn)
+    uploaded: list[bytes] = []
+
+    def upload(config: store.StorageConfig, *, data: bytes, name: str) -> str:
+        uploaded.append(data)
+        return f"http://localhost:9000/logos/{name}.png"
+
+    monkeypatch.setattr(s3, "upload_image", upload)
+
+    panel = client.get("/ui/sites/1/panel").text
+    assert 'hx-post="/ui/sites/1/logo"' in panel
+    assert 'name="logo" type="file"' in panel
+
+    body = client.post(
+        "/ui/sites/1/logo", files={"logo": ("logo.png", b"PNG-logo", "image/png")}
+    ).text
+
+    assert uploaded == [b"PNG-logo"]
+    company = companies.read(conn, "예시")
+    assert company is not None and (company.logo_url or "").startswith("http://localhost:9000/")
+    assert "로고를 바꿨어요" in body
+    assert f'src="{company.logo_url}"' in body
+
+
+def test_회사_이름이_없거나_저장소가_비면_올리지_않는다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    body = client.post(
+        "/ui/sites/1/logo", files={"logo": ("logo.png", b"PNG-logo", "image/png")}
+    ).text
+    assert "회사 이름이 없어" in body
+
+    conn.execute("UPDATE crawlers SET default_company = '예시' WHERE id = 1")
+    conn.commit()
+    panel = client.get("/ui/sites/1/panel").text
+    assert 'name="logo"' not in panel
+    assert "파일 저장소" in panel
+
+    body = client.post(
+        "/ui/sites/1/logo", files={"logo": ("logo.png", b"not an image", "image/png")}
+    ).text
+    assert "로고를 올리지 못했어요" in body
+    assert companies.read(conn, "예시") is None
