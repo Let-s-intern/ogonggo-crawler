@@ -324,7 +324,7 @@ def fill_fallbacks(
         if fields.get(name):
             continue
         text = classified.get(name, "").strip()
-        fields[name] = loose_date.read(text, collected_on) if text else None
+        fields[name] = loose_date.read(text, collected_on, end=name == END) if text else None
     if not fields.get(START):
         fields[START] = datetime.combine(collected_on, time()).strftime(loose_date.OUTPUT_FORMAT)
     return fields

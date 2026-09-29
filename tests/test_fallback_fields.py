@@ -12,6 +12,8 @@ APR 처럼 셀렉터가 제목·본문만 잡는 사이트는 세 칸이 늘 비
 | 값이 없으면 AI 가 짚은 글자로 채우고 날짜로 읽는다 | 마감이 비어 상시 채용이 된다 |
 | 연도 없는 날짜는 수집한 해, 반년 넘게 앞이면 다음 해다 | 지난해로 읽혀 마감으로 걸러진다 |
 | 날짜를 못 찾으면 빈 값이고 실패하지 않는다 | 공고 하나가 통째로 정규화되지 않는다 |
+| `D-32`·두 자리 연도·`18시` 도 읽는다 | 원문에 마감이 있는데 빈다 |
+| 시각 없는 마감은 그날 23:59:59 다 | 마감 당일 00시에 닫힌다 |
 | 모집 시작이 끝까지 비면 수집한 날이다 | 오공고가 시작 일시 없이 받는다 |
 """
 
@@ -94,10 +96,48 @@ def test_근거_문장_칸을_덧붙인_응답은_거절하지_않는다() -> No
         ("9/1(월) ~ 9/20(일)", "2026-09-01 00:00:00"),
         ("채용 시 마감", None),
         ("13/45", None),
+        ("26.10.31(금)", "2026-10-31 00:00:00"),
+        ("~ 26.10.31 23:59", "2026-10-31 23:59:00"),
+        ("10월 31일(금) 18시", "2026-10-31 18:00:00"),
+        ("2026.10.31 오후 6시 30분", "2026-10-31 18:30:00"),
+        # 날짜가 함께 있으면 날짜가 먼저다
+        ("~10/31(금) D-44", "2026-10-31 00:00:00"),
     ],
 )
 def test_짚은_글자에서_날짜를_읽는다(text: str, expected: str | None) -> None:
     assert loose_date.read(text, COLLECTED) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("10/31(금)", "2026-10-31 23:59:59"),
+        ("10/31(금) 18:00", "2026-10-31 18:00:00"),
+        ("D-32", "2026-10-19 23:59:59"),
+        ("마감 D - 3", "2026-09-20 23:59:59"),
+        ("D-day", "2026-09-17 23:59:59"),
+        ("내일 마감", "2026-09-18 23:59:59"),
+    ],
+)
+def test_시각_없는_마감은_그날_끝이다(text: str, expected: str) -> None:
+    assert loose_date.read(text, COLLECTED, end=True) == expected
+
+
+def test_시작일은_적힌_날짜만_읽고_없으면_수집한_날이다() -> None:
+    assert loose_date.read("D-32", COLLECTED) is None
+    fields: dict[str, str | None] = {
+        "company_name": None,
+        "recruitment_start_at": None,
+        "recruitment_end_at": None,
+    }
+    written = classified(recruitment_start_at="26.09.01(월)", recruitment_end_at="D-32")
+    fill_fallbacks(fields, written, COLLECTED)
+    assert fields["recruitment_start_at"] == "2026-09-01 00:00:00"
+    assert fields["recruitment_end_at"] == "2026-10-19 23:59:59"
+
+    fields = {"company_name": None, "recruitment_start_at": None, "recruitment_end_at": None}
+    fill_fallbacks(fields, classified(recruitment_start_at="D-32"), COLLECTED)
+    assert fields["recruitment_start_at"] == "2026-09-17 00:00:00"
 
 
 def classified(**values: str) -> dict[str, str]:
