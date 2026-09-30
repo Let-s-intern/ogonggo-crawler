@@ -47,6 +47,8 @@ from app.api.ui_crawlers import error_detail
 from app.api.ui_tests import repair_panel
 from app.api.ui_workflows import TRIGGER_WORDS, UNKNOWN_TRIGGER, CardView, _last_run, _view
 from app.crawler.playwright import PLAYWRIGHT
+from app.normalize.backfill import rewrite_one
+from app.normalize.engine import NormalizeError, RawJobMissingError, load_rules
 from app.scheduler import WorkflowScheduler
 from app.storage import s3
 from app.storage import settings as store
@@ -159,9 +161,11 @@ def _panel(
     error: str = "",
     logo_message: str = "",
     logo_error: str = "",
+    company_message: str = "",
 ) -> HTMLResponse:
     row = conn.execute(
-        "SELECT detail_url, default_company FROM crawlers WHERE id = ?", (card.item.crawler_id,)
+        "SELECT detail_url, default_company, has_affiliates FROM crawlers WHERE id = ?",
+        (card.item.crawler_id,),
     ).fetchone()
     company = str(row["default_company"] or "").strip() if row else ""
     saved = companies.read(conn, company) if company else None
@@ -176,6 +180,8 @@ def _panel(
         url_message=message,
         url_error=error,
         company=company,
+        has_affiliates=bool(row["has_affiliates"]) if row else False,
+        company_message=company_message,
         logo_url=saved.logo_url if saved else None,
         logo_message=logo_message,
         logo_error=logo_error,
@@ -228,6 +234,71 @@ def urls_fragment(
     logger.info("사이트 %s: 주소를 고쳤다 list=%s detail=%s", workflow_id, list_url, detail_url)
     card = next(card for card in _cards(conn, scheduler) if card.item.id == workflow_id)
     return _panel(request, conn, card, workflow_id, message="주소를 저장했어요")
+
+
+@router.post("/ui/sites/{workflow_id}/affiliates", response_class=HTMLResponse)
+def affiliates_fragment(
+    request: Request,
+    workflow_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(workflows.get_connection)],
+    scheduler: Annotated[WorkflowScheduler, Depends(workflows.get_workflow_scheduler)],
+    has_affiliates: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """그룹 채용 사이트인지를 저장하고, 이미 모은 공고의 회사명을 다시 정한다 (0048).
+
+    끄면 이 사이트 공고의 회사명은 사이트 이름으로 고정되고, 켜면 공고에서 읽은 계열사가 회사명이
+    된다 (`app/normalize/engine.py` 의 `settle_company`). 이미 오공고로 보낸 공고는 다시 보내지
+    않는다.
+    """
+    card = next((card for card in _cards(conn, scheduler) if card.item.id == workflow_id), None)
+    if card is None:
+        return render(request, "fragments/site_panel.html", card=None, workflow_id=workflow_id)
+    on = bool(has_affiliates)
+    conn.execute(
+        "UPDATE crawlers SET has_affiliates = ? WHERE id = ?",
+        (1 if on else 0, card.item.crawler_id),
+    )
+    conn.commit()
+    done, failed = _renormalize_site(conn, card.item.crawler_id)
+    conn.commit()
+    logger.info("사이트 %s: 계열사 있음을 %s 로 바꿨다. 공고 %s건", workflow_id, on, done)
+    message = (
+        "그룹 채용 사이트로 바꿨어요. 공고에서 읽은 계열사가 회사명이 됩니다"
+        if on
+        else "회사가 하나인 사이트로 바꿨어요. 회사명은 사이트의 회사 이름으로 고정됩니다"
+    )
+    if done or failed:
+        message += f". 이미 모은 공고 {done}건을 다시 정리했어요"
+    if failed:
+        message += f" — {failed}건은 실패해 그대로예요"
+    return _panel(request, conn, card, workflow_id, company_message=message)
+
+
+def _renormalize_site(conn: sqlite3.Connection, crawler_id: int) -> tuple[int, int]:
+    """그 사이트가 모은 공고를 다시 정규화한다. (된 건수, 실패 건수). 한 건이 실패해도 계속한다."""
+    raw_job_ids = [
+        int(row[0])
+        for row in conn.execute(
+            "SELECT r.id FROM raw_jobs r JOIN workflows w ON w.id = r.workflow_id"
+            " WHERE w.crawler_id = ? ORDER BY r.id",
+            (crawler_id,),
+        )
+    ]
+    if not raw_job_ids:
+        return 0, 0
+    try:
+        rules = load_rules(conn)
+    except NormalizeError as exc:
+        logger.warning("사이트 공고를 다시 정규화하려는데 규칙을 읽지 못했다: %s", exc)
+        return 0, len(raw_job_ids)
+    failed = 0
+    for raw_job_id in raw_job_ids:
+        try:
+            rewrite_one(conn, raw_job_id, rules)
+        except (NormalizeError, RawJobMissingError) as exc:
+            logger.warning("사이트 공고 재정규화 실패 raw_jobs %s: %s", raw_job_id, exc)
+            failed += 1
+    return len(raw_job_ids) - failed, failed
 
 
 @router.post("/ui/sites/{workflow_id}/logo", response_class=HTMLResponse)

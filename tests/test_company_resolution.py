@@ -185,8 +185,8 @@ def _seeded(
     db.migrate_up(conn)
     conn.execute(
         """
-        INSERT INTO crawlers (id, name, list_url, status, default_company)
-        VALUES (1, ?, 'https://x', 'promoted', ?)
+        INSERT INTO crawlers (id, name, list_url, status, default_company, has_affiliates)
+        VALUES (1, ?, 'https://x', 'promoted', ?, 1)
         """,
         (name, default_company),
     )

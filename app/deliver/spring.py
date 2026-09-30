@@ -125,19 +125,17 @@ class Overview:
 def payload(job: Mapping[str, Any] | sqlite3.Row) -> dict[str, Any]:
     """정규화 행 하나를 오공고 등록 요청 본문으로 옮긴다. 빈 글자는 null 이다.
 
-    회사명은 사이트 추가에 넣은 이름(`parent_company_name`)으로 고정한다 (2026-09-30 결정). 공고에서
-    읽은 회사 이름은 수집할 때마다 조금씩 달라져(`(주)`, 영문 표기, 팀 이름) 오공고에 같은 회사가
-    여러 이름으로 쌓였다. 사이트 값이 없는 공고(주소로 직접 넣은 공고)만 공고에서 읽은 이름을 쓴다.
-    회사명이 곧 사이트 값이라 모회사는 따로 보내지 않는다. 목록 밖 판정 값(옛 한글 값)은 null 로
-    보내 필수 칸 검사에서 걸리게 한다. 근무 지역과 직군·직무도 목록 밖이면 null 이다 — 선택 칸이라
-    null 이어도 등록된다. 직군·직무는 한글 이름으로 저장해 두고 여기서 오공고 enum 이름으로 바꾼다
-    (`app/job_roles.py`).
+    회사명은 자회사가 있으면 자회사, 없으면 모회사다. 오공고는 `companyName` 을 실제 채용 주체로
+    받고 모회사를 따로 받는다. 목록 밖 판정 값(옛 한글 값)은 null 로 보내 필수 칸 검사에서 걸리게
+    한다. 근무 지역과 직군·직무도 목록 밖이면 null 이다 — 선택 칸이라 null 이어도 등록된다.
+    직군·직무는 한글 이름으로 저장해 두고 여기서 오공고 enum 이름으로 바꾼다 (`app/job_roles.py`).
     """
-    company = _text(job["parent_company_name"]) or _text(job["company_name"])
+    company = _text(job["company_name"]) or _text(job["parent_company_name"])
+    parent = _text(job["parent_company_name"])
     job_field, job_role = job_roles.enum_names(_text(job["job_field"]), _text(job["job_role"]))
     body: dict[str, Any] = {
         "companyName": company,
-        "parentCompanyName": None,
+        "parentCompanyName": parent if parent and parent != company else None,
         "title": _text(job["title"]),
         "jobField": job_field,
         "jobRole": job_role,

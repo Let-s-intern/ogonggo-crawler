@@ -51,8 +51,9 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     ):
         connection.execute(
             """
-            INSERT INTO crawlers (name, list_url, selectors_json, status, default_company)
-            VALUES (?, ?, ?, 'promoted', ?)
+            INSERT INTO crawlers
+                   (name, list_url, selectors_json, status, default_company, has_affiliates)
+            VALUES (?, ?, ?, 'promoted', ?, 1)
             """,
             (name, LIST_URL, json.dumps(selectors), default_company),
         )

@@ -54,6 +54,8 @@ class SiteAdd:
     company: str
     detail_url: str
     interval_minutes: int
+    # 계열사 공고가 함께 올라오는 그룹 채용 사이트인가 (0048)
+    has_affiliates: bool = False
     state: str = WAITING
     problem: str = ""
     technical: str = ""
@@ -79,13 +81,21 @@ _tasks: set[asyncio.Task[None]] = set()
 _semaphore: asyncio.Semaphore | None = None
 
 
-def new(list_url: str, company: str, detail_url: str, interval_minutes: int) -> SiteAdd:
+def new(
+    list_url: str,
+    company: str,
+    detail_url: str,
+    interval_minutes: int,
+    *,
+    has_affiliates: bool = False,
+) -> SiteAdd:
     add = SiteAdd(
         id=next(_ids),
         list_url=list_url,
         company=company,
         detail_url=detail_url,
         interval_minutes=interval_minutes,
+        has_affiliates=has_affiliates,
         created_at=datetime.now(UTC),
     )
     _adds[add.id] = add

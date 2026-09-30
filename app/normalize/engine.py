@@ -25,9 +25,13 @@ NULL 이다 — 크롤러 이름으로 대신 채우지 않는다.
 이다. 이 결정 전에 등록돼 비어 있던 행은 `migrations/0022_backfill_default_company.sql`
 이 그 시점의 크롤러 이름으로 한 번 채웠다. 그 뒤로 새로 만들거나 비운 행은 없다.
 
-`company_name` 는 `raw_data_json.company_name` 그대로이고, 뽑히지 않았으면 NULL 이다. **모회사
-이름으로 채우지 않는다.** 채우면 두 칸이 같은 값이 되어 칸을 가른 일이 없던 일이 된다. 자회사가 비어
-있다는 것은 "이 사이트는 계열사를 말하지 않는다" 는 사실이고, 그 사실이 값으로 남아야 한다.
+`company_name` 는 그룹 채용 사이트(`crawlers.has_affiliates`)에서만 채운다 (2026-09-30 결정,
+`settle_company`). 공고에서 읽은 이름은 수집할 때마다 달라져(`채널톡`·`채널코퍼레이션`) 회사가
+하나인 사이트에서는 쓰지 않고 비운다 — 회사명은 모회사 칸의 사이트 이름으로 나간다. 그룹
+사이트에서는 `raw_data_json.company_name` 에 규칙을 태운 값이고, 뽑히지 않았으면 NULL 이다.
+**모회사 이름으로 채우지 않는다.** 채우면 두 칸이 같은 값이 되어 칸을 가른 일이 없던 일이 된다.
+자회사가 비어 있다는 것은 "이 사이트는 계열사를 말하지 않는다" 는 사실이고, 그 사실이 값으로
+남아야 한다.
 
 칸이 하나였을 때는 둘을 합쳐 넣고 어느 쪽을 썼는지 `company_source` 에 적었다. 칸 이름이
 출처를 말하게 된 뒤로 그 열은 할 말이 없다 (`migrations/0018_parent_company.sql`).
@@ -380,6 +384,50 @@ def read_parent_company(conn: sqlite3.Connection, raw_job_id: int) -> str | None
     return value or None
 
 
+def site_has_affiliates(conn: sqlite3.Connection, raw_job_id: int) -> bool:
+    """그 공고를 모은 사이트가 계열사 공고를 함께 올리는 그룹 채용 사이트인가. 읽기 전용이다.
+
+    운영자가 사이트 추가 창이나 사이트 패널에서 켠 `crawlers.has_affiliates` 그대로다 (0048).
+    """
+    row = conn.execute(
+        """
+        SELECT c.has_affiliates AS has_affiliates
+          FROM raw_jobs r
+          JOIN workflows w ON w.id = r.workflow_id
+          JOIN crawlers c ON c.id = w.crawler_id
+         WHERE r.id = ?
+        """,
+        (raw_job_id,),
+    ).fetchone()
+    return row is not None and bool(row["has_affiliates"])
+
+
+def settle_company(
+    conn: sqlite3.Connection, company_name: str | None, parent: str | None, *, affiliates: bool
+) -> str | None:
+    """공고의 회사명을 확정한다 (2026-09-30 결정).
+
+    공고에서 읽은 회사 이름은 수집할 때마다 조금씩 달랐다 — 채널톡 사이트의 공고가 `채널톡` 과
+    `채널코퍼레이션` 으로 갈렸다.
+
+    | 사이트 | 회사명 |
+    |---|---|
+    | 회사가 하나 (기본) | 비운다. 공고에서 읽은 이름은 쓰지 않는다 |
+    | 그룹 채용 (`has_affiliates`) | 공고에서 읽은 계열사. 있는 계열사와 표기만 다르면 그 이름 |
+    | 사이트 이름이 없다 (주소로 직접 넣은 공고) | 공고에서 읽은 그대로 |
+
+    비운 회사명은 모회사 칸의 사이트 이름이 대신한다 — 오공고에도 그 이름이 회사명으로 간다
+    (`app/deliver/spring.py`). 사람이 고친 회사명은 이 뒤에 덮인다 (`normalized_values`).
+    """
+    if not parent:
+        return company_name
+    if not affiliates:
+        return None
+    if not company_name or not company_name.strip():
+        return None
+    return companies.canonical(conn, company_name, parent)
+
+
 # 대표 이미지 칸과, 수집이 상세 페이지에서 읽은 `og:image` 의 원본 키 (0035)
 COVER_IMAGE = "cover_image_url"
 OG_IMAGE = "og_image_url"
@@ -563,14 +611,15 @@ def normalized_values(
     source_url, data = read_raw(conn, raw_job_id)
     classification = read_classification(conn, raw_job_id, part.number)
     collected_on = _collected_on(conn, raw_job_id)
-    fields = normalize_fields(
-        data,
-        rules,
-        read_parent_company(conn, raw_job_id),
-        classification,
-        collected_on,
-    )
+    parent = read_parent_company(conn, raw_job_id)
+    fields = normalize_fields(data, rules, parent, classification, collected_on)
     fill_fallbacks(fields, classification, collected_on)
+    fields["company_name"] = settle_company(
+        conn,
+        fields.get("company_name"),
+        fields[PARENT_COMPANY],
+        affiliates=site_has_affiliates(conn, raw_job_id),
+    )
     if part.split:
         source_url = f"{source_url}#{part.number}"
     ai_title = classification.get(POSTING_TITLE, "").strip()

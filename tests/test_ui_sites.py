@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 import sqlite3
 from collections.abc import Iterator
@@ -25,6 +26,7 @@ from app import companies, db
 from app.api import crawlers as crawlers_api
 from app.api import workflows as workflows_api
 from app.main import app
+from app.normalize.engine import insert_normalized
 from app.scheduler import WorkflowScheduler
 from app.storage import s3
 from app.storage import settings as store
@@ -270,6 +272,49 @@ def fill_storage(conn: sqlite3.Connection) -> None:
         ),
     )
     conn.commit()
+
+
+def test_그룹_채용_사이트로_바꾸면_이미_모은_공고의_회사명도_바뀐다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    conn.execute("UPDATE crawlers SET default_company = '삼성' WHERE id = 1")
+    raw = {
+        "source_url": "https://x/1",
+        "title": "백엔드",
+        "body": "본문",
+        "company_name": "삼성SDS",
+    }
+    conn.execute(
+        "INSERT INTO raw_jobs (id, workflow_id, source_url, raw_data_json, content_hash)"
+        " VALUES (1, 1, 'https://x/1', ?, 'hash')",
+        (json.dumps(raw, ensure_ascii=False),),
+    )
+    insert_normalized(conn, 1, [])
+    conn.commit()
+
+    def company() -> tuple[str | None, str | None]:
+        row = conn.execute(
+            "SELECT company_name, parent_company_name FROM normalized_jobs"
+        ).fetchone()
+        return row["company_name"], row["parent_company_name"]
+
+    # 기본은 회사가 하나인 사이트다. 공고에서 읽은 이름은 쓰지 않는다
+    assert company() == (None, "삼성")
+    panel = client.get("/ui/sites/1/panel").text
+    assert 'hx-post="/ui/sites/1/affiliates"' in panel
+    assert 'name="has_affiliates" value="1" class="mt-0">' in panel
+
+    body = client.post("/ui/sites/1/affiliates", data={"has_affiliates": "1"}).text
+
+    assert "그룹 채용 사이트로 바꿨어요" in body and "1건" in body
+    assert 'name="has_affiliates" value="1" class="mt-0" checked>' in body
+    assert company() == ("삼성SDS", "삼성")
+
+    # 체크를 풀면 칸이 오지 않는다
+    body = client.post("/ui/sites/1/affiliates", data={}).text
+
+    assert "회사가 하나인 사이트로 바꿨어요" in body
+    assert company() == (None, "삼성")
 
 
 def test_패널에서_올린_로고가_그_사이트_회사의_로고가_된다(

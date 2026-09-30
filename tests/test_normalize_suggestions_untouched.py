@@ -25,8 +25,8 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     db.migrate_up(connection)
     connection.execute(
         """
-        INSERT INTO crawlers (name, list_url, default_company)
-        VALUES ('테스트', 'https://x', '테스트')
+        INSERT INTO crawlers (name, list_url, default_company, has_affiliates)
+        VALUES ('테스트', 'https://x', '테스트', 1)
         """
     )
     connection.execute("INSERT INTO workflows (crawler_id, name) VALUES (1, '테스트')")

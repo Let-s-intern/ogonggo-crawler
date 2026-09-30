@@ -63,8 +63,8 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     db.migrate_up(connection)
     # 모회사는 크롤러가 정한다 (`app/normalize/engine.py` 의 `read_parent_company`)
     connection.execute(
-        "INSERT INTO crawlers (id, name, list_url, status, default_company)"
-        " VALUES (1, '삼성 채용', 'https://x', 'promoted', '삼성')"
+        "INSERT INTO crawlers (id, name, list_url, status, default_company, has_affiliates)"
+        " VALUES (1, '삼성 채용', 'https://x', 'promoted', '삼성', 1)"
     )
     connection.execute("INSERT INTO workflows (id, crawler_id, name) VALUES (1, 1, '삼성 채용')")
     try:

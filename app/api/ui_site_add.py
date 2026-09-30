@@ -251,6 +251,12 @@ async def _work(
                 return
 
             add.crawler_id = created.id
+            # 등록은 셀렉터를 만드는 일이라 이 칸을 모른다. 사이트 추가 창이 받은 값을 여기서 적는다
+            conn.execute(
+                "UPDATE crawlers SET has_affiliates = ? WHERE id = ?",
+                (1 if add.has_affiliates else 0, created.id),
+            )
+            conn.commit()
             add.steps.extend(_registered(created, bool(add.detail_url)))
             add.state = site_adds.TESTING
             try:
@@ -309,6 +315,7 @@ async def site_add_try(
     detail_url: Annotated[str, Form()] = "",
     interval_minutes: Annotated[int, Form()] = DEFAULT_INTERVAL,
     replace_add_id: Annotated[str, Form()] = "",
+    has_affiliates: Annotated[str, Form()] = "",
     logo: Annotated[UploadFile | None, File()] = None,
 ) -> HTMLResponse:
     """사이트 추가를 걸고 곧바로 돌아온다. 창을 닫거나 다른 곳을 또 걸어도 된다."""
@@ -318,6 +325,7 @@ async def site_add_try(
         "company": company,
         "detail_url": detail_url,
         "interval": interval_minutes,
+        "has_affiliates": bool(has_affiliates),
     }
     if not list_url.startswith(("http://", "https://")) or not company:
         return _form(
@@ -358,6 +366,7 @@ async def site_add_try(
         company,
         detail_url,
         interval_minutes if interval_minutes in allowed else DEFAULT_INTERVAL,
+        has_affiliates=bool(has_affiliates),
     )
     launch(_work(add, connect, generate, discover, fetcher, scheduler))
     response = _form(request, conn, step="queued", add=add)
@@ -392,6 +401,7 @@ def site_add_retry_form(
         company=add.company,
         detail_url=add.detail_url,
         interval=add.interval_minutes,
+        has_affiliates=add.has_affiliates,
     )
 
 

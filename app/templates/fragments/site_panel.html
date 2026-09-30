@@ -54,6 +54,19 @@
       <button type="submit" class="mt-0">주소 저장</button>
     </form>
 
+    {# 회사명을 어떻게 정할지 (0048). 끄면 사이트의 회사 이름으로 고정하고, 켜면 공고에서 읽은 계열사다 #}
+    <form class="space-y-2 rounded-md border border-slate-200 p-3 text-sm" hx-post="/ui/sites/{{ item.id }}/affiliates"
+          hx-target="#app-panel-body" hx-swap="innerHTML" hx-disabled-elt="find button">
+      <h4 class="mb-0 mt-0 text-sm font-semibold text-slate-900">회사명{% if company %} <span class="font-normal text-slate-500">· {{ company }}</span>{% endif %}</h4>
+      <label class="flex items-center gap-2 font-normal">
+        <input type="checkbox" name="has_affiliates" value="1" class="mt-0"{% if has_affiliates %} checked{% endif %}>
+        <span>계열사 공고가 함께 올라오는 그룹 채용 사이트</span>
+      </label>
+      <p class="text-xs text-slate-500">{% if has_affiliates %}공고에서 읽은 계열사가 회사명이 되고, {{ company or "사이트의 회사 이름" }}은(는) 모회사로 갑니다{% else %}이 사이트 공고의 회사명은 {{ company or "사이트의 회사 이름" }}(으)로 고정됩니다. 공고에 다르게 적혀 있어도 바뀌지 않습니다{% endif %}. 저장하면 이미 모은 공고도 함께 바뀌고, 이미 오공고로 보낸 공고는 그대로입니다</p>
+      {% if company_message %}{{ notice_box(company_message) }}{% endif %}
+      <button type="submit" class="mt-0">저장</button>
+    </form>
+
     {# 회사 로고. 사이트 추가 창과 같은 길로 올린다 (`app/api/ui_companies.py` 의 `save_logo_file`) #}
     <form class="space-y-2 rounded-md border border-slate-200 p-3 text-sm" hx-post="/ui/sites/{{ item.id }}/logo"
           hx-target="#app-panel-body" hx-swap="innerHTML" hx-encoding="multipart/form-data" hx-disabled-elt="find button">

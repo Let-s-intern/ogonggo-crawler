@@ -47,8 +47,8 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     db.migrate_up(connection)
     connection.execute(
         """
-        INSERT INTO crawlers (id, name, list_url, status, default_company)
-        VALUES (1, '삼성', 'https://x', 'promoted', '삼성전자')
+        INSERT INTO crawlers (id, name, list_url, status, default_company, has_affiliates)
+        VALUES (1, '삼성', 'https://x', 'promoted', '삼성전자', 1)
         """
     )
     connection.execute("INSERT INTO workflows (id, crawler_id, name) VALUES (1, 1, '삼성')")

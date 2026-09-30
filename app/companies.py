@@ -111,6 +111,47 @@ def register(
     return name
 
 
+# 같은 회사를 다르게 적는 말. 걷어내고 견준다
+_LEGAL_FORMS = ("주식회사", "유한회사", "(주)", "㈜", "(유)")
+
+
+def _key(name: str) -> str:
+    """표기 차이를 걷어낸 이름. `삼성전기(주)` 와 `삼성 전기` 가 같은 값이 된다."""
+    text = name.casefold()
+    for form in _LEGAL_FORMS:
+        text = text.replace(form, "")
+    return "".join(char for char in text if char.isalnum())
+
+
+def canonical(conn: sqlite3.Connection, name: str, parent_name: str) -> str:
+    """그 사이트의 계열사 중 표기만 다른 이름이 있으면 하나로 모은다. 없으면 받은 이름이다.
+
+    2026-09-30 결정. 공고에서 읽은 계열사 이름은 수집할 때마다 조금씩 달라(`삼성전기`,
+    `삼성전기(주)`) 같은 회사가 여러 행으로 쌓였다. 견주는 것은 같은 모회사 아래 회사와 모회사
+    자신뿐이다 — 다른 사이트의 이름이 비슷한 회사와 섞지 않는다.
+
+    법인 표기가 없는 이름이 먼저이고, 그다음은 먼저 등록된 이름이다. `삼성전기(주)` 가 먼저
+    있어도 mapping 규칙이 `삼성전기` 로 맞춰 보내면 `삼성전기` 다 — 규칙이 정한 이름을 옛 행이
+    되돌리지 않는다. 글자 자체가 다른 이름(`채널톡` 과 `채널코퍼레이션`)은 여기서 잡지 못한다.
+    읽기 전용이다.
+    """
+    cleaned = name.strip()
+    key = _key(cleaned)
+    if not key:
+        return cleaned
+    rows = conn.execute(
+        "SELECT name FROM companies WHERE parent_name = ? OR name = ? ORDER BY id",
+        (parent_name, parent_name),
+    ).fetchall()
+    same = [str(row["name"]) for row in rows if _key(str(row["name"])) == key]
+    candidates = [*same, cleaned]
+    return next((one for one in candidates if not _has_legal_form(one)), candidates[0])
+
+
+def _has_legal_form(name: str) -> bool:
+    return any(form in name for form in _LEGAL_FORMS)
+
+
 def list_all(conn: sqlite3.Connection) -> list[Company]:
     """모든 회사. 이름 순이다. 읽기 전용이다.
 

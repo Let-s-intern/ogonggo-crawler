@@ -144,7 +144,8 @@ def test_old_file_arrives_under_the_new_names(
         "SELECT company_name, recruitment_end_at, qualifications, responsibilities"
         " FROM normalized_jobs"
     ).fetchone()
-    assert tuple(job) == ("예시", "2026-12-31", "무관", "고친 업무")
+    # 옛 파일의 사이트는 회사가 하나인 사이트로 들어온다 (0048). 회사명은 비운다
+    assert tuple(job) == (None, "2026-12-31", "무관", "고친 업무")
 
 
 def test_the_same_old_file_twice_is_a_duplicate(

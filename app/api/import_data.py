@@ -359,10 +359,12 @@ def _merge_crawlers(
         if "list_mode" in columns
         else "render_mode AS list_mode, render_mode AS detail_mode, NULL AS api_config_json"
     )
+    # 0048 전에 올린 파일에는 없다. 그때는 회사가 하나인 사이트로 들어온다
+    affiliates = "has_affiliates" if "has_affiliates" in columns else "0 AS has_affiliates"
     for row in source.execute(
         f"""
         SELECT id, name, list_url, detail_url, selectors_json, {modes}, status,
-               default_company
+               default_company, {affiliates}
           FROM crawlers ORDER BY id
         """
     ):
@@ -380,8 +382,9 @@ def _merge_crawlers(
         cursor = conn.execute(
             """
             INSERT INTO crawlers (name, list_url, detail_url, selectors_json, list_mode,
-                                  detail_mode, api_config_json, status, default_company)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  detail_mode, api_config_json, status, default_company,
+                                  has_affiliates)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 row["name"],
@@ -393,6 +396,7 @@ def _merge_crawlers(
                 api_config,
                 row["status"],
                 row["default_company"],
+                1 if row["has_affiliates"] else 0,
             ),
         )
         new_id = int(cursor.lastrowid or 0)

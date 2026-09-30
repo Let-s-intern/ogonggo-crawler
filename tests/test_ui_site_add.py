@@ -264,6 +264,24 @@ def test_시험_수집이_되면_고른_주기로_자동_수집까지_시작한�
     assert 'hx-trigger="every 3s"' not in listing
 
 
+def test_그룹_채용_사이트로_체크하면_그_사이트에_적힌다(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    launched: list[Any],
+) -> None:
+    assert 'name="has_affiliates" value="1"' in client.get("/ui/sites/new").text
+    install(monkeypatch, Fake(conn, found=True))
+
+    client.post(
+        "/ui/sites/new",
+        data={"list_url": LIST_URL, "company": "삼성", "has_affiliates": "1"},
+    )
+    finish(launched)
+
+    assert conn.execute("SELECT has_affiliates FROM crawlers").fetchone()[0] == 1
+
+
 def test_안_되면_목록에_쉬운_말_사유와_다시_찾기가_남는다(
     client: TestClient,
     conn: sqlite3.Connection,

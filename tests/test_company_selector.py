@@ -91,8 +91,9 @@ def make_conn(
     db.migrate_up(connection)
     connection.execute(
         """
-        INSERT INTO crawlers (name, list_url, selectors_json, status, default_company)
-        VALUES (?, ?, ?, 'promoted', ?)
+        INSERT INTO crawlers
+               (name, list_url, selectors_json, status, default_company, has_affiliates)
+        VALUES (?, ?, ?, 'promoted', ?, 1)
         """,
         ("그룹 채용", LIST_URL, json.dumps(selectors), default_company),
     )

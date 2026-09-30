@@ -37,9 +37,16 @@
           <label for="site-add-company" class="block">회사 이름</label>
           <input id="site-add-company" name="company" type="text" required value="{{ company }}"
                  placeholder="예: 삼성" class="w-full">
-          <span class="text-xs text-slate-500">계열사 공고가 함께 올라오는 사이트면 그룹 이름을 적습니다</span>
+          <span class="text-xs text-slate-500">공고의 회사명은 이 이름으로 고정됩니다. 공고에 다르게 적혀 있어도 바뀌지 않습니다</span>
         </p>
       </div>
+      <p class="my-0">
+        <label class="flex items-center gap-2 font-normal">
+          <input type="checkbox" name="has_affiliates" value="1" class="mt-0"{% if has_affiliates %} checked{% endif %}>
+          <span>계열사 공고가 함께 올라오는 그룹 채용 사이트</span>
+        </label>
+        <span class="text-xs text-slate-500">켜면 위에는 그룹 이름을 적습니다. 공고에서 읽은 계열사가 회사명이 되고, 그룹 이름은 모회사로 갑니다</span>
+      </p>
       <p class="my-0">
         <label for="site-add-detail" class="block">예시 공고 주소 <span class="font-normal text-slate-500">(선택)</span></label>
         <input id="site-add-detail" name="detail_url" type="url" value="{{ detail_url }}"
@@ -94,6 +101,7 @@
       <form class="mt-2 space-y-2" hx-post="/ui/sites/new" hx-target="#app-modal-body" hx-swap="innerHTML"
             hx-encoding="multipart/form-data" hx-disabled-elt="find button">
         <input type="hidden" name="company" value="{{ company }}">
+        {% if has_affiliates %}<input type="hidden" name="has_affiliates" value="1">{% endif %}
         <input type="hidden" name="interval_minutes" value="{{ interval }}">
         <input type="hidden" name="replace_add_id" value="{{ add.id }}">
         <p class="my-0">

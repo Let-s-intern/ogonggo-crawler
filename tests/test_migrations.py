@@ -25,6 +25,7 @@ EXPECTED_COLUMNS = {
         "api_config_json",
         "status",
         "default_company",
+        "has_affiliates",
         "created_at",
     },
     "workflows": {
@@ -310,6 +311,7 @@ ALL_VERSIONS = [
     "0045",
     "0046",
     "0047",
+    "0048",
 ]
 
 
