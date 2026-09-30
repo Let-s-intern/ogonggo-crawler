@@ -61,9 +61,17 @@
       }
       var button = document.getElementById('review-delete-open');
       if (button) { button.disabled = whole ? total === '0' : picked === 0; }
-      // 보내기는 표에서 고른 것만 받는다. 조건 전체를 한꺼번에 보내는 길은 두지 않는다
+      // 보내기도 지우기처럼 표에서 고른 것이나 조건 전체를 받는다. 조건 전체는 건수를 묻고 보낸다
       var send = document.getElementById('review-send-open');
-      if (send) { send.disabled = whole || picked === 0; }
+      if (send) {
+        send.disabled = whole ? total === '0' : picked === 0;
+        send.textContent = whole ? '조건 전체 ' + total + '건 오공고로 보내기' : '고른 공고 오공고로 보내기';
+        if (whole) {
+          send.setAttribute('hx-confirm', '조건에 걸린 ' + total + '건 전체를 오공고로 보낼까요? 이미 보낸 공고는 건너뛴다');
+        } else {
+          send.removeAttribute('hx-confirm');
+        }
+      }
     }
 
     document.body.addEventListener('change', function (evt) {

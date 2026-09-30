@@ -12,6 +12,9 @@
 | 이미 보낸 공고는 다시 보내지 않는다 | 같은 공고를 두 번 등록하려 든다 |
 | AI 로 다시 채우지 못하면 사유를 적는다 | 눌러도 아무 일이 없는 것처럼 보인다 |
 | 다시 채우는 동안 대기 문구를 띄우고, 끝나면 바뀐 칸을 적는다 | 되고 있는지 모른다 |
+| 조건 전체를 한꺼번에 보낸다 | 오늘 들어온 공고를 한 페이지씩 골라 보내야 한다 |
+| 조건 전체는 보기(`view`)까지 지킨다 | 오늘 들어옴에서 고른 전체가 모든 공고가 된다 |
+| 확인 필요 전체를 AI 로 다시 채우고 행마다 대기·채우는 중·끝을 보인다 | 되고 있는지 모른다 |
 """
 
 from __future__ import annotations
@@ -25,10 +28,15 @@ from typing import Any
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from starlette.datastructures import MultiDict
 
 from app import db
 from app.api import crawlers as crawlers_api
 from app.api import review_actions
+from app.api.review_filter import form_raw_ids
+from app.api.rules import get_connect_factory
+from app.classify import refill
+from app.classify.batch import ClassifyRun, get_classify_run
 from app.config import Settings
 from app.deliver import spring
 from app.deliver.settings import DeliverConfig, write_config
@@ -242,7 +250,9 @@ def test_AI로_다시_채우기는_도는_동안_단추를_막고_끝나면_바�
     assert 'hx-disabled-elt="#job-actions button"' in panel
     assert "AI가 공고를 다시 읽고 있어요" in panel
 
-    async def fake_classify(conn: sqlite3.Connection, ids: list[int], progress: Any) -> Any:
+    async def fake_classify(
+        conn: sqlite3.Connection, ids: list[int], progress: Any, **_: Any
+    ) -> Any:
         conn.execute("UPDATE normalized_jobs SET company_name = '에이피알' WHERE id = 1")
         progress.processed = 1
         return progress
@@ -252,3 +262,77 @@ def test_AI로_다시_채우기는_도는_동안_단추를_막고_끝나면_바�
     html = client.post("/ui/review/jobs/1/reclassify").text
 
     assert "AI로 다시 채웠어요. 바뀐 칸: 회사" in html
+
+
+def test_조건_전체를_한꺼번에_보낸다(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = oggonggo(monkeypatch)
+
+    response = client.post("/ui/review/send", data={"all_filtered": "1", "view": "all"})
+
+    assert len(seen) == 1
+    assert "고른 공고 2건 중" in response.text
+    assert "이미 보낸 1건은 건너뜀" in response.text
+
+
+def test_조건_전체는_보기까지_지킨다(conn: sqlite3.Connection) -> None:
+    """2026-09-30 전에는 폼이 `view` 를 싣지 않아 보기와 상관없이 전체가 걸렸다."""
+    form = MultiDict({"all_filtered": "1", "view": "sent"})
+
+    assert form_raw_ids(conn, form) == [2]
+    assert form_raw_ids(
+        conn, MultiDict([("raw_job_id", "2"), ("raw_job_id", "1"), ("raw_job_id", "2")])
+    ) == [1, 2]
+
+
+def test_확인_필요_보기에만_전체_다시_채우기_단추가_있다(client: TestClient) -> None:
+    assert "전체 AI로 다시 채우기" in client.get("/ui/review?view=check").text
+    assert "전체 AI로 다시 채우기" not in client.get("/ui/review?view=all").text
+
+
+def test_전체_다시_채우기는_행마다_대기_채우는_중_끝을_보인다(
+    client: TestClient, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    board = refill.RefillBoard()
+    monkeypatch.setattr(refill, "_board", board)
+    app.dependency_overrides[get_classify_run] = ClassifyRun
+    app.dependency_overrides[get_connect_factory] = lambda: lambda: db.connect(tmp_path / "jobs.db")
+    during: list[str] = []
+
+    async def fake_classify(
+        conn: sqlite3.Connection, ids: list[int], progress: Any, on_job: Any = None
+    ) -> Any:
+        on_job(ids[0], "running")
+        # 첫 건이 도는 동안 둘째 건은 아직 시작 전이다
+        during.append(client.get(f"/ui/review/refill/{ids[1]}").text)
+        during.append(client.get(f"/ui/review/refill/{ids[0]}").text)
+        on_job(ids[0], "done")
+        on_job(ids[1], "running")
+        return progress
+
+    monkeypatch.setattr(refill, "classify_ids", fake_classify)
+
+    response = client.post("/ui/review/reclassify", data={"all_filtered": "1", "view": "all"})
+    assert board.wait(5)
+
+    assert "2건</span>을 AI로 다시 채우기 시작했다" in response.text
+    assert response.headers["HX-Trigger"] == "jobs-deleted"
+    assert "AI 대기" in during[0] and 'hx-trigger="every 3s"' in during[0]
+    assert "AI 채우는 중" in during[1]
+    done = client.get("/ui/review/refill/1").text
+    assert "AI 다시 채움" in done and "hx-trigger" not in done
+    # 끝나지 못한 건은 대기로 남기지 않고 실패로 적는다
+    assert "AI 채우기 실패" in client.get("/ui/review/refill/2").text
+    assert "AI 다시 채움" in client.get("/ui/review?view=all").text
+
+
+def test_분류가_돌고_있으면_전체_다시_채우기를_시작하지_않는다(
+    client: TestClient, tmp_path: pathlib.Path
+) -> None:
+    run = ClassifyRun()
+    run.claim()
+    app.dependency_overrides[get_classify_run] = lambda: run
+    app.dependency_overrides[get_connect_factory] = lambda: lambda: db.connect(tmp_path / "jobs.db")
+
+    html = client.post("/ui/review/reclassify", data={"all_filtered": "1"}).text
+
+    assert "시작하지 못했다" in html

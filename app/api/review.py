@@ -58,6 +58,7 @@ from app.api.review_filter import (
     workflow_label,
 )
 from app.api.ui import display_zone, render, render_page
+from app.classify import refill
 from app.normalize.engine import read_raw
 from app.taxonomy import list_majors
 
@@ -158,6 +159,7 @@ def review_table_fragment(
     ).fetchall()
     groups = dup_groups(conn, picked)
     group_numbers = {group["key"]: group["number"] for group in groups}
+    refilling = refill.get_refill_board().states(int(row["raw_job_id"]) for row in rows)
     listed = [
         {
             "job": row,
@@ -165,6 +167,7 @@ def review_table_fragment(
             "dup_group": group_numbers.get(str(row["dup_key"])) if picked.dup else None,
             "dup_size": int(row["dup_size"]) if picked.dup else 0,
             "marks": row_marks(row),
+            "refill": refilling.get(int(row["raw_job_id"])),
         }
         for row in rows
     ]
@@ -194,6 +197,8 @@ def review_table_fragment(
         view=picked.view or VIEW_ALL,
         view_label=VIEWS.get(picked.view, VIEWS[VIEW_ALL]),
         empty_hint=_EMPTY_HINTS.get(picked.view, _EMPTY_HINTS[""]),
+        refill_labels=refill.LABELS,
+        refill_pending=refill.PENDING,
     )
 
 

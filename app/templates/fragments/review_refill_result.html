@@ -1,0 +1,28 @@
+{# AI 로 다시 채우기를 건 결과 (`app/api/review_actions.py` 의 `jobs_reclassify`). 확인 창 안에 뜬다.
+   다 채울 때까지 기다리지 않는다 — 행마다 뜨는 표시가 진행을 보여준다 #}
+<div class="modal-body">
+  <div class="modal-head">
+    <h3 id="app-modal-title" class="text-base font-semibold text-slate-900">AI로 다시 채우기</h3>
+  </div>
+  <div class="modal-scroll" tabindex="-1" autofocus>
+    {% if busy %}
+    <p class="text-sm"><span class="state-bad">시작하지 못했다</span> — {{ busy }}</p>
+    {% else %}
+    <p class="text-sm text-slate-700">
+      <span class="state-ok">{{ started }}건</span>을 AI로 다시 채우기 시작했다.
+      목록의 행마다 <span class="chip chip-idle">AI 대기</span> →
+      <span class="chip chip-warn">AI 채우는 중</span> →
+      <span class="chip chip-ok">AI 다시 채움</span> 으로 바뀐다.
+    </p>
+    {% if picked > started %}
+    <p class="mt-2 text-sm text-amber-700">
+      한 번에 {{ limit }}건까지만 돈다. 남은 {{ picked - started }}건은 끝난 뒤 다시 누른다
+    </p>
+    {% endif %}
+    <p class="mt-2 text-xs text-slate-500">분류 뒤 전송이 켜져 있으면 필수 칸이 찬 공고는 오공고로 바로 간다</p>
+    {% endif %}
+  </div>
+  <div class="modal-foot">
+    <button type="button" data-modal-close class="ml-auto">닫기</button>
+  </div>
+</div>

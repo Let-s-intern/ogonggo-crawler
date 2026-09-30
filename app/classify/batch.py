@@ -21,6 +21,7 @@ import asyncio
 import logging
 import sqlite3
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -58,6 +59,13 @@ MAX_LIMIT = 200
 # 실패 사유를 몇 건까지 들고 있을지. 전부 쌓으면 키 하나가 틀렸을 때 메모리에 같은 문장이
 # 수백 줄 들어찬다
 MAX_ERRORS = 20
+
+
+# 공고 한 건이 어디까지 왔는지. `classify_ids` 가 `on_job` 으로 알린다 (`app/classify/refill.py`)
+JOB_RUNNING = "running"
+JOB_DONE = "done"
+JOB_FAILED = "failed"
+OnJob = Callable[[int, str], None]
 
 
 class ClassifyRunningError(RuntimeError):
@@ -198,12 +206,17 @@ async def classify_ids(
     *,
     client: Any | None = None,
     settings: Settings | None = None,
+    on_job: OnJob | None = None,
 ) -> ClassifyProgress:
     """정해진 공고만 분류한다. 표본 실행이 쓰는 자리이기도 하다.
 
     한 건이 실패해도 나머지는 계속 간다. 실패한 공고는 `job_classifications` 에 행이 생기지
     않아서 다음 실행이 다시 집어 든다.
+
+    `on_job` 은 공고마다 시작(`JOB_RUNNING`)과 끝(`JOB_DONE`·`JOB_FAILED`)을 받는다. 공고 목록이
+    행마다 AI 로 채우는 중인지 보여줄 때 쓴다.
     """
+    notify: OnJob = on_job or (lambda _raw_job_id, _state: None)
     progress.total = len(raw_job_ids)
     # 화면에서 고른 제공자와 모델이 여기서 들어온다. 실행할 때마다 다시 읽으므로 배포 없이
     # 다음 실행부터 바뀐다 (`app/llm/settings.py`)
@@ -231,6 +244,7 @@ async def classify_ids(
     response_model = build_classification_model(conn)
 
     for raw_job_id in raw_job_ids:
+        notify(raw_job_id, JOB_RUNNING)
         # 원문이 있으면 원문, 없으면 본문이다. 옛 건에는 원문이 없다 (`app/classify/store.py`)
         source = read_source(conn, raw_job_id)
         # 제목은 `position_name` 의 출처다. 본문만 보내면 그 칸이 영원히 빈다
@@ -267,6 +281,7 @@ async def classify_ids(
         except ClassifyError as exc:
             _note_failed_call(conn, provider.name, model, exc, prompt_version.number)
             progress.note(f"raw_jobs {raw_job_id}: {exc}")
+            notify(raw_job_id, JOB_FAILED)
             continue
 
         # 사이트에서 못 읽은 회사 이름·모집 기간은 따로 짚어 온다. 공고 한 건 전체의 값이라 나눈
@@ -320,11 +335,13 @@ async def classify_ids(
         except NormalizeError as exc:
             # 분류는 남았다. 규칙을 고쳐 재정규화하면 그때 반영된다
             progress.note(f"raw_jobs {raw_job_id}: 분류는 저장했으나 정규화가 실패했다: {exc}")
+            notify(raw_job_id, JOB_FAILED)
             continue
         # 운영자가 화면에서 더한 항목이 켜져 있으면 한 번 더 묻는다. 없으면 호출도 없다.
         # 실패해도 분류는 성공이다 (`app/custom_fields.py`)
         await custom_fields.fill_job(conn, raw_job_id, settings=settings)
         progress.processed += 1
+        notify(raw_job_id, JOB_DONE)
 
     logger.info(
         "분류: 대상 %s건, 처리 %s건, 실패 %s건, 버린 칸 %s개, 호출 %s회, 토큰 %s",
