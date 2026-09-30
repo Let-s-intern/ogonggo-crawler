@@ -381,7 +381,9 @@ def _current_values_block(current_values: Mapping[str, str]) -> str:
         "원문을 읽고 같은 값이면 그 칸의 `_suggestion` 과\n"
         "`_suggestion_reason` 을 비워 둔다. 값이 다르면 `_suggestion` 에 원문이 말하는 값을,\n"
         "`_suggestion_reason` 에 왜 다른지 원문에 있는 근거를 한 줄로 적는다. 원문에 없는\n"
-        "근거로 고치지 않는다 — 짐작이 아니라 읽고 판단해야 한다.\n\n"
+        "근거로 고치지 않는다 — 짐작이 아니라 읽고 판단해야 한다.\n"
+        "회사명은 회사 이름만 비교한다. 팀·부서·본부 이름은 회사명이 아니다 — 원문이\n"
+        "`토스 결제플랫폼팀` 이고 값이 `토스` 이면 같은 값이다.\n\n"
         f"{lines}\n"
     )
 
