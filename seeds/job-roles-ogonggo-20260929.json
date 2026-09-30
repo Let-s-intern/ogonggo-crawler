@@ -87,7 +87,7 @@
           "label": "웹퍼블리싱"
         },
         {
-          "name": "D",
+          "name": "IT_XR_3D",
           "label": "VR·AR·3D"
         },
         {
@@ -219,7 +219,7 @@
           "label": "게임아트"
         },
         {
-          "name": "D",
+          "name": "GAME_MODELING_3D",
           "label": "게임3D모델링"
         },
         {
@@ -297,7 +297,7 @@
           "label": "영상·모션"
         },
         {
-          "name": "D",
+          "name": "DESIGN_VFX_3D",
           "label": "3D·VFX"
         },
         {
@@ -457,11 +457,11 @@
       "label": "영업",
       "roles": [
         {
-          "name": "C",
+          "name": "SALES_B2C",
           "label": "B2C영업"
         },
         {
-          "name": "B",
+          "name": "SALES_B2B",
           "label": "B2B영업"
         },
         {
