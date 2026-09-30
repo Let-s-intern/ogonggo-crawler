@@ -70,6 +70,9 @@ IMAGE_READ_CHARS = 1500
 _CONTENT_SELECTORS = ("main", "article", "[role=main]")
 # 공고 내용이 아닌 것. 스크립트와 SVG 아이콘, 입력 폼
 _NOT_CONTENT = "script, style, noscript, template, svg, form, iframe, button"
+# 공고 위에 뜨는 팝업. 약관·개인정보처리방침이 여기 숨어 있다. 한국투자 실측(2026-09-30): 공고는
+# 이미지 한 장인데 팝업의 처리방침 5,700자가 본문으로 읽혀 이미지를 읽지 않았다
+_POPUP = "dialog, [role=dialog], [aria-modal=true], [class~=modal]"
 
 
 class ManualAddError(ValueError):
@@ -178,12 +181,23 @@ async def add_posting(
 
 
 def page_detail(html: str) -> DetailParseResult:
-    """셀렉터 없이 페이지를 공고 상세로 편다. 제목·본문·이미지·대표 이미지만 채운다."""
+    """셀렉터 없이 페이지를 공고 상세로 편다. 제목·본문·이미지·대표 이미지만 채운다.
+
+    팝업은 뺀다. 빼고 나서 글자도 이미지도 남지 않으면 공고가 팝업 안에 있는 페이지라 그대로 둔다.
+    """
+    detail = _detail(html, drop_popups=True)
+    if detail.fields["body"].strip() or detail.images:
+        return detail
+    return _detail(html, drop_popups=False)
+
+
+def _detail(html: str, *, drop_popups: bool) -> DetailParseResult:
     soup = BeautifulSoup(html, "html.parser")
     title = _title(soup)
     cover = og_image(soup)
     icon = site_icon(soup)
-    for node in soup.select(f"{_NOT_CONTENT}, {PAGE_FURNITURE}"):
+    dropped = f"{_NOT_CONTENT}, {PAGE_FURNITURE}" + (f", {_POPUP}" if drop_popups else "")
+    for node in soup.select(dropped):
         node.decompose()
     container = _container(soup)
     text = block_text(container)

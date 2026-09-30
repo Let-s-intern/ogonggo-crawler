@@ -112,6 +112,27 @@ def test_셀렉터_없이_페이지를_공고로_편다() -> None:
     assert detail.cover_image == "/share.png"
 
 
+def test_팝업의_글자는_본문이_아니다() -> None:
+    """한국투자 공고는 이미지 한 장이고, 팝업에 개인정보처리방침 수천 자가 숨어 있다."""
+    policy = "수집하는 개인정보의 항목과 보유기간. " * 100
+    html = (
+        "<html><body><div class='wrapper'><h2>채용공고</h2>"
+        "<img src='/anno/posting.jpg'></div>"
+        f"<div id='pop-policy' class='modal fade policy'><p>{policy}</p></div></body></html>"
+    )
+
+    detail = page_detail(html)
+
+    assert "개인정보" not in detail.fields["body"]
+    assert detail.images == ("/anno/posting.jpg",)
+
+
+def test_공고가_팝업_안에_있으면_그대로_읽는다() -> None:
+    html = "<html><body><div role='dialog'><p>결제 서버 개발자를 모집합니다</p></div></body></html>"
+
+    assert "결제 서버 개발자" in page_detail(html).fields["body"]
+
+
 @pytest.mark.asyncio
 async def test_주소_하나로_저장하고_정규화한다(conn: sqlite3.Connection) -> None:
     client = site({URL: PAGE})
