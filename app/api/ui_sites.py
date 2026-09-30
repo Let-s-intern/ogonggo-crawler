@@ -41,11 +41,12 @@ from fastapi.responses import HTMLResponse
 
 from app import companies
 from app.api import crawlers, site_adds, workflows
-from app.api.ui import render
+from app.api.ui import mode_word, render
 from app.api.ui_companies import save_logo_file
 from app.api.ui_crawlers import error_detail
 from app.api.ui_tests import repair_panel
 from app.api.ui_workflows import TRIGGER_WORDS, UNKNOWN_TRIGGER, CardView, _last_run, _view
+from app.crawler.playwright import PLAYWRIGHT
 from app.scheduler import WorkflowScheduler
 from app.storage import s3
 from app.storage import settings as store
@@ -312,11 +313,12 @@ async def detail_url_fragment(
     conn.execute("UPDATE crawlers SET detail_url = ? WHERE id = ?", (url, crawler_id))
     conn.commit()
     generate = crawlers.get_generator(conn)
-    # 목록을 렌더로 가져오는 사이트는 상세도 렌더로 만든다. API 로 받는 목록은 셀렉터가 없어
-    # 경로를 정하게 비워 둔다
+    # 렌더로 가져오는 사이트는 렌더로만 만든다. 정적 사이트는 모드를 비워 등록처럼 스스로 정하게
+    # 한다 — 정적으로 묶으면 목록을 JS 로 그리게 바뀐 사이트를 영원히 못 찾는다 (2026-09-30, 한솔).
+    # API 로 받는 목록은 셀렉터가 없어 경로를 정하게 비워 둔다
     mode = str(row["list_mode"] or "")
     try:
-        result = await generate(str(row["list_url"]), url, "" if mode == "api" else mode)
+        result = await generate(str(row["list_url"]), url, mode if mode == PLAYWRIGHT else "")
     except HTTPException as exc:
         return repair_panel(request, conn, crawler_id, error=error_detail(exc))
     except Exception as exc:  # 생성 경로의 예외는 종류가 많다. 사유를 그대로 화면에 올린다
@@ -334,10 +336,15 @@ async def detail_url_fragment(
     )
     if failed:
         notice += f". 만들었지만 여전히 못 찾는 칸: {', '.join(failed)}"
+    # API 목록은 수집 모드를 여기서 바꾸지 않는다. 셀렉터 없이 도는 다른 경로다
+    switched = result.render_mode if mode != "api" and result.render_mode != mode else ""
+    if switched:
+        notice += f". 정적 HTML 에 목록이 없어 {mode_word(switched)} HTML 로 만들었다"
     return repair_panel(
         request,
         conn,
         crawler_id,
         notice=notice,
         selectors_json=json.dumps(result.selectors.model_dump(), ensure_ascii=False, indent=2),
+        render_mode=switched,
     )

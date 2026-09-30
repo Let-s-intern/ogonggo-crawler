@@ -186,7 +186,8 @@ def test_공고_주소로_만든_셀렉터는_저장하지_않고_편집기에_�
         "/ui/sites/2/detail-url", data={"detail_url": "https://careers.example.com/jobs/10"}
     ).text
 
-    assert asked == [(f"{LIST_URL}/2", "https://careers.example.com/jobs/10", "static")]
+    # 정적 사이트도 모드를 비워 넘긴다. 등록처럼 정적이 안 되면 렌더로 만들어 본다
+    assert asked == [(f"{LIST_URL}/2", "https://careers.example.com/jobs/10", "")]
     assert "아직 저장하지 않았다" in html
     assert "h1.new-title" in html
     saved = conn.execute("SELECT selectors_json FROM crawlers WHERE id = 2").fetchone()
@@ -319,3 +320,56 @@ def test_회사_이름이_없거나_저장소가_비면_올리지_않는다(
     ).text
     assert "로고를 올리지 못했어요" in body
     assert companies.read(conn, "예시") is None
+
+
+def test_정적_HTML_에_목록이_없어_렌더로_만들면_저장할_때_수집_모드도_바뀐다(
+    client: TestClient, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-09-30 한솔. 목록을 JS 로 그리게 바뀐 사이트는 정적으로 묶인 다시 찾기로 못 찾았다."""
+    from app.selector.generator import GenerationResult
+    from app.selector.schema import validate_selectors
+    from app.selector.verify import VerificationReport
+
+    selectors = validate_selectors(
+        {
+            "list": {"item": "li.job", "title": "a", "link": "a", "date": ""},
+            "detail": {
+                "title": "h1",
+                "body": "div.body",
+                "qualifications": "",
+                "recruitment_end_at": "",
+                "department": "",
+            },
+        }
+    )
+
+    def fake_generator(_conn: sqlite3.Connection) -> object:
+        async def generate(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
+            return GenerationResult(
+                selectors=selectors,
+                usage=None,  # type: ignore[arg-type]
+                attempts=1,
+                verification=VerificationReport(fields=[]),
+                render_mode="playwright",
+            )
+
+        return generate
+
+    monkeypatch.setattr(crawlers_api, "get_generator", fake_generator)
+    html = client.post(
+        "/ui/sites/2/detail-url", data={"detail_url": "https://careers.example.com/jobs/10"}
+    ).text
+
+    assert "렌더 HTML 로 만들었다" in html
+    assert 'name="render_mode" value="playwright"' in html
+    mode = conn.execute("SELECT list_mode FROM crawlers WHERE id = 2").fetchone()
+    assert mode["list_mode"] == "static"
+
+    saved = client.put(
+        "/ui/tests/2/selectors",
+        data={"selectors_json": selectors.model_dump_json(), "render_mode": "playwright"},
+    ).text
+
+    assert "수집 모드도 렌더로 바꿨다" in saved
+    modes = conn.execute("SELECT list_mode, detail_mode FROM crawlers WHERE id = 2").fetchone()
+    assert (modes["list_mode"], modes["detail_mode"]) == ("playwright", "playwright")

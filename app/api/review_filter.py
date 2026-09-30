@@ -553,13 +553,7 @@ def _build_target(
     확인 창이 148건이라고 적었는데 그 사이 크롤이 한 번 더 돌아 160건을 지우면 되돌릴 수 없다.
     """
     if resolve and scope == SCOPE_FILTERED:
-        where, params = filter_sql(picked)
-        rows = conn.execute(
-            f"SELECT DISTINCT r.id AS id FROM normalized_jobs n"
-            f" JOIN raw_jobs r ON r.id = n.raw_job_id{where} ORDER BY r.id",
-            params,
-        ).fetchall()
-        raw_job_ids = tuple(int(row["id"]) for row in rows)
+        raw_job_ids = tuple(filtered_raw_ids(conn, picked))
     elif resolve and scope == SCOPE_WORKFLOW:
         # 그 워크플로우가 모은 전부다. 정규화되지 않은 수집 건도 고른다 — 남겨 두면 다음
         # 재정규화에서 지운 공고가 되살아난다
@@ -614,13 +608,38 @@ async def _delete_request(request: Request) -> tuple[str, list[int], JobFilter]:
     if scope not in SCOPES:
         # 범위를 따로 싣지 않으면 `조건 전체` 체크박스가 정한다
         scope = SCOPE_FILTERED if form.get("all_filtered") else SCOPE_SELECTED
-    picked = read_filter(
+    return scope, _form_ids(form.getlist("raw_job_id")), form_filter(form)
+
+
+def form_filter(form: Any) -> JobFilter:
+    """표의 폼에 실린 조회 조건. 지우기·보내기·AI 다시 채우기가 표와 같은 조건을 본다.
+
+    보기(`view`)도 싣는다. 빠뜨리면 `오늘 들어옴` 에서 조건 전체를 고른 것이 전체 공고가 된다.
+    """
+    return read_filter(
         **{
             name: str(form.get(name) or "")
-            for name in ("workflow_id", "q", "status", "delivered", "job_field", "dup")
+            for name in ("workflow_id", "view", "q", "status", "delivered", "job_field", "dup")
         }
     )
-    return scope, _form_ids(form.getlist("raw_job_id")), picked
+
+
+def filtered_raw_ids(conn: sqlite3.Connection, picked: JobFilter) -> list[int]:
+    """조건에 걸린 수집 건 번호. 나눈 공고는 한 번만 센다."""
+    where, params = filter_sql(picked)
+    rows = conn.execute(
+        f"SELECT DISTINCT r.id AS id FROM normalized_jobs n"
+        f" JOIN raw_jobs r ON r.id = n.raw_job_id{where} ORDER BY r.id",
+        params,
+    ).fetchall()
+    return [int(row["id"]) for row in rows]
+
+
+def form_raw_ids(conn: sqlite3.Connection, form: Any) -> list[int]:
+    """폼이 고른 수집 건 번호. `조건 전체` 가 켜졌으면 조건에 걸린 전부, 아니면 체크한 행이다."""
+    if form.get("all_filtered"):
+        return filtered_raw_ids(conn, form_filter(form))
+    return sorted(set(_form_ids(form.getlist("raw_job_id"))))
 
 
 def _delete_rows(conn: sqlite3.Connection, raw_job_ids: Sequence[int]) -> tuple[int, int, int]:

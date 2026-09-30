@@ -9,6 +9,7 @@
 | 가린 모집 인원(`0명`·`O명`·`00명`)은 비운다 | 0명 모집 공고로 나간다 |
 | 최소 경력 연수는 경력 공고에만 남는다 | 신입 공고에 경력 연수가 붙는다 |
 | 마감일이 있으면 기간 채용·자동 종료, 없으면 상시 채용이다 | 오공고가 거절한다 |
+| `2999-12-31` 같은 먼 마감일은 비워 상시 채용이 된다 | 2999년 마감 기간 채용으로 나간다 |
 | 기간 앞쪽이 시작일이 되고, 수집한 시작일이 먼저다 | 시작일이 비거나 수집한 값이 덮인다 |
 | 칸 하나 정규화는 그 칸의 규칙만 태운다 | 시작일 규칙 실패로 마감 거르기가 마감일을 못 읽는다 |
 """
@@ -103,6 +104,24 @@ def test_마감일이_없으면_상시_채용이다() -> None:
 
     assert (fields["recruitment_type"], fields["auto_close_enabled"]) == ("ALWAYS_OPEN", "false")
     assert set(DERIVED_FIELDS) <= set(fields)
+
+
+@pytest.mark.parametrize(
+    "end", ["2999-12-31 23:59:59", "9999-12-31 00:00:00", "2100-01-01 23:59:59"]
+)
+def test_먼_마감일은_비워_상시_채용이_된다(end: str) -> None:
+    """2026-09-30 결정. 채용 시 마감 공고를 `2999-12-31` 로 적는 사이트가 있다."""
+    fields = settled(recruitment_end_at=end)
+
+    assert fields["recruitment_end_at"] is None
+    assert (fields["recruitment_type"], fields["auto_close_enabled"]) == ("ALWAYS_OPEN", "false")
+
+
+def test_2099년_마감일은_그대로_기간_채용이다() -> None:
+    fields = settled(recruitment_end_at="2099-12-31 23:59:59")
+
+    assert fields["recruitment_end_at"] == "2099-12-31 23:59:59"
+    assert fields["recruitment_type"] == "PERIOD"
 
 
 def test_마감일_칸의_기간_앞쪽이_시작일이_된다() -> None:

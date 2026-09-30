@@ -475,6 +475,8 @@ def apply_overrides(
 # 모집 인원 글자에서 읽는 숫자. 천 단위 쉼표도 받는다
 _COUNT = re.compile(r"\d[\d,]*")
 _YEARS = re.compile(r"\d{1,2}")
+# 이 해부터의 마감일은 마감이 없다는 표기다. 채용 시 마감 공고를 `2999-12-31` 로 적는 사이트가 있다
+_NO_DEADLINE_YEAR = 2100
 
 
 def settle_fields(fields: dict[str, str | None]) -> dict[str, str | None]:
@@ -487,6 +489,8 @@ def settle_fields(fields: dict[str, str | None]) -> dict[str, str | None]:
       공고(`EXPERIENCED`)는 원문에서 읽은 숫자를 남기고, 그 밖에는 비운다
     - 모집 유형과 자동 종료는 마감일로 정한다. 마감일이 있으면 기간 채용이고 마감일에 닫힌다.
       오공고는 상시 채용에 마감일이 있으면 받지 않는다
+    - `2999-12-31` 처럼 먼 마감일은 마감이 없다는 뜻이라 비운다 (2026-09-30 결정). 비워 두면
+      상시 채용이 된다
     """
     fields["recruitment_headcount"] = _headcount(fields.get("recruitment_headcount"))
     years = (fields.get("experience_min_years") or "").strip()
@@ -496,10 +500,17 @@ def settle_fields(fields: dict[str, str | None]) -> dict[str, str | None]:
         fields["experience_min_years"] = str(int(years))
     else:
         fields["experience_min_years"] = None
+    if _no_deadline(fields.get(END)):
+        fields[END] = None
     period = bool(fields.get(END))
     fields["recruitment_type"] = "PERIOD" if period else "ALWAYS_OPEN"
     fields["auto_close_enabled"] = "true" if period else "false"
     return fields
+
+
+def _no_deadline(value: str | None) -> bool:
+    year = (value or "").strip()[:4]
+    return year.isdigit() and int(year) >= _NO_DEADLINE_YEAR
 
 
 def _headcount(value: str | None) -> str | None:

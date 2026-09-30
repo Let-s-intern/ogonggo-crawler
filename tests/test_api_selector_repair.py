@@ -408,3 +408,53 @@ def test_the_failed_count_does_not_grow_with_the_hint(
 
     assert len(body["targets"]) > len(body["failed_targets"])
     assert "detail.title" not in body["failed_targets"]
+
+
+# 정적 HTML 에 목록이 없을 때 (2026-09-30, 한솔) -------------------------------
+
+
+def test_정적_HTML_에_목록이_없으면_렌더로_다시_고친다(monkeypatch: pytest.MonkeyPatch) -> None:
+    import asyncio
+    from contextlib import asynccontextmanager
+    from dataclasses import replace
+
+    opened: list[str] = []
+
+    @asynccontextmanager
+    async def fake_source(mode: str, _fetcher: Any) -> Any:
+        opened.append(mode)
+        yield mode
+
+    async def fake_repair(*_args: Any, source: str, **_kwargs: Any) -> RepairOutcome:
+        fixed = outcome_for(validate_selectors(BROKEN))
+        if source == "static":
+            # 정적 HTML 에는 목록이 없다. 고친 셀렉터도 아무것도 잡지 못한다
+            empty = verify_selectors(fixed.selectors, "<html><body></body></html>", DETAIL_HTML)
+            return replace(fixed, after=empty)
+        return fixed
+
+    monkeypatch.setattr(crawlers_api, "open_source", fake_source)
+    monkeypatch.setattr(crawlers_api, "repair_for_urls", fake_repair)
+    repair = crawlers_api.get_repairer(None)
+
+    outcome = asyncio.run(repair(LIST_URL, DETAIL_URL, "static", validate_selectors(BROKEN)))
+
+    assert opened == ["static", "playwright"]
+    assert outcome.render_mode == "playwright"
+    assert not outcome.after.list_missing
+    # 정적으로 고쳐 본 호출도 비용 기록에 남는다
+    assert outcome.earlier_usages == (USAGE,)
+
+
+def test_렌더로_고친_결과는_저장할_모드를_알린다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    from dataclasses import replace
+
+    crawler_id = insert_crawler(conn)
+    use_repairer(lambda selectors: replace(outcome_for(selectors), render_mode="playwright"))
+
+    html = client.post(f"/ui/tests/{crawler_id}/repair").text
+
+    assert 'name="render_mode" value="playwright"' in html
+    assert "저장하면 수집 모드도" in html

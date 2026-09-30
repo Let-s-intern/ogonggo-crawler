@@ -1,0 +1,8 @@
+{# 행 하나의 AI 다시 채우기 표시 (`app/classify/refill.py`). 대기·채우는 중이면 3초마다 스스로
+   다시 묻고, 끝나면 멈춘다. 다시 채운 적 없는 행은 빈 자리만 남는다 #}
+{% if state %}
+{% set word, tone = labels[state] %}
+<span class="chip chip-{{ tone }}"
+      {% if state in pending %}hx-get="/ui/review/refill/{{ raw_job_id }}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}
+      role="status">{{ word }}</span>
+{% endif %}

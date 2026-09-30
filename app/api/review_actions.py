@@ -12,6 +12,12 @@
 
 이미 오공고로 보낸 공고도 고칠 수는 있지만 오공고에는 다시 가지 않는다. 오공고에 고치는 경로가
 없다 (`app/deliver/spring.py`).
+
+## 한꺼번에 하기 (2026-09-30 결정, LC-3394)
+
+보내기와 AI 다시 채우기는 표에서 고른 행이나 `조건 전체` 를 받는다. 지우기와 같은 폼을 읽으니
+표가 센 건수와 보내는 공고가 같다. 한꺼번에 다시 채우기는 백그라운드로 돌고, 행마다 어디까지
+왔는지는 `app/classify/refill.py` 가 들고 있다.
 """
 
 from __future__ import annotations
@@ -20,16 +26,27 @@ import logging
 import sqlite3
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
+from starlette.datastructures import FormData
 
 from app import regions
 from app.api import crawlers, job_detail
 from app.api.review import render_panel
+from app.api.review_filter import form_raw_ids
+from app.api.rules import get_connect_factory
 from app.api.ui import render
-from app.classify.batch import ClassifyProgress, classify_ids, get_classify_run
+from app.classify import refill
+from app.classify.batch import (
+    MAX_LIMIT,
+    ClassifyProgress,
+    ClassifyRun,
+    ClassifyRunningError,
+    classify_ids,
+    get_classify_run,
+)
 from app.deliver import spring
-from app.normalize.backfill import rewrite_one
+from app.normalize.backfill import ConnectFactory, rewrite_one
 from app.normalize.engine import NormalizeError, load_rules
 from app.side import runner as side_runner
 
@@ -173,7 +190,10 @@ async def job_reclassify(
             request, conn, normalized_id, message=f"지금은 다시 채울 수 없다: {busy}"
         )
     before = dict(job)
-    progress = await classify_ids(conn, [int(job["raw_job_id"])], ClassifyProgress())
+    board = refill.get_refill_board()
+    progress = await classify_ids(
+        conn, [int(job["raw_job_id"])], ClassifyProgress(), on_job=board.mark
+    )
     if not progress.processed:
         message = "AI로 다시 채우지 못했어요: " + ("; ".join(progress.errors) or "사유 없음")
         return render_panel(request, conn, normalized_id, message=message)
@@ -196,13 +216,13 @@ async def job_reclassify(
 async def jobs_send(
     request: Request,
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
-    raw_job_id: Annotated[list[int] | None, Form()] = None,
 ) -> HTMLResponse:
-    """표에서 고른 공고를 한꺼번에 보낸다. 결과는 확인 창에 적는다.
+    """표에서 고른 공고나 조건에 걸린 전부를 한꺼번에 보낸다. 결과는 확인 창에 적는다.
 
     표의 체크박스는 수집 건 번호다. 한 수집 건이 여러 공고로 나뉘었으면 그 공고 전부를 보낸다.
     """
-    wanted = sorted(set(raw_job_id or []))
+    form: FormData = await request.form()
+    wanted = form_raw_ids(conn, form)
     ids: list[int] = []
     for start in range(0, len(wanted), 500):
         part = wanted[start : start + 500]
@@ -223,3 +243,50 @@ async def jobs_send(
     # 표와 숫자 카드를 다시 부르게 한다. 지우기와 같은 이벤트다
     response.headers["HX-Trigger"] = "jobs-deleted"
     return response
+
+
+@router.post("/ui/review/reclassify", response_class=HTMLResponse)
+async def jobs_reclassify(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+    run: Annotated[ClassifyRun, Depends(get_classify_run)],
+    connect: Annotated[ConnectFactory, Depends(get_connect_factory)],
+) -> HTMLResponse:
+    """고른 공고나 조건에 걸린 전부를 AI 로 다시 채운다. 백그라운드로 돌고 결과는 행마다 뜬다."""
+    wanted = form_raw_ids(conn, await request.form())
+    busy = side_runner.classify_running(conn)
+    started = 0
+    if not wanted:
+        busy = "고른 공고가 없다"
+    elif not busy:
+        try:
+            started = refill.get_refill_board().start(connect, run, wanted)
+        except ClassifyRunningError:
+            busy = "분류 실행이 아직 돌고 있다"
+    if started:
+        logger.info("공고 %s건을 AI 로 다시 채우기 시작했다", started)
+    response = render(
+        request,
+        "fragments/review_refill_result.html",
+        picked=len(wanted),
+        started=started,
+        busy=busy,
+        limit=MAX_LIMIT,
+    )
+    if started:
+        # 표가 다시 그려져야 행마다 `AI 대기` 가 붙는다
+        response.headers["HX-Trigger"] = "jobs-deleted"
+    return response
+
+
+@router.get("/ui/review/refill/{raw_job_id}", response_class=HTMLResponse)
+def job_refill_state(request: Request, raw_job_id: int) -> HTMLResponse:
+    """행 하나의 AI 다시 채우기 표시. 끝나기 전까지 표시가 스스로 이 주소를 다시 부른다."""
+    return render(
+        request,
+        "fragments/refill_chip.html",
+        raw_job_id=raw_job_id,
+        state=refill.get_refill_board().state(raw_job_id),
+        labels=refill.LABELS,
+        pending=refill.PENDING,
+    )

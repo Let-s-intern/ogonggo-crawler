@@ -206,6 +206,12 @@ class RepairOutcome:
     # 이 중 실제로 실패였던 것. 힌트가 들어오면 `targets` 는 그보다 넓어진다 — 잘 되는
     # 필드도 "바꿔도 되는 필드" 가 되기 때문이다. 넓힌 자리는 실제로 바뀐 것만 센다
     failed_targets: list[str] = field(default_factory=list)
+    # 이 결과를 만든 HTML 의 모드. 저장된 모드와 다르면 저장할 때 모드도 바꾼다
+    # (`app/api/crawlers.py` 의 `get_repairer`). 비어 있으면 저장된 모드 그대로다
+    render_mode: str = ""
+    # 이 결과 전에 먼저 부른 호출. 정적으로 고쳐 보다 렌더로 다시 고치면 정적 쪽 호출이 여기
+    # 남는다 — 호출 기록에서 빠지면 비용이 실제보다 적게 보인다
+    earlier_usages: tuple[Usage, ...] = ()
 
     @property
     def watched(self) -> list[str]:
