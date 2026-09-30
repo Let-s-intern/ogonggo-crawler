@@ -152,8 +152,9 @@ def test_정규화_행을_오공고_요청_칸으로_옮긴다() -> None:
         )
     )
 
-    assert body["companyName"] == "삼성전기"
-    assert body["parentCompanyName"] == "삼성"
+    # 사이트 추가에 넣은 이름으로 고정한다. 공고에서 읽은 이름은 수집할 때마다 달라진다
+    assert body["companyName"] == "삼성"
+    assert body["parentCompanyName"] is None
     assert (body["experienceMinYears"], body["recruitmentHeadcount"]) == (3, 2)
     assert body["recruitmentStartAt"] == "2026-09-01T00:00:00"
     assert body["recruitmentEndAt"] == "2026-09-30T23:59:59"
@@ -178,6 +179,13 @@ def test_직군_직무는_오공고_enum_이름으로_보낸다() -> None:
     assert (body["jobField"], body["jobRole"]) == ("DESIGN", None)
     body = spring.payload(job_row(job_field="옛 직군", job_role="서버·백엔드"))
     assert (body["jobField"], body["jobRole"]) == (None, None)
+
+
+def test_사이트_값이_없으면_공고에서_읽은_회사명을_보낸다() -> None:
+    """주소로 직접 넣은 공고는 사이트 추가에 넣은 이름이 없다."""
+    body = spring.payload(job_row(company_name="한국투자증권"))
+
+    assert (body["companyName"], body["parentCompanyName"]) == ("한국투자증권", None)
 
 
 def test_회사명이_모회사뿐이면_모회사가_회사명이고_상시채용은_마감일이_없다() -> None:
