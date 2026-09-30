@@ -298,6 +298,8 @@ class RepairOut(BaseModel):
     # `targets` 중 실제로 실패였던 것. 힌트가 들어오면 대상이 그보다 넓어진다 — 화면이
     # "실패한 필드 N개" 라고 적을 때 세야 하는 것은 이쪽이다
     failed_targets: list[str]
+    # 이 결과를 만든 모드. 저장된 모드와 같으면 비어 있다
+    render_mode: str = ""
     repaired: list[str]
     unresolved: list[str]
     # 고친 뒤에도 실패로 남은 필드 전부. `unresolved` 는 이번에 고치려 한 것만이라, 대상이
@@ -513,9 +515,35 @@ def get_repairer(
         hint: str = "",
     ) -> RepairOutcome:
         async with open_source(render_mode, get_fetcher()) as source:
-            return await repair_for_urls(
+            outcome = await repair_for_urls(
                 list_url, detail_url, selectors, source=source, hint=hint, settings=settings
             )
+        if render_mode != STATIC or not outcome.after.list_missing:
+            return outcome
+        # 정적 HTML 에 목록이 아예 없다. 사이트가 목록을 JS 로 그리게 바뀐 것이다 — 한솔 실측
+        # (2026-09-30): 정적 HTML 3.4MB 가 디자인 데이터뿐이라 AI 가 고를 목록이 없었다.
+        # 렌더한 HTML 로 한 번 더 고친다
+        logger.info("정적 HTML 에 목록이 없어 렌더로 다시 고친다 url=%s", list_url)
+        try:
+            async with open_source(PLAYWRIGHT, get_fetcher()) as source:
+                rendered = await repair_for_urls(
+                    list_url, detail_url, selectors, source=source, hint=hint, settings=settings
+                )
+        except FetchError as exc:
+            logger.warning("렌더로 고치지도 못했다 url=%s: %s", list_url, exc)
+            return replace(outcome, notes=[*outcome.notes, f"렌더로 다시 고치지도 못했다: {exc}"])
+        if rendered.after.list_missing:
+            return replace(outcome, notes=[*outcome.notes, "렌더한 HTML 에서도 목록을 찾지 못했다"])
+        return replace(
+            rendered,
+            earlier_usages=(*outcome.earlier_usages, outcome.usage),
+            render_mode=PLAYWRIGHT,
+            notes=[
+                *rendered.notes,
+                "정적 HTML 에 목록이 없어 렌더한 HTML 로 고쳤다. "
+                "저장하면 수집 모드도 렌더로 바뀐다",
+            ],
+        )
 
     return repair
 
@@ -1260,7 +1288,8 @@ async def repair_selectors(
             status_code=status, detail={"reason": exc.reason, "message": str(exc)}
         ) from exc
 
-    record_call(conn, feature=SELECTOR_REPAIR, usage=outcome.usage)
+    for usage in (*outcome.earlier_usages, outcome.usage):
+        record_call(conn, feature=SELECTOR_REPAIR, usage=usage)
 
     after_matches = outcome.after.summary()
     unverified = _skipped_detail_fields(after_matches, detail_url or None)
@@ -1285,6 +1314,7 @@ async def repair_selectors(
         changes=[SelectorChangeOut(**vars(change)) for change in outcome.changes],
         notes=outcome.notes,
         usage=UsageOut(**vars(outcome.usage)),
+        render_mode=outcome.render_mode,
     )
 
 

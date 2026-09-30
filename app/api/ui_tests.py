@@ -71,6 +71,7 @@ from app.api.ui_crawlers import crawler_rows, error_detail, pretty_selectors
 from app.api.ui_runs import run_failures
 from app.crawler.fetcher import Fetcher
 from app.crawler.parser import list_only
+from app.crawler.playwright import PLAYWRIGHT, STATIC
 from app.crawler.runner import KNOWN
 from app.selector.schema import SelectorSchemaError, validate_selectors
 
@@ -290,8 +291,14 @@ def repair_panel(
     error: dict[str, str] | None = None,
     selectors_json: str | None = None,
     limit: int = 3,
+    render_mode: str = "",
 ) -> HTMLResponse:
-    """결과 아래의 수정 자리 하나. 고치기·저장·다시 실행이 전부 이 조각에 있다."""
+    """결과 아래의 수정 자리 하나. 고치기·저장·다시 실행이 전부 이 조각에 있다.
+
+    `render_mode` 는 편집기에 올린 셀렉터를 만든 모드다. 저장된 모드와 다를 때만 준다 — 저장을
+    누르면 셀렉터와 함께 수집 모드도 바뀐다. 렌더한 HTML 로 만든 셀렉터를 정적 수집에 쓰면 목록을
+    다시 못 찾는다 (2026-09-30, 한솔).
+    """
     return render(
         request,
         "fragments/test_repair.html",
@@ -306,6 +313,8 @@ def repair_panel(
             _stored_selectors_json(conn, crawler_id) if selectors_json is None else selectors_json
         ),
         limit=limit,
+        render_mode=render_mode if render_mode in (STATIC, PLAYWRIGHT) else "",
+        mode_words={STATIC: "정적", PLAYWRIGHT: "렌더"},
     )
 
 
@@ -353,6 +362,7 @@ async def repair_fragment(
         notice=_repair_notice(result, hint),
         # 고친 셀렉터를 편집기에 올린다. 저장은 아직이다
         selectors_json=json.dumps(result.selectors.model_dump(), ensure_ascii=False, indent=2),
+        render_mode=result.render_mode,
     )
 
 
@@ -384,6 +394,7 @@ def save_selectors_fragment(
     crawler_id: int,
     selectors_json: Annotated[str, Form()],
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+    render_mode: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     """이 화면에서 저장한다. 등록 화면과 같은 함수를 부른다.
 
@@ -399,14 +410,28 @@ def save_selectors_fragment(
             crawler_id,
             selectors_json=selectors_json,
             error={"reason": "unparsable", "message": f"JSON 으로 읽을 수 없다: {exc}"},
+            render_mode=render_mode,
         )
 
     try:
         saved = crawlers.update_selectors(crawler_id, payload, conn)
     except HTTPException as exc:
         return repair_panel(
-            request, conn, crawler_id, selectors_json=selectors_json, error=error_detail(exc)
+            request,
+            conn,
+            crawler_id,
+            selectors_json=selectors_json,
+            error=error_detail(exc),
+            render_mode=render_mode,
         )
+
+    switched = ""
+    if render_mode in (STATIC, PLAYWRIGHT):
+        # 셀렉터를 만든 모드로 수집도 옮긴다. 셀렉터만 바꾸면 다음 수집이 다른 HTML 에 돈다
+        crawlers.update_render_mode(
+            crawler_id, crawlers.RenderModeUpdate(render_mode=render_mode), conn
+        )
+        switched = f" 수집 모드도 {mode_word(render_mode)}로 바꿨다."
 
     return repair_panel(
         request,
@@ -414,7 +439,7 @@ def save_selectors_fragment(
         crawler_id,
         selectors_json=json.dumps(saved.selectors.model_dump(), ensure_ascii=False, indent=2),
         notice=(
-            f"크롤러 {saved.id} 의 셀렉터를 저장했다. "
+            f"크롤러 {saved.id} 의 셀렉터를 저장했다.{switched} "
             "아래에서 테스트를 다시 실행해 이 셀렉터가 맞는지 확인한다."
         ),
     )

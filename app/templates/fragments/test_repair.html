@@ -67,6 +67,14 @@
       hx-indicator="#test-selectors-wait">
   <fieldset>
     <legend>크롤러 {{ crawler_id }}{% if status %} (상태 {{ status }}){% endif %}</legend>
+    {% if render_mode %}
+    {# 편집기의 셀렉터는 이 모드로 가져온 HTML 에서 만들었다. 저장하면 수집 모드도 옮긴다 #}
+    <input type="hidden" name="render_mode" value="{{ render_mode }}">
+    <p class="text-sm text-amber-700">
+      이 셀렉터는 {{ mode_words[render_mode] }} HTML 에서 만들었다. 저장하면 수집 모드도
+      {{ mode_words[render_mode] }}로 바뀐다.
+    </p>
+    {% endif %}
     <label for="test-selectors-json">셀렉터 JSON</label>
     <br>
     <textarea id="test-selectors-json" name="selectors_json" rows="20" cols="90"
