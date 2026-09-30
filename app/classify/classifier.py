@@ -321,7 +321,9 @@ _OUTLINE_PROMPT = """아래는 직무가 여럿일 수 있는 긴 채용공고�
 [0] 이 제목이고 [1] 부터가 본문이다. 칸을 나누기 전에 공고의 짜임만 먼저 답한다.
 
 - roles: 이 공고가 뽑는 직무(모집 분야)마다 하나씩 낸다. 직무 아래에 더 작은 직무가 나뉘어
-  있으면 가장 작은 직무마다 하나다. 직무가 하나면 하나다.
+  있으면 가장 작은 직무마다 하나다. 직무가 하나면 하나다. 큰 분류 하나로 묶지 않는다 —
+  `Wholesale` 아래에 `국내 법인 대상` 과 `해외 법인 대상` 이 따로 적혀 있으면 roles 는 둘이고,
+  `Wholesale` 이 적힌 줄은 두 role 의 lines 에 모두 넣는다.
 - roles 의 lines: 그 직무에만 해당하는 줄의 범위를 {{"start": 첫 줄 번호, "end": 끝 줄 번호}}
   로 적는다. 끝 줄도 들어간다. 직무 이름이 적힌 줄도 넣는다. 직무가 사업부·조직 아래에
   있으면 그 조직 이름이 적힌 줄도 넣는다. 흩어져 있으면 범위를 여럿 적는다.
@@ -662,8 +664,13 @@ async def classify_body(
     on_call: Callable[[Usage], None] | None = None,
     rules: RuleSet | None = None,
     industries: Sequence[str] = (),
+    outline_first: bool = False,
 ) -> ClassificationResult:
     """공고 하나를 나눈다. 받은 값은 원문에 있는지 확인한 뒤에만 남는다.
+
+    `outline_first` 면 길이와 상관없이 짜임을 먼저 묻고 직무마다 부른다. 주소로 직접 넣은 공고가
+    쓴다 — 한국투자 실측(2026-09-30): 4,665자에 직무 16개인 공고를 한 번에 나누게 하니 2개만
+    답하거나 응답이 상한에서 잘렸다.
 
     `rules` 는 칸별·공통 규칙 한 벌이다. 주지 않으면 코드의 기본 규칙(판 0)이다 — 부르는 쪽이
     저장된 판을 읽어 넘기고, 규칙 시험은 저장하지 않은 규칙을 넘긴다
@@ -723,7 +730,7 @@ async def classify_body(
             postings=results, usage=_total(usages), attempts=attempts, notes=notes
         )
 
-    if len(body) > MAX_BODY_CHARS and not known_parts:
+    if (outline_first or len(body) > MAX_BODY_CHARS) and not known_parts:
         return await _classify_long(
             asker,
             body,

@@ -32,6 +32,7 @@ from app.classify.basics import find_basics
 from app.classify.classifier import ClassifyError, chosen, classify_body
 from app.classify.schema import FALLBACK_FIELDS, build_classification_model
 from app.classify.store import (
+    added_by_hand,
     pending_count,
     pending_ids,
     read_current_values,
@@ -255,9 +256,10 @@ async def classify_ids(
 
         # 이미 나눈 공고는 나눈 목록을 그대로 두고 칸만 다시 채운다 (2026-09-11 결정). 번호에
         # 사람 보정과 전달된 공고 주소가 붙어 있어 개수나 순서가 바뀌면 그 값이 다른 직무로
-        # 옮겨 붙는다. 한 번도 나누지 않은 공고(1번 하나, 보낸 줄 없음)는 나눌 수 있다
+        # 옮겨 붙는다. 하나로 남은 공고(1번 하나)는 나눌 수 있다 — 긴 공고가 처음에 하나로
+        # 읽혔다고 보냈던 줄에 묶어 두면 다시 채워도 영영 하나다 (2026-09-30)
         stored = read_parts(conn, raw_job_id)
-        known = stored if len(stored) > 1 or any(part.lines for part in stored) else []
+        known = stored if len(stored) > 1 else []
 
         def counted(usage: Usage) -> None:
             # 호출 하나가 행 하나다. 깨진 응답으로 한 번 더 물었으면 두 행이 남는다
@@ -277,6 +279,7 @@ async def classify_ids(
                 client=resolved_client,
                 on_call=counted,
                 rules=prompt_version.rules,
+                outline_first=added_by_hand(conn, raw_job_id),
             )
         except ClassifyError as exc:
             _note_failed_call(conn, provider.name, model, exc, prompt_version.number)

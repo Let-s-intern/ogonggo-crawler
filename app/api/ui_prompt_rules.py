@@ -224,7 +224,7 @@ async def try_prompt_rules_fragment(
     stored = read_parts(conn, raw_job_id)
     # 배치와 같은 조건이다. 이미 나눈 공고는 나눈 목록을 고정한 채로 칸만 다시 채운다
     # (`app/classify/batch.py`)
-    known = stored if len(stored) > 1 or any(part.lines for part in stored) else []
+    known = stored if len(stored) > 1 else []
     usages: list[Usage] = []
 
     def counted(usage: Usage) -> None:

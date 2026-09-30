@@ -304,6 +304,19 @@ def read_parts(conn: sqlite3.Connection, raw_job_id: int) -> list[StoredPart]:
     return parts
 
 
+def added_by_hand(conn: sqlite3.Connection, raw_job_id: int) -> bool:
+    """주소로 직접 넣은 공고인가 (`app/crawler/manual.py`). 읽기 전용이다.
+
+    목록이 없는 캠페인 페이지가 이 길로 들어와 직무가 여럿인 공고가 흔하다.
+    """
+    row = conn.execute(
+        "SELECT 1 FROM raw_jobs r JOIN workflows w ON w.id = r.workflow_id"
+        " WHERE r.id = ? AND w.kind = 'manual'",
+        (raw_job_id,),
+    ).fetchone()
+    return row is not None
+
+
 def read_classification(conn: sqlite3.Connection, raw_job_id: int, part: int = 1) -> dict[str, str]:
     """그 공고의 분류 결과. 아직 분류되지 않았으면 빈 dict 다. 읽기 전용이다.
 

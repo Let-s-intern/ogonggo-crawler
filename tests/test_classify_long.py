@@ -169,6 +169,26 @@ def test_짜임의_줄_번호는_글_안의_것만_남는다() -> None:
     assert parsed.common == [1]
 
 
+async def test_줄_번호_없이_글자만_적은_조각은_원문에서_찾아_옮긴다() -> None:
+    """직무마다 부르는 공고는 호출 하나가 거절되면 공고 전체가 실패한다."""
+    answer = response(position_name=["HR"], responsibilities=["인사 제도를 운영합니다", "없는 글"])
+    body = "[HR]\n인사 제도를 운영합니다"
+
+    result = await classify_body(
+        body, title=TITLE, client=FakeClient(answer), settings=settings_with_key()
+    )
+
+    assert result.postings[0].fields["position_name"] == "HR"
+    assert result.postings[0].fields["responsibilities"] == "인사 제도를 운영합니다"
+
+
+def test_직무에_덧붙인_이름_칸은_읽지_않고_넘긴다() -> None:
+    """DeepSeek 가 `role_name` 을 덧붙인다. 거절하면 짜임 전체가 실패한다."""
+    text = json.dumps({"roles": [{"role_name": "기계", "lines": [{"start": 3, "end": 4}]}]})
+
+    assert parse_outline(text, line_count=10).roles == [[3, 4]]
+
+
 @pytest.mark.parametrize(
     ("payload", "reason"),
     [

@@ -642,6 +642,10 @@ def _text(name: str, raw: Any) -> str:
     return raw.strip()
 
 
+# 줄 번호를 모르는 조각. 어느 줄에도 맞지 않는 번호라 원문 전체에서 글자를 찾는다
+UNKNOWN_LINE: Final = -1
+
+
 def _pieces(name: str, raw: Any) -> list[Piece]:
     """뽑는 칸 하나의 조각 목록. 빈 문자열과 None 은 조각이 없는 것으로 읽는다."""
     if raw is None or raw == "":
@@ -652,6 +656,12 @@ def _pieces(name: str, raw: Any) -> list[Piece]:
         )
     pieces: list[Piece] = []
     for item in raw:
+        if isinstance(item, str):
+            # 줄 번호 없이 글자만 적었다. 줄을 모르는 조각으로 읽는다 — 옮길 때 원문 전체에서
+            # 그 글자를 찾고, 없으면 버린다 (`app/classify/pieces.py`). 거절하면 직무마다 부르는
+            # 공고에서 호출 하나 때문에 공고 전체가 실패한다 (한국투자 실측, 2026-09-30)
+            pieces.append((UNKNOWN_LINE, item))
+            continue
         if not isinstance(item, Mapping):
             raise ClassifySchemaError(
                 "unparsable", f"`{name}` 의 조각이 객체가 아니다: {type(item).__name__}"
@@ -703,8 +713,9 @@ def parse_outline(text: str, line_count: int) -> ParsedOutline:
     roles: list[list[int]] = []
     for index, raw in enumerate(roles_raw):
         where = f"roles[{index}]"
+        # 읽는 것은 `lines` 뿐이다. 직무 이름을 덧붙인 칸(`role_name`)은 쓸데없이 더 적은 것이라
+        # 읽지 않고 넘긴다 — 거절하면 짜임 전체가 실패한다 (DeepSeek, 2026-09-30 실측)
         role = _object(where, raw)
-        _reject_unknown(role, ("lines",), f"{where} ")
         numbers = _line_numbers(f"{where}.lines", role.get("lines"), line_count)
         if numbers:
             roles.append(numbers)

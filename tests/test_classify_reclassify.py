@@ -1,7 +1,7 @@
 """이미 나눈 공고를 다시 분류할 때 나눈 목록은 그대로 두고 칸만 다시 채운다 (2026-09-11 결정).
 
 번호에 사람 보정과 전달된 공고 주소가 붙어 있어, 개수나 순서가 바뀌면 그 값이 다른 직무로
-옮겨 붙는다. 한 번도 나누지 않은 공고(1번 하나, 직무 이름·보낸 줄 없음)는 나눌 수 있다.
+옮겨 붙는다. 하나로 남은 공고(1번 하나)는 나눌 수 있다 — 긴 공고라 보낸 줄이 남아 있어도 같다.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import pytest
 from app import db
 from app.classify.basics import Basics
 from app.classify.batch import ClassifyProgress, classify_ids
-from app.classify.schema import Classification
+from app.classify.schema import Classification, Outline
 from app.classify.store import StoredPart, read_parts
 from app.config import Settings
 from tests import test_classify_long as long_posting
@@ -158,6 +158,34 @@ async def test_한_번도_나누지_않은_공고는_다시_분류할_때_나눌
 
     assert "이미 나눈 직무" not in client.calls[0]["contents"]
     assert rows(conn, SHORT, "part, part_role") == [(1, "로봇 SW 개발"), (2, "비전 AI 연구")]
+
+
+async def test_하나로_읽힌_긴_공고도_다시_분류할_때_짜임을_다시_물어_나눈다(
+    conn: sqlite3.Connection,
+) -> None:
+    """처음에 직무 하나로 읽힌 긴 공고다. 보냈던 줄에 묶어 두면 다시 채워도 하나로 남는다."""
+    store_parts(conn, LONG, [(1, None, "[[1, 6]]")])
+
+    progress, client = await reclassify(
+        conn, LONG, long_posting.OUTLINE, long_posting.MECHANICAL, long_posting.HR
+    )
+
+    assert progress.processed == 1
+    assert client.calls[0]["config"]["response_schema"] is Outline
+    assert rows(conn, LONG, "part, part_role") == [(1, "기계"), (2, "HR")]
+
+
+async def test_주소로_직접_넣은_공고는_짧아도_짜임을_먼저_묻는다(conn: sqlite3.Connection) -> None:
+    """한국투자 공고는 4,665자에 직무가 16개였다. 한 번에 나누게 하면 2개만 답하거나 잘린다."""
+    conn.execute(
+        "INSERT INTO workflows (id, crawler_id, name, kind) VALUES (2, 1, '직접 추가', 'manual')"
+    )
+    conn.execute("UPDATE raw_jobs SET workflow_id = 2 WHERE id = ?", (SHORT,))
+    outline = json.dumps({"roles": [{"lines": [{"start": 1, "end": 2}]}]})
+
+    _, client = await reclassify(conn, SHORT, outline, split_posting.SPLIT)
+
+    assert client.calls[0]["config"]["response_schema"] is Outline
 
 
 def test_저장된_줄은_번호로_풀어_읽고_읽지_못하면_줄이_없는_공고다(
