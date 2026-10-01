@@ -163,7 +163,7 @@ def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseR
     for index, node in enumerate(nodes):
         title = field_text(node, selectors.title, f"list.title[{index}]")
         link = _link(node, selectors, index)
-        date = field_text(node, selectors.date, f"list.date[{index}]")
+        date = _date_text(node, selectors.date, f"list.date[{index}]")
         company_name = (
             field_text(node, selectors.company_name, f"list.company_name[{index}]")
             if selectors.company_name
@@ -373,6 +373,8 @@ def field_text(scope: BeautifulSoup | Tag, selector: str, name: str) -> str:
 # 날짜를 담는 상세 칸. 셀렉터가 여러 노드를 잡으면 날짜가 든 첫 노드를 쓴다 (`_date_text`)
 DATE_FIELDS: tuple[str, ...] = ("recruitment_end_at", "recruitment_start_at")
 _HAS_DATE = re.compile(r"\d{2,4}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]\s*\d{1,2}")
+# 기간의 앞쪽만 적고 끝난 글자. `2026.09.30 ~`
+_OPEN_PERIOD = re.compile(r"[~〜]\s*$")
 
 
 def _date_text(scope: BeautifulSoup | Tag, selector: str, name: str) -> str:
@@ -381,15 +383,24 @@ def _date_text(scope: BeautifulSoup | Tag, selector: str, name: str) -> str:
     LX MMA 실측(2026-09-22): 마감일 셀렉터가 표의 값 칸 네 개(`수시`·`일반채용`·`신입/경력`·
     `2026.09.27 오후 11:59`)를 모두 잡아 첫 칸 `수시` 가 마감일로 들어갔다. 날짜가 없는 값
     (`상시채용`)은 그 자체로 뜻이 있으므로, 날짜 든 노드가 없으면 전처럼 첫 노드를 쓴다.
+
+    날짜 든 노드가 기간의 앞쪽에서 끝나면(`2026.09.30 ~`) 날짜 든 다음 노드를 이어 붙인다. GS리테일
+    실측(2026-10-01): 목록이 기간을 `<p>2026.09.30 ~</p><p>2026.10.13 23:59</p>` 로 나눠 적어
+    시작일이 마감일로 들어갔다. 목록의 날짜 칸(`list.date`)도 이 함수로 읽는다.
     """
     if not selector.strip():
         return ""
     nodes = select_nodes(scope, selector, name)
-    for node in nodes:
-        text = block_text(node)
-        if _HAS_DATE.search(text):
-            return text
-    return block_text(nodes[0]) if nodes else ""
+    texts = [block_text(node) for node in nodes]
+    for index, text in enumerate(texts):
+        if not _HAS_DATE.search(text):
+            continue
+        if _OPEN_PERIOD.search(text.strip()):
+            after = next((one for one in texts[index + 1 :] if _HAS_DATE.search(one)), "")
+            if after:
+                return f"{text.strip()} {after.strip()}"
+        return text
+    return texts[0] if texts else ""
 
 
 def block_text(node: Tag) -> str:

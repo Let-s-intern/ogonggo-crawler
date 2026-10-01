@@ -300,6 +300,33 @@ def test_날짜_칸은_날짜가_든_첫_노드를_쓴다() -> None:
     assert parse_detail(html, selectors).fields["recruitment_end_at"] == "2026.09.27 오후 11:59"
 
 
+def test_목록이_기간을_두_줄로_나눠_적으면_이어_붙여_읽는다() -> None:
+    """GS리테일 실측(2026-10-01): 시작일 줄만 읽혀 `2026.09.30 ~` 가 마감일로 들어갔다."""
+    html = (
+        "<html><body><ul><li class='job'><a href='/career/jobs/129853'>"
+        "<p class='title'>마케팅 경력사원 채용</p>"
+        "<div class='date'><p>2026.09.30 ~ </p><p>2026.10.13 23:59</p></div>"
+        "</a></li></ul></body></html>"
+    )
+    selectors = ListSelectors(item="li.job", title="p.title", link="a", date="div.date p")
+
+    items = parse_list(html, selectors, "https://gsretail.recruiter.co.kr/career/job").items
+
+    assert items[0].date == "2026.09.30 ~ 2026.10.13 23:59"
+
+
+def test_기간의_앞쪽만_있으면_그대로_둔다() -> None:
+    html = (
+        "<html><body><h1>공고</h1><div class='body'>본문</div>"
+        "<p class='end'>2026.09.30 ~</p><p class='end'>마감 시 종료</p></body></html>"
+    )
+    selectors = DetailSelectors(
+        title="h1", body="div.body", qualifications="", recruitment_end_at="p.end", department=""
+    )
+
+    assert parse_detail(html, selectors).fields["recruitment_end_at"] == "2026.09.30 ~"
+
+
 def test_날짜가_든_노드가_없으면_첫_노드를_쓴다() -> None:
     html = (
         "<html><body><h1>공고</h1><div class='body'>본문</div>"

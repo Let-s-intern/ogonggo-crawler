@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -266,11 +267,20 @@ def read_current_values(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, 
     row = conn.execute(f"SELECT {columns} FROM raw_jobs r WHERE r.id = ?", (raw_job_id,)).fetchone()
     if row is None:
         return {}
-    return {
+    values = {
         name: str(row[name])
         for name in COLLECTED_REVIEW_FIELDS
         if row[name] is not None and str(row[name]).strip()
     }
+    if _OPEN_PERIOD.search(values.get(_END, "")):
+        # 기간의 앞쪽만 있다(`2026.09.30 ~`). 정규화가 마감일을 비우므로 여기서도 빈 칸으로 본다 —
+        # 그래야 분류가 원문에서 마감일을 짚는다 (`app/normalize/engine.py` 의 `_with_period_start`)
+        del values[_END]
+    return values
+
+
+_END = "recruitment_end_at"
+_OPEN_PERIOD = re.compile(r"[~〜]\s*$")
 
 
 @dataclass(frozen=True)

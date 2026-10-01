@@ -283,10 +283,17 @@ def _with_period_start(raw: Mapping[str, object]) -> Mapping[str, object]:
     """
     start = raw.get(START)
     end = raw.get(END)
-    if (isinstance(start, str) and start.strip()) or not isinstance(end, str):
+    if not isinstance(end, str):
         return raw
     parts = _PERIOD_SEPARATOR.split(end, maxsplit=1)
     if len(parts) < 2 or not parts[0].strip():
+        return raw
+    if not parts[1].strip():
+        # 기간의 앞쪽만 있다(`2026.09.30 ~`). 마감일이 아니라 시작일이다. 마감일 칸을 비워야 분류가
+        # 원문에서 마감일을 찾는다 — 두면 시작일이 마감일로 나간다 (GS리테일 실측, 2026-10-01)
+        opened = {**raw, END: ""}
+        return opened if isinstance(start, str) and start.strip() else {**opened, START: parts[0]}
+    if isinstance(start, str) and start.strip():
         return raw
     return {**raw, START: parts[0]}
 

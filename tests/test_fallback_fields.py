@@ -20,12 +20,15 @@ APR 처럼 셀렉터가 제목·본문만 잡는 사이트는 세 칸이 늘 비
 from __future__ import annotations
 
 import json
+import pathlib
 from datetime import date
 
 import pytest
 
+from app import db
 from app.classify.basics import find_basics
 from app.classify.schema import FALLBACK_FIELDS, STORED_CLASSIFY_FIELDS, validate_classification
+from app.classify.store import read_current_values
 from app.normalize import loose_date
 from app.normalize.engine import apply_classification, fill_fallbacks
 from tests.test_classify_body import settings_with_key
@@ -188,3 +191,20 @@ def test_날짜를_못_읽으면_빈_값이고_분류가_없어도_시작은_수
     empty: dict[str, str | None] = {"recruitment_start_at": None, "recruitment_end_at": None}
     fill_fallbacks(empty, None, COLLECTED)
     assert empty["recruitment_start_at"] == "2026-09-17 00:00:00"
+
+
+def test_기간의_앞쪽만_있는_마감일은_AI_가_다시_짚는다(tmp_path: pathlib.Path) -> None:
+    """GS리테일 실측(2026-10-01): `2026.09.30 ~` 를 채운 값으로 봐 마감일을 묻지 않았다."""
+    conn = db.connect(tmp_path / "jobs.db")
+    db.migrate_up(conn)
+    conn.execute("INSERT INTO crawlers (id, name, list_url) VALUES (1, 'GS', 'https://x')")
+    conn.execute("INSERT INTO workflows (id, crawler_id, name) VALUES (1, 1, 'GS')")
+    raw = {"title": "공고", "body": "본문", "recruitment_end_at": "2026.09.30 ~ "}
+    conn.execute(
+        "INSERT INTO raw_jobs (id, workflow_id, source_url, raw_data_json, content_hash)"
+        " VALUES (1, 1, 'https://x/1', ?, 'hash')",
+        (json.dumps(raw, ensure_ascii=False),),
+    )
+
+    assert "recruitment_end_at" not in read_current_values(conn, 1)
+    conn.close()

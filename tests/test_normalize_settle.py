@@ -138,6 +138,14 @@ def test_다른_물결표도_기간으로_읽고_날짜만_있으면_하루의_�
     assert fields["recruitment_end_at"] == "2026-08-31 23:59:59"
 
 
+def test_기간의_앞쪽만_있으면_시작일이고_마감일은_빈다() -> None:
+    """GS리테일 실측(2026-10-01): `2026.09.30 ~` 가 마감일 칸에 남아 시작일이 마감일로 보였다."""
+    fields = normalize_fields({"recruitment_end_at": "2026.09.30 ~ "}, RULES)
+
+    assert fields["recruitment_start_at"] == "2026-09-30 00:00:00"
+    assert fields["recruitment_end_at"] is None
+
+
 def test_수집한_시작일이_있으면_기간으로_덮지_않는다() -> None:
     fields = normalize_fields(
         {
