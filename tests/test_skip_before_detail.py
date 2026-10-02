@@ -90,7 +90,7 @@ def rules() -> list[Rule]:
         ("", False, "마감일이 없는 상시채용이다"),
         ("   ", False, "빈 값과 같다"),
         ("채용시까지", False, "규칙이 날짜로 읽지 못했다. 못 읽은 것은 지난 것이 아니다"),
-        ("2026년 8월 20일", False, "규칙에 없는 표기다. 형식이 바뀐 사이트를 버리지 않는다"),
+        ("마감 임박", False, "날짜로 읽지 못하는 표기다. 형식이 바뀐 사이트를 버리지 않는다"),
         ("상시채용", False, "규칙이 값을 비웠다. 마감일이 없는 것이다"),
     ],
 )
@@ -216,7 +216,7 @@ async def test_마감이_지난_항목은_상세를_열지_않는다(conn: sqlit
 async def test_읽지_못한_날짜는_상세를_연다(conn: sqlite3.Connection) -> None:
     """형식이 바뀐 사이트를 조용히 전부 버리지 않는다."""
     detail = StubDetail()
-    items = [item(0, "표기가 바뀐 공고", "2026년 8월 1일"), item(1, "상시채용", "상시채용")]
+    items = [item(0, "표기가 바뀐 공고", "마감 임박"), item(1, "상시채용", "상시채용")]
 
     result = await run_once(conn, target(), collectors=collectors(items, detail))
 

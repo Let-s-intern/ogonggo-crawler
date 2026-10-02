@@ -337,3 +337,80 @@ def test_날짜가_든_노드가_없으면_첫_노드를_쓴다() -> None:
     )
 
     assert parse_detail(html, selectors).fields["recruitment_end_at"] == "상시채용"
+
+
+# 마감일 라벨로 읽기 (2026-10-02, GS리테일) ------------------------------------
+
+GS_SIDE_BOX = (
+    "<html><body><h1>공고</h1><div class='JDContent_body__a1'>" + "본문 " * 10 + "</div>"
+    "<ul class='JDProcess_info__8_LoR'>"
+    "<li><div class='JDProcess_label__ByWrp'>채용 구분</div>"
+    "<div class='JDProcess_text__x6Abn'>경력</div></li>"
+    "<li><div class='JDProcess_label__ByWrp'>마감일</div>"
+    "<div class='JDProcess_text__x6Abn'>2026.10.15 오후 11:59</div></li>"
+    "</ul></body></html>"
+)
+
+
+@pytest.mark.parametrize(
+    "end_selector",
+    ["", "div.JDProcess_text__old99", "div.JDProcess_label__ByWrp"],
+    ids=["셀렉터 없음", "클래스 해시가 바뀜", "날짜 없는 칸"],
+)
+def test_셀렉터가_마감일을_못_잡으면_마감일_라벨_옆_날짜를_읽는다(end_selector: str) -> None:
+    """GS리테일 실측: 상세 상자의 마감일을 못 읽어 목록의 시작일(`2026.10.02 ~`)이 마감일이 됐다."""
+    selectors = DetailSelectors(
+        title="h1",
+        body="div.JDContent_body__a1",
+        qualifications="",
+        recruitment_end_at=end_selector,
+        department="",
+    )
+
+    parsed = parse_detail(GS_SIDE_BOX, selectors)
+
+    assert parsed.fields["recruitment_end_at"] == "2026.10.15 오후 11:59"
+    assert "recruitment_end_at" not in parsed.missing
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        (
+            "<table><tr><th>접수기간</th><td>2026.08.18 ~ 2026.08.27 (10:00)</td></tr></table>",
+            "2026.08.18 ~ 2026.08.27 (10:00)",
+        ),
+        ("<dl><dt>서류 마감</dt><dd>2026-09-05</dd></dl>", "2026-09-05"),
+        (
+            "<p>접수기간 : 2026년 8월 20일(목) 14:00 ~ 2026년 8월 31일(월) 23:00"
+            " 접수방법 : 홈페이지</p>",
+            "2026년 8월 20일(목) 14:00 ~ 2026년 8월 31일(월) 23:00",
+        ),
+        ("<p>서류 마감 후 2026.10.20 발표</p>", ""),
+        ("<button>마감일순</button><div>2026.10.01</div>", ""),
+        ("<footer><span>마감일</span><span>2026.10.01</span></footer>", ""),
+        ("<div>마감일</div><div>채용시까지</div>", ""),
+    ],
+    ids=["표", "정의 목록", "한 칸에 라벨과 값", "본문 문장", "정렬 단추", "꼬리말", "날짜 없음"],
+)
+def test_마감일_라벨은_옆_칸의_날짜만_읽는다(html: str, expected: str) -> None:
+    from bs4 import BeautifulSoup
+
+    from app.crawler.parser import labeled_deadline
+
+    assert labeled_deadline(BeautifulSoup(f"<html><body>{html}</body></html>", "html.parser")) == (
+        expected
+    )
+
+
+def test_셀렉터가_날짜를_잡으면_라벨을_보지_않는다() -> None:
+    html = GS_SIDE_BOX.replace("<h1>공고</h1>", "<h1>공고</h1><span class='end'>2026.11.30</span>")
+    selectors = DetailSelectors(
+        title="h1",
+        body="div.JDContent_body__a1",
+        qualifications="",
+        recruitment_end_at="span.end",
+        department="",
+    )
+
+    assert parse_detail(html, selectors).fields["recruitment_end_at"] == "2026.11.30"

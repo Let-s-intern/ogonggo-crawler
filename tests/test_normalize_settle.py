@@ -21,7 +21,6 @@ from datetime import date
 import pytest
 
 from app.normalize.engine import (
-    NormalizeError,
     normalize_fields,
     normalize_value,
     settle_fields,
@@ -169,8 +168,10 @@ def test_칸_하나는_그_칸의_규칙만_태운다() -> None:
 
     assert normalize_value("recruitment_end_at", value, rules) == "2026-08-31 23:59:59"
     assert normalize_value("recruitment_end_at", "", rules) is None
-    with pytest.raises(NormalizeError):
-        normalize_fields({"recruitment_end_at": value}, rules)
+    # 시작일 규칙의 형식은 맞지 않지만 `loose_date` 가 읽는다 (2026-10-02). 전에는 여기서 실패했다
+    assert normalize_fields({"recruitment_end_at": value}, rules)["recruitment_start_at"] == (
+        "2026-08-11 00:00:00"
+    )
 
 
 @pytest.mark.parametrize(

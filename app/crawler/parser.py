@@ -234,6 +234,16 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
         if not value:
             missing.append(name)
 
+    end = fields.get(DEADLINE, "")
+    if not _HAS_DATE.search(end) or _OPEN_PERIOD.search(end.strip()):
+        # 셀렉터가 마감일을 못 잡았다. 페이지의 `마감일` 라벨 옆 날짜를 읽는다 — 사이트마다 셀렉터를
+        # 고치지 않아도 되게 (GS리테일 실측, 2026-10-02)
+        labeled = labeled_deadline(soup)
+        if labeled:
+            fields[DEADLINE] = labeled
+            if DEADLINE in missing:
+                missing.remove(DEADLINE)
+
     images = source_images(soup, selectors.body)
     unreadable = [name for name in REQUIRED_DETAIL_FIELDS if not fields[name]]
     # 본문 자리에 글자 없이 이미지만 있는 공고는 여기서 버리지 않는다. 이미지를 읽어 본문으로
@@ -401,6 +411,64 @@ def _date_text(scope: BeautifulSoup | Tag, selector: str, name: str) -> str:
                 return f"{text.strip()} {after.strip()}"
         return text
     return texts[0] if texts else ""
+
+
+DEADLINE = "recruitment_end_at"
+# 마감일을 말하는 라벨. 칸이 이 라벨로 시작하고 값이 날짜로 시작해야 한다 — `마감일순` 단추는
+# 값이 없어 걸리지 않는다. 마감 라벨이 먼저고 기간 라벨(`접수기간: 10.02 ~ 10.15`)은 그다음이다.
+# 기간은 정규화가 앞뒤로 나눈다
+_DEADLINE_LABELS = (
+    re.compile(r"(?:서류\s*)?(?:접수|지원|모집|채용)?\s*마감\s*(?:일|일시|기한|날짜)?"),
+    re.compile(r"(?:서류\s*)?(?:접수|지원|모집|채용)\s*기간"),
+)
+_LABEL_TRIM = " :：\u00a0\t\n"
+# 라벨 뒤 값에서 읽는 자리. 날짜 하나(요일·시각이 붙을 수 있다)나 `날짜 ~ 날짜` 기간이다
+_ONE_DATE = (
+    r"\d{2,4}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]\s*\d{1,2}\s*일?\.?"
+    r"(?:\s*\(\s*[월화수목금토일]\s*\))?"
+    r"(?:\s*\(?\s*(?:오전|오후|AM|PM)?\s*\d{1,2}\s*[:시]\s*(?:\d{2})?\s*분?\s*\)?)?"
+)
+_DATE_SPAN = re.compile(rf"{_ONE_DATE}(?:\s*[~〜\-]\s*{_ONE_DATE})?")
+
+
+def labeled_deadline(soup: BeautifulSoup) -> str:
+    """페이지에서 마감일 라벨 바로 옆의 날짜. 없으면 빈 문자열이다.
+
+    상세 마감일 셀렉터가 못 잡을 때 쓴다. recruiter.co.kr 상세는 공고 본문 옆 상자에
+    `<div>마감일</div><div>2026.10.15 오후 11:59</div>` 로 적는다. 클래스 이름이 빌드 해시
+    (`JDProcess_text__x6Abn`)라 사이트가 배포할 때마다 셀렉터가 깨지고, 그러면 목록의 시작일
+    (`2026.10.02 ~`)이 마감일 자리에 들어갔다. 라벨은 바뀌지 않는다.
+
+    값은 라벨의 다음 형제 칸(`th`→`td`, `dt`→`dd` 도 같다)이고, 라벨과 값이 한 칸에 있으면
+    (`마감일 : 2026.10.15`) 라벨 뒤 글자다. 머리말·꼬리말·옆 목록 안의 라벨은 보지 않는다.
+    """
+    furniture = {id(node) for node in soup.select(PAGE_FURNITURE)}
+    for pattern in _DEADLINE_LABELS:
+        for text_node in soup.find_all(string=True):
+            parent = text_node.parent
+            if parent is None or parent.name in ("script", "style", "option", "button"):
+                continue
+            label = parent.get_text(" ", strip=True)
+            value = _labeled_value(parent, label, pattern)
+            if not value or any(id(up) in furniture for up in parent.parents):
+                continue
+            return value
+    return ""
+
+
+def _labeled_value(node: Tag, label: str, pattern: re.Pattern[str]) -> str:
+    """이 칸이 라벨이면 그 값. 라벨이 아니거나 값에 날짜가 없으면 빈 문자열이다."""
+    head = pattern.match(label.strip(_LABEL_TRIM))
+    if head is None:
+        return ""
+    rest = label.strip(_LABEL_TRIM)[head.end() :].strip(_LABEL_TRIM)
+    if not rest:
+        sibling = node.find_next_sibling()
+        rest = block_text(sibling).strip() if sibling is not None else ""
+    # 값은 날짜로 시작해야 한다. `마감 후 2026.10.20 발표` 같은 본문 문장은 라벨이 아니다. 날짜와
+    # 시각, 기간이면 끝 날짜까지만 쓴다 — 라벨과 값이 한 칸이면 뒤 글(`접수방법 : ...`)이 딸려 온다
+    found = _DATE_SPAN.match(" ".join(rest.split()))
+    return found.group(0).strip() if found else ""
 
 
 def block_text(node: Tag) -> str:

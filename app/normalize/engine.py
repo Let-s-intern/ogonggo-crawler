@@ -750,6 +750,11 @@ def _parse_date(value: str, rule: Rule, config: DateParseConfig) -> str:
     맞지 않는 값을 원문 그대로 통과시키지 않는다. 그러면 `recruitment_end_at` 컬럼에 날짜와
     "상시채용" 이 섞여 들어가고, 소비 측은 그것을 날짜로 읽는다. 날짜가 아닌 표기가 섞이는
     사이트라면 앞 순번에 `mapping` 규칙을 두어 먼저 걸러야 한다.
+
+    형식이 하나도 맞지 않으면 AI 가 짚은 날짜를 읽는 `loose_date` 로 한 번 더 읽는다
+    (2026-10-02 결정). `2026.10.15 오후 11:59`·`2026년 8월 31일(월) 23:00` 처럼 형식 목록에 없는
+    표기 하나로 공고가 통째로 빠졌다. `loose_date` 는 날짜를 읽거나 못 읽거나 둘 중 하나라 날짜가
+    아닌 글자는 여전히 들어가지 않는다 — 못 읽으면 지금처럼 실패다.
     """
     text = value.strip()
     for fmt in config.formats:
@@ -761,6 +766,10 @@ def _parse_date(value: str, rule: Rule, config: DateParseConfig) -> str:
         if boundary is not None and not _TIME_DIRECTIVE.search(fmt.replace("%%", "")):
             parsed = datetime.combine(parsed.date(), boundary)
         return parsed.strftime(config.output_format)
+    if rule.field_name in (START, END):
+        loose = loose_date.read(text, date.today(), end=rule.field_name == END)
+        if loose is not None:
+            return datetime.strptime(loose, loose_date.OUTPUT_FORMAT).strftime(config.output_format)
     raise NormalizeError(
         rule.field_name,
         rule.rule_type,

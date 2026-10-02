@@ -182,10 +182,13 @@ def test_priority_decides_order() -> None:
         == "2026-09-30 23:59:59"
     )
 
-    # 순서를 뒤집으면 날짜로 읽을 수 없다. 우선순위가 실제로 적용된다는 증거다
-    flipped = build_rule("recruitment_end_at", "date_parse", {"formats": ["%Y.%m.%d"]}, priority=-1)
-    with pytest.raises(NormalizeError):
-        normalize_fields({"recruitment_end_at": "마감: 2026.09.30"}, [strip_prefix, flipped])
+    # 순서를 뒤집으면 결과가 달라진다. 우선순위가 실제로 적용된다는 증거다. 날짜 칸은 형식이
+    # 안 맞으면 `loose_date` 가 한 번 더 읽어 순서가 가려지므로 다른 칸으로 본다
+    first = build_rule("title", "regex", {"pattern": "^a", "replacement": "b"}, priority=0)
+    second = build_rule("title", "regex", {"pattern": "^b", "replacement": "c"}, priority=1)
+    flipped = build_rule("title", "regex", {"pattern": "^b", "replacement": "c"}, priority=-1)
+    assert normalize_fields({"title": "a공고"}, [second, first])["title"] == "c공고"
+    assert normalize_fields({"title": "a공고"}, [first, flipped])["title"] == "b공고"
 
 
 def test_same_priority_falls_back_to_id() -> None:
@@ -448,3 +451,19 @@ def test_a_real_date_still_goes_through_the_whole_chain() -> None:
 
     # 시각을 떼는 규칙을 거쳐 날짜만 남았으니 그날이 끝날 때까지다
     assert out["recruitment_end_at"] == "2026-08-30 23:59:59"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2026.10.15 오후 11:59", "2026-10-15 23:59:00"),
+        ("2026년 8월 31일(월) 23:00", "2026-08-31 23:00:00"),
+    ],
+)
+def test_형식_목록에_없는_날짜는_loose_date_로_한_번_더_읽는다(value: str, expected: str) -> None:
+    """2026-10-02 결정. 형식 하나 때문에 공고가 통째로 빠졌다. 날짜가 아닌 글자는 여전히 실패다."""
+    rule = build_rule("recruitment_end_at", "date_parse", {"formats": ["%Y.%m.%d"]})
+
+    assert normalize_fields({"recruitment_end_at": value}, [rule])["recruitment_end_at"] == expected
+    with pytest.raises(NormalizeError):
+        normalize_fields({"recruitment_end_at": "상시채용"}, [rule])
