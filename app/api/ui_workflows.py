@@ -826,8 +826,12 @@ async def recollect_fragment(
     gate: Annotated[RunGate, Depends(get_run_gate)],
     launch: Annotated[Launcher, Depends(get_run_launcher)],
     connect: Annotated[Connect, Depends(get_run_connect)],
+    include_closed: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     """이미 담은 공고의 원문을 다시 수집하고 워크플로우 공고를 전부 다시 분류한다. 시작만 한다.
+
+    `include_closed` 를 켜면 저장된 마감일이 지난 공고도 다시 연다. 마감일을 잘못 읽은 공고를
+    바로잡을 때 쓴다 (2026-10-02).
 
     지금 1회 실행과 같은 자리를 막는다 — 같은 워크플로우의 실행이 돌고 있으면 시작하지 않는다.
     """
@@ -856,7 +860,12 @@ async def recollect_fragment(
     _running.add(workflow_id)
     launch(
         _execute_recollect(
-            workflow_id, fetcher=fetcher, scheduler=scheduler, gate=gate, connect=connect
+            workflow_id,
+            fetcher=fetcher,
+            scheduler=scheduler,
+            gate=gate,
+            connect=connect,
+            include_closed=bool(include_closed),
         )
     )
     return _card(
@@ -871,6 +880,7 @@ async def _execute_recollect(
     scheduler: WorkflowScheduler,
     gate: RunGate,
     connect: Connect,
+    include_closed: bool = False,
 ) -> None:
     """요청이 끝난 뒤에도 끝까지 가는 원문 다시 수집.
 
@@ -878,7 +888,9 @@ async def _execute_recollect(
     """
     conn = connect()
     try:
-        await recollect.recollect_workflow(conn, workflow_id, fetcher=fetcher, slot=gate.slot)
+        await recollect.recollect_workflow(
+            conn, workflow_id, fetcher=fetcher, slot=gate.slot, include_closed=include_closed
+        )
     except Exception:
         logger.exception("workflow %s: 원문 다시 수집이 예외로 끝났다", workflow_id)
     finally:

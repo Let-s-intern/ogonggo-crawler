@@ -8,6 +8,7 @@
 | 바뀐 공고는 같은 행에 갈아 끼우고 지금 값은 이력에 남긴다 | 지금 값이 사라지거나 보정이 끊긴다 |
 | 값이 같으면 갈아 끼우지도 남기지도 않는다 | 이력이 쓸데없이 쌓인다 |
 | 저장된 마감일이 지난 공고는 열지 않는다 | 내려간 공고마다 요청이 나가고 실패가 쌓인다 |
+| 마감일이 지났어도 목록에 있거나 마감 무시면 연다 | 잘못 읽은 마감일을 바로잡을 수 없다 |
 | 못 가져오거나 본문이 비면 지금 값을 둔다 | 실패한 공고의 원문이 빈 값으로 덮인다 |
 | 목록에 있으면 목록 항목으로, 없으면 저장된 주소로 연다 | 상세 API 사이트가 id 를 모른다 |
 | 목록이 더는 주지 않는 칸은 지금 값을 둔다 | 다시 수집이 목록 칸을 비운다 |
@@ -237,6 +238,37 @@ async def test_저장된_마감일이_지난_공고는_열지_않는다(conn: sq
 
     assert [item.link for item in opened(active)] == [URL_B]
     assert (result.success_count, result.skipped_count) == (1, 1)
+
+
+async def test_저장된_마감일이_지났어도_목록에_아직_있으면_연다(conn: sqlite3.Connection) -> None:
+    """GS리테일(2026-10-02): 시작일이 마감일로 들어가 마감으로 보였지만 목록에는 아직 있었다."""
+    workflow_id = add_workflow(conn)
+    add_job(conn, workflow_id, stored_record(URL_A, recruitment_end_at="2020-01-01"))
+    listed = [ListItem(index=0, title="제목", link=URL_A, date="")]
+    active = collectors({URL_A: detail()}, items=listed)
+
+    result = await recollect_now(conn, workflow_id, active)
+
+    assert [item.link for item in opened(active)] == [URL_A]
+    assert (result.success_count, result.skipped_count) == (1, 0)
+
+
+async def test_마감_무시를_켜면_저장된_마감일이_지난_공고도_연다(conn: sqlite3.Connection) -> None:
+    workflow_id = add_workflow(conn)
+    add_job(conn, workflow_id, stored_record(URL_A, recruitment_end_at="2020-01-01"))
+    active = collectors({URL_A: detail()})
+
+    result = await recollect.recollect_workflow(
+        conn,
+        workflow_id,
+        collectors=active,
+        reclassify=Reclassified(),
+        wait_seconds=0.01,
+        include_closed=True,
+    )
+
+    assert [item.link for item in opened(active)] == [URL_A]
+    assert result.skipped_count == 0
 
 
 async def test_상세를_못_가져오면_지금_값을_두고_실패로_남긴다(conn: sqlite3.Connection) -> None:

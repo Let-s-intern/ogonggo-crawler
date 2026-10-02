@@ -10,6 +10,13 @@
 이미 등록된 원문 주소라 409 가 오면 `GET ?sourceUrl=` 로 id 를 찾아 보낸 것으로 적는다 — id 를 적기
 전에 크롤러가 죽었거나 DB 를 옮긴 경우다.
 
+## 고른 공고는 이미 보냈어도 교체한다 (2026-10-02 결정)
+
+공고 목록에서 골라 보내기는 이미 보낸 공고면 `PUT /api/v1/internal/jobs/{id}` 로 지금 값으로
+교체한다. 마감일을 잘못 읽은 공고를 다시 수집·분류한 뒤 오공고에 반영할 길이 없었다. 오공고 id 는
+`spring_deliveries.spring_job_id` 에 있고, 없으면 원문 주소로 찾는다. 교체는 관리자 콘솔에서 고친
+값도 덮어쓰므로 사람이 고른 공고만 교체한다 — 분류 뒤 자동 전송은 지금처럼 새 공고만 등록한다.
+
 ## 보내지 않는 공고
 
 - 오공고가 반드시 받는 칸(회사명·제목·고용 형태·경력 구분·학력·모집 유형·원문 주소)이 빈 공고. 대개
@@ -101,6 +108,8 @@ class DeliveryResult:
 
     sent: int = 0
     failed: int = 0
+    # 이미 보낸 공고를 지금 값으로 바꾼 수. 골라 보내기만 교체한다
+    replaced: int = 0
     reason: str = ""
     errors: list[str] = field(default_factory=list)
 
@@ -342,8 +351,7 @@ async def deliver_ids(
     """운영자가 고른 공고를 지금 보낸다 — 공고 목록의 `오공고로 보내기` (2026-09-17, LC-3344).
 
     사람이 골라 누른 것이라 켜기·끄기, 시도 상한, 마감 여부를 보지 않는다. 오공고가 마감을
-    거절하면 그 사유가 실패로 남는다. 이미 보낸 공고는 건너뛴다 — 오공고에는 고치는 경로가 없어
-    다시 보내도 409 로 같은 공고를 가리킬 뿐이다.
+    거절하면 그 사유가 실패로 남는다. 이미 보낸 공고는 지금 값으로 교체한다 (2026-10-02 결정).
     """
     resolved = settings or get_settings()
     config = store.read_config(conn)
@@ -362,10 +370,11 @@ async def deliver_ids(
         marks = ",".join("?" for _ in wanted)
         rows = conn.execute(
             f"""
-            SELECT n.* FROM normalized_jobs n
+            SELECT n.*,
+                   (SELECT d.spring_job_id FROM spring_deliveries d
+                     WHERE d.source_url = n.source_url AND d.status = 'sent') AS sent_job_id
+              FROM normalized_jobs n
              WHERE n.id IN ({marks})
-               AND NOT EXISTS (SELECT 1 FROM spring_deliveries d
-                                WHERE d.source_url = n.source_url AND d.status = 'sent')
              ORDER BY n.id
             """,
             wanted,
@@ -379,8 +388,13 @@ async def deliver_ids(
             transport=transport,
         ) as client:
             for row in rows:
-                await _deliver_one(conn, client, row, result)
-        logger.info("오공고 전송(골라 보냄): 등록 %s건, 실패 %s건", result.sent, result.failed)
+                await _deliver_one(conn, client, row, result, replace=True)
+        logger.info(
+            "오공고 전송(골라 보냄): 등록 %s건, 교체 %s건, 실패 %s건",
+            result.sent,
+            result.replaced,
+            result.failed,
+        )
         return result
     finally:
         _running.release()
@@ -422,18 +436,32 @@ def overview(conn: sqlite3.Connection, limit: int = 20) -> Overview:
 
 
 async def _deliver_one(
-    conn: sqlite3.Connection, client: httpx.AsyncClient, row: sqlite3.Row, result: DeliveryResult
+    conn: sqlite3.Connection,
+    client: httpx.AsyncClient,
+    row: sqlite3.Row,
+    result: DeliveryResult,
+    *,
+    replace: bool = False,
 ) -> None:
+    """한 건을 등록한다. `replace` 면 이미 오공고에 있는 공고를 지금 값으로 교체한다."""
     source_url = str(row["source_url"])
     body = payload(row)
     lacking = missing(body)
     if lacking:
         _fail(conn, source_url, f"필수 칸이 비었거나 목록 밖 값이다: {', '.join(lacking)}", result)
         return
+    known = row["sent_job_id"] if replace and "sent_job_id" in row.keys() else None
     try:
+        if known is not None:
+            await _replace(conn, client, int(known), body, result)
+            return
         response = await client.post(JOBS_PATH, json=body)
         if response.status_code == 409:
             response = await client.get(JOBS_PATH, params={"sourceUrl": source_url})
+            if replace and response.status_code == 200:
+                # 크롤러는 모르지만 오공고에는 이미 있다. 찾은 공고를 지금 값으로 바꾼다
+                await _replace(conn, client, int(response.json()["data"]["jobId"]), body, result)
+                return
         if response.status_code in (200, 201):
             job_id = int(response.json()["data"]["jobId"])
             _record(conn, source_url, job_id, SENT, "")
@@ -443,6 +471,28 @@ async def _deliver_one(
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         error = f"{type(exc).__name__}: {exc}"
     _fail(conn, source_url, error, result)
+
+
+async def _replace(
+    conn: sqlite3.Connection,
+    client: httpx.AsyncClient,
+    job_id: int,
+    body: dict[str, Any],
+    result: DeliveryResult,
+) -> None:
+    """오공고 공고 하나를 지금 값으로 바꾼다. 태그는 교체가 받지 않는다."""
+    source_url = str(body["sourceUrl"])
+    replaced = {name: value for name, value in body.items() if name != "tags"}
+    response = await client.put(f"{JOBS_PATH}/{job_id}", json=replaced)
+    if response.status_code == 200:
+        _record(conn, source_url, job_id, SENT, "")
+        result.replaced += 1
+        return
+    # 교체가 거절돼도 이미 오공고에 있는 공고다. 보낸 표시는 두고 사유만 남긴다
+    error = f"교체 거절 {response.status_code} {_message(response)}"
+    logger.warning("오공고 공고 %s 를 교체하지 못했다 %s: %s", job_id, source_url, error)
+    result.failed += 1
+    result.errors.append(f"{source_url}: {error}")
 
 
 def _fail(conn: sqlite3.Connection, source_url: str, error: str, result: DeliveryResult) -> None:

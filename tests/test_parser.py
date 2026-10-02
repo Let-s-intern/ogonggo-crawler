@@ -414,3 +414,18 @@ def test_셀렉터가_날짜를_잡으면_라벨을_보지_않는다() -> None:
     )
 
     assert parse_detail(html, selectors).fields["recruitment_end_at"] == "2026.11.30"
+
+
+def test_본문_밖_마감일은_AI_가_읽는_원문에_한_줄로_붙인다() -> None:
+    """GS리테일: 마감일이 본문 옆 상자에 있어 AI 는 "마감일까지 접수" 만 짚었다."""
+    selectors = DetailSelectors(
+        title="h1",
+        body="div.JDContent_body__a1",
+        qualifications="",
+        recruitment_end_at="",
+        department="",
+    )
+
+    parsed = parse_detail(GS_SIDE_BOX, selectors)
+
+    assert parsed.source_text.rstrip().endswith("마감일: 2026.10.15 오후 11:59")

@@ -10,10 +10,11 @@ import re
 import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from app.config import get_settings
+from app.normalize import loose_date
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 SCHEMA_TABLE = "schema_migrations"
@@ -48,7 +49,17 @@ def connect(database_path: str | Path | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # 글자로 적힌 날짜를 `YYYY-MM-DD` 로. 공고 목록이 AI 가 짚은 마감일과 저장된 마감일이 같은
+    # 날인지 SQL 안에서 견준다 (`app/api/review_filter.py` 의 `DEADLINE_DIFF_SQL`)
+    conn.create_function("loose_day", 1, _loose_day, deterministic=True)
     return conn
+
+
+def _loose_day(text: object) -> str | None:
+    if not isinstance(text, str) or not text.strip():
+        return None
+    read = loose_date.read(text, date.today(), end=True)
+    return read[:10] if read else None
 
 
 def ensure_schema_table(conn: sqlite3.Connection) -> None:

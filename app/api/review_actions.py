@@ -10,8 +10,8 @@
 나중에 AI 로 다시 채워도 사람이 고친 칸이 남는다. 지금 값과 같은 칸은 적지 않는다 — 누르지 않은
 칸까지 보정으로 굳으면 AI 가 더 나은 값을 내도 반영되지 않는다.
 
-이미 오공고로 보낸 공고도 고칠 수는 있지만 오공고에는 다시 가지 않는다. 오공고에 고치는 경로가
-없다 (`app/deliver/spring.py`).
+이미 오공고로 보낸 공고는 고친 뒤 `오공고 값 바꾸기` 를 누르면 지금 값으로 교체된다 (2026-10-02,
+`app/deliver/spring.py`). 고치기만 하면 오공고에는 가지 않는다.
 
 ## 한꺼번에 하기 (2026-09-30 결정, LC-3394)
 
@@ -67,6 +67,8 @@ def _sent_words(result: spring.DeliveryResult) -> str:
     """전송 결과 한 줄."""
     if result.reason:
         return f"오공고로 보내지 못했다: {result.reason}"
+    if result.replaced:
+        return "오공고의 공고를 지금 값으로 바꿨다"
     if result.sent:
         return "오공고로 보냈다"
     if result.failed:
@@ -150,12 +152,12 @@ async def job_edit_submit(
             )
         logger.info("공고 %s 를 고쳤다: %s", normalized_id, ", ".join(changed))
         message = f"{len(changed)}칸을 고쳤다: {', '.join(changed)}"
-        if job["sent"]:
-            message += ". 이미 보낸 공고라 오공고에는 반영되지 않는다"
+        if job["sent"] and not form.get("send"):
+            message += ". 이미 보낸 공고라 `오공고 값 바꾸기` 를 눌러야 오공고에 반영된다"
     else:
         message = "바뀐 칸이 없다"
 
-    if form.get("send") and not job["sent"]:
+    if form.get("send"):
         result = await spring.deliver_ids(conn, [normalized_id])
         message = f"{message}. {_sent_words(result)}"
     return render_panel(request, conn, normalized_id, message=message)

@@ -13,7 +13,9 @@
 - **공고 번호와 수집 시각은 그대로다.** 사람 보정·제안·전달 표시·나눈 공고가 `raw_jobs.id` 에
   붙어 있고, `crawled_at` 은 대시보드의 일별 추가와 `recent` 범위가 읽는다.
 - **저장된 마감일이 지난 공고는 열지 않는다.** 읽지 못한 마감일은 진행 중으로 본다 — 수집 실행과
-  같은 판정이다 (`app/crawler/deadline.py`).
+  같은 판정이다 (`app/crawler/deadline.py`). 다만 지금 목록에 아직 걸려 있으면 연다 — 저장된
+  마감일이 틀렸을 수 있다(시작일이 마감일로 들어간 GS리테일, 2026-10-02). 운영자가 `include_closed`
+  를 켜면 저장된 마감일을 보지 않고 전부 연다.
 - **못 가져오면 지금 값을 둔다.** 상세가 실패하거나 본문이 비면 그 공고는 그대로고, 실패는 실행
   기록에 남는다.
 - **실행 기록은 `crawl_runs.trigger = 'recollect'` 다.** 자동 중지의 연속 실패에는 세지 않는다
@@ -165,6 +167,7 @@ async def recollect_workflow(
     slot: Slot | None = None,
     reclassify: Reclassify | None = None,
     wait_seconds: float = WAIT_SECONDS,
+    include_closed: bool = False,
 ) -> RunResult:
     """워크플로우 하나의 원문을 다시 수집하고 공고를 전부 다시 분류한다.
 
@@ -211,7 +214,9 @@ async def recollect_workflow(
         try:
             async with guard:
                 if collectors is not None:
-                    await _collect_again(conn, workflow_id, collectors, result, progress)
+                    await _collect_again(
+                        conn, workflow_id, collectors, result, progress, include_closed
+                    )
                 else:
                     async with open_collectors(
                         list_mode=list_mode,
@@ -224,7 +229,9 @@ async def recollect_workflow(
                         known=None,
                         image_reader=image_reader or LlmImageReader(conn),
                     ) as opened:
-                        await _collect_again(conn, workflow_id, opened, result, progress)
+                        await _collect_again(
+                            conn, workflow_id, opened, result, progress, include_closed
+                        )
         except Exception as exc:
             failure = classify(exc)
 
@@ -249,11 +256,16 @@ async def _collect_again(
     collectors: Collectors,
     result: RunResult,
     progress: RecollectProgress,
+    include_closed: bool = False,
 ) -> None:
     rules, rules_error = _load_rules(conn)
     stored = _latest(conn, workflow_id)
     listed = await _listed(collectors, result)
-    targets = [row for row in stored if not _closed(row, rules)]
+    targets = [
+        row
+        for row in stored
+        if include_closed or row.source_url in listed or not _closed(row, rules)
+    ]
     result.skipped_count = len(stored) - len(targets)
     progress.targets = len(targets)
 

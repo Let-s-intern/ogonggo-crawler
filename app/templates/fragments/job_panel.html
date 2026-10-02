@@ -60,9 +60,7 @@
       <button type="button" class="mt-0" hx-get="/ui/review/jobs/{{ job.id }}/panel"
               hx-target="#app-panel-body" hx-swap="innerHTML">취소</button>
       <button type="submit" class="btn-quiet mt-0">저장만</button>
-      {% if not sent %}
-      <button type="submit" name="send" value="1" class="ml-auto mt-0">저장하고 오공고로 보내기</button>
-      {% endif %}
+      <button type="submit" name="send" value="1" class="ml-auto mt-0">{% if sent %}저장하고 오공고 값 바꾸기{% else %}저장하고 오공고로 보내기{% endif %}</button>
       {% else %}
       <a href="{{ job.source_url }}" target="_blank" rel="noreferrer"
          class="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50">원문 열기</a>
@@ -72,7 +70,14 @@
               hx-target="#app-panel-body" hx-swap="innerHTML"
               hx-disabled-elt="#job-actions button" hx-indicator="#job-reclassify-wait"
               title="본문을 AI 로 다시 읽어 칸을 채운다. 직접 고친 칸은 그대로 둔다">AI로 다시 채우기</button>
-      {% if not sent %}
+      {% if sent %}
+      {# 이미 보낸 공고는 지금 값으로 교체한다. 관리자 콘솔에서 고친 값도 덮어쓴다 #}
+      <button type="button" class="ml-auto mt-0"
+              hx-post="/ui/review/jobs/{{ job.id }}/send" hx-target="#app-panel-body" hx-swap="innerHTML"
+              hx-confirm="오공고의 이 공고를 지금 값으로 바꿀까요? 관리자 콘솔에서 고친 내용도 덮어씁니다"
+              hx-disabled-elt="#job-actions button" hx-indicator="#job-send-wait"
+              title="오공고에 이미 있는 공고를 지금 값으로 교체한다">오공고 값 바꾸기</button>
+      {% else %}
       <button type="button" class="ml-auto mt-0 {% if delivered and delivered.status == 'failed' %}border-red-700 bg-red-700 text-white hover:bg-red-600{% else %}border-slate-800 bg-slate-800 text-white hover:bg-slate-700{% endif %}"
               hx-post="/ui/review/jobs/{{ job.id }}/send" hx-target="#app-panel-body" hx-swap="innerHTML"
               hx-disabled-elt="#job-actions button" hx-indicator="#job-send-wait">오공고로 보내기</button>

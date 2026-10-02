@@ -29,6 +29,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app import custom_fields
 from app.api import crawlers, job_detail
 from app.api.review_filter import (
+    DEADLINE_DIFF_SQL,
     DEADLINE_STATES,
     DUP_CRITERIA,
     DUP_GROUP_PREVIEW,
@@ -89,7 +90,8 @@ _COLUMNS = f"""
            {FAILED_SQL} AS delivery_failed,
            {UNREADY_SQL} AS unready,
            {UNCLASSIFIED_SQL} AS unclassified,
-           {SHORT_BODY_SQL} AS short_body
+           {SHORT_BODY_SQL} AS short_body,
+           {DEADLINE_DIFF_SQL} AS deadline_diff
 """
 
 _FROM = """
@@ -230,6 +232,8 @@ def row_marks(job: sqlite3.Row) -> list[tuple[str, str]]:
         marks.append(("필수 칸 빔", "warn"))
     if job["short_body"]:
         marks.append(("본문 짧음", "warn"))
+    if job["deadline_diff"]:
+        marks.append(("마감일 다름", "warn"))
     return marks or [("보내기 전", "idle")]
 
 
@@ -280,7 +284,8 @@ def _panel_row(conn: sqlite3.Connection, normalized_id: int) -> sqlite3.Row | No
                {FAILED_SQL} AS delivery_failed,
                {UNREADY_SQL} AS unready,
                {UNCLASSIFIED_SQL} AS unclassified,
-               {SHORT_BODY_SQL} AS short_body
+               {SHORT_BODY_SQL} AS short_body,
+               {DEADLINE_DIFF_SQL} AS deadline_diff
           FROM normalized_jobs n
           JOIN raw_jobs r ON r.id = n.raw_job_id
           JOIN workflows w ON w.id = r.workflow_id

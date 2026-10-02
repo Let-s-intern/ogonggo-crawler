@@ -9,7 +9,7 @@
 | 고친 칸은 출처가 `직접 수정` 이다 | AI 값과 사람 값을 가를 수 없다 |
 | 목록 밖 값은 받지 않는다 | 오공고가 거절할 값이 보정으로 굳는다 |
 | 패널의 보내기와 표의 골라 보내기가 오공고에 등록한다 | 실패한 공고를 손으로 보낼 길이 없다 |
-| 이미 보낸 공고는 다시 보내지 않는다 | 같은 공고를 두 번 등록하려 든다 |
+| 이미 보낸 공고는 오공고 id 로 교체한다 | 다시 수집한 값이 오공고에 가지 않는다 |
 | AI 로 다시 채우지 못하면 사유를 적는다 | 눌러도 아무 일이 없는 것처럼 보인다 |
 | 다시 채우는 동안 대기 문구를 띄우고, 끝나면 바뀐 칸을 적는다 | 되고 있는지 모른다 |
 | 조건 전체를 한꺼번에 보낸다 | 오늘 들어온 공고를 한 페이지씩 골라 보내야 한다 |
@@ -115,6 +115,8 @@ def oggonggo(monkeypatch: pytest.MonkeyPatch, status: int = 201) -> list[httpx.R
 
     def handle(request: httpx.Request) -> httpx.Response:
         seen.append(request)
+        if request.method == "PUT":
+            return httpx.Response(status if status != 201 else 200, json={"data": None})
         if status == 201:
             return httpx.Response(201, json={"data": {"jobId": 42}})
         return httpx.Response(status, json={"message": "모집 마감일이 지났습니다"})
@@ -199,15 +201,47 @@ def test_패널의_보내기는_꺼져_있어도_보내고_거절_사유를_적�
     assert "오공고가 거절했어요" in html  # 패널 위 실패 상자
 
 
-def test_이미_보낸_공고는_다시_보내지_않는다(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+def test_이미_보낸_공고는_오공고_id_로_교체한다(
+    client: TestClient, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """2026-10-02 결정. 다시 수집·분류한 값을 오공고에 반영한다. 태그는 교체가 받지 않는다."""
     seen = oggonggo(monkeypatch)
+    panel = client.get("/ui/review/jobs/2/panel").text
+    assert "오공고 값 바꾸기" in panel
 
     html = client.post("/ui/review/jobs/2/send").text
 
-    assert seen == []
-    assert "이미 보낸 공고" in html
+    assert [(request.method, request.url.path) for request in seen] == [
+        ("PUT", "/api/v1/internal/jobs/7")
+    ]
+    assert "tags" not in json.loads(seen[0].content)
+    assert "지금 값으로 바꿨다" in html
+    row = conn.execute(
+        "SELECT status, spring_job_id FROM spring_deliveries WHERE source_url = ?", ("https://x/2",)
+    ).fetchone()
+    assert (row["status"], row["spring_job_id"]) == ("sent", 7)
+
+
+def test_크롤러가_모르는_오공고_공고는_원문_주소로_찾아_교체한다(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.method == "POST":
+            return httpx.Response(409, json={"message": "이미 있다"})
+        if request.method == "GET":
+            return httpx.Response(200, json={"data": {"jobId": 99}})
+        return httpx.Response(200, json={"data": None})
+
+    monkeypatch.setattr(spring, "transport", httpx.MockTransport(handle))
+
+    html = client.post("/ui/review/jobs/1/send").text
+
+    assert [request.method for request in seen] == ["POST", "GET", "PUT"]
+    assert seen[-1].url.path == "/api/v1/internal/jobs/99"
+    assert "지금 값으로 바꿨다" in html
 
 
 def test_표에서_고른_공고를_한꺼번에_보낸다(
@@ -217,9 +251,9 @@ def test_표에서_고른_공고를_한꺼번에_보낸다(
 
     response = client.post("/ui/review/send", data={"raw_job_id": ["1", "2"]})
 
-    assert len(seen) == 1
-    assert "1건 보냄" in response.text
-    assert "이미 보낸 1건은 건너뜀" in response.text
+    assert [request.method for request in seen] == ["POST", "PUT"]
+    assert "1건 새로 보냄" in response.text
+    assert "1건 오공고 값 바꿈" in response.text
     assert response.headers["HX-Trigger"] == "jobs-deleted"
 
 
@@ -269,9 +303,9 @@ def test_조건_전체를_한꺼번에_보낸다(client: TestClient, monkeypatch
 
     response = client.post("/ui/review/send", data={"all_filtered": "1", "view": "all"})
 
-    assert len(seen) == 1
+    assert len(seen) == 2
     assert "고른 공고 2건 중" in response.text
-    assert "이미 보낸 1건은 건너뜀" in response.text
+    assert "1건 오공고 값 바꿈" in response.text
 
 
 def test_조건_전체는_보기까지_지킨다(conn: sqlite3.Connection) -> None:
@@ -336,3 +370,44 @@ def test_분류가_돌고_있으면_전체_다시_채우기를_시작하지_않�
     html = client.post("/ui/review/reclassify", data={"all_filtered": "1"}).text
 
     assert "시작하지 못했다" in html
+
+
+def _suggest_end(conn: sqlite3.Connection, value: str) -> None:
+    conn.execute(
+        "INSERT INTO job_field_suggestions (raw_job_id, part, field_name, value)"
+        " VALUES (1, 1, 'recruitment_end_at', ?)",
+        (value,),
+    )
+
+
+def test_AI_마감일이_저장된_마감일과_다른_날이면_확인_필요에_띄운다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """2026-10-02 결정. 저장된 마감일은 2099-12-31 이다."""
+    _suggest_end(conn, "2026.10.15 오후 11:59")
+
+    html = client.get("/ui/review?view=check").text
+
+    assert "마감일 다름" in html
+    assert "백엔드 개발자" in html
+
+
+@pytest.mark.parametrize("value", ["2099.12.31 오후 11:59", "마감일까지 접수"])
+def test_같은_날이거나_날짜가_아닌_제안은_띄우지_않는다(
+    client: TestClient, conn: sqlite3.Connection, value: str
+) -> None:
+    _suggest_end(conn, value)
+
+    assert "마감일 다름" not in client.get("/ui/review?view=all").text
+
+
+def test_사람이_마감일을_고쳤으면_띄우지_않는다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    _suggest_end(conn, "2026.10.15")
+    conn.execute(
+        "INSERT INTO job_field_overrides (raw_job_id, part, field_name, value)"
+        " VALUES (1, 1, 'recruitment_end_at', '2099-12-31')"
+    )
+
+    assert "마감일 다름" not in client.get("/ui/review?view=all").text

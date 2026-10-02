@@ -9,9 +9,10 @@
 ## 확인 필요
 
 운영자가 이 화면을 여는 이유는 "공고가 잘 들어왔는지 보기" 하나다 (2026-09-17 결정, LC-3344).
-그래서 손이 가야 하는 공고를 한데 모은다. 아직 보내지 않았고 마감 전인 공고 중 넷 중 하나라도
+그래서 손이 가야 하는 공고를 한데 모은다. 아직 보내지 않았고 마감 전인 공고 중 다섯 중 하나라도
 걸린 것이다 — 오공고가 거절했다, 오공고가 반드시 받는 칸이 비었다, AI 분류가 아직 안 됐다,
-본문이 거의 없다. 마감이 지난 공고는 어차피 보내지 않으므로 넣지 않는다.
+본문이 거의 없다, AI 가 원문에서 짚은 마감일이 저장된 마감일과 다른 날이다(2026-10-02).
+마감이 지난 공고는 어차피 보내지 않으므로 넣지 않는다.
 
 ## 조건은 화면에서 온 문자열로 조립하지 않는다
 
@@ -84,11 +85,22 @@ UNCLASSIFIED_SQL = (
     "NOT EXISTS (SELECT 1 FROM job_classifications c WHERE c.raw_job_id = n.raw_job_id)"
 )
 SHORT_BODY_SQL = f"length(trim(coalesce(n.body, ''))) < {SHORT_BODY_CHARS}"
+# AI 가 원문에서 짚은 마감일(제안)이 저장된 마감일과 다른 날이다. 글자가 아니라 날로 견준다 —
+# `2026.10.15 오후 11:59` 와 `2026-10-15 23:59:00` 은 같다. 사람이 마감일을 고쳤으면 보지 않는다.
+# `loose_day` 는 `app/db.py` 가 연결마다 등록한다
+DEADLINE_DIFF_SQL = (
+    "EXISTS (SELECT 1 FROM job_field_suggestions s"
+    " WHERE s.raw_job_id = n.raw_job_id AND s.part = n.part"
+    " AND s.field_name = 'recruitment_end_at' AND loose_day(s.value) IS NOT NULL"
+    " AND loose_day(s.value) IS NOT substr(coalesce(n.recruitment_end_at, ''), 1, 10)"
+    " AND NOT EXISTS (SELECT 1 FROM job_field_overrides o WHERE o.raw_job_id = n.raw_job_id"
+    " AND o.part = n.part AND o.field_name = 'recruitment_end_at'))"
+)
 
 # 마감 전 조건(`OPEN_SQL`)에 바인딩 하나가 든다 — 표시 시간대의 지금이다
 _CHECK_SQL = (
     f"(NOT {{sent}} AND {OPEN_SQL} AND ({FAILED_SQL} OR {UNREADY_SQL}"
-    f" OR {UNCLASSIFIED_SQL} OR {SHORT_BODY_SQL}))"
+    f" OR {UNCLASSIFIED_SQL} OR {SHORT_BODY_SQL} OR {DEADLINE_DIFF_SQL}))"
 )
 
 # 같은 공고가 두 번 들어왔는지 보는 기준. 무엇을 중복으로 볼지가 상황마다 달라 고르게 둔다.

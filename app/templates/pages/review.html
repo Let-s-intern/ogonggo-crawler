@@ -67,7 +67,7 @@
         send.disabled = whole ? total === '0' : picked === 0;
         send.textContent = whole ? '조건 전체 ' + total + '건 오공고로 보내기' : '고른 공고 오공고로 보내기';
         if (whole) {
-          send.setAttribute('hx-confirm', '조건에 걸린 ' + total + '건 전체를 오공고로 보낼까요? 이미 보낸 공고는 건너뛴다');
+          send.setAttribute('hx-confirm', '조건에 걸린 ' + total + '건 전체를 오공고로 보낼까요? 이미 보낸 공고는 지금 값으로 바꾸고, 관리자 콘솔에서 고친 내용도 덮어씁니다');
         } else {
           send.removeAttribute('hx-confirm');
         }

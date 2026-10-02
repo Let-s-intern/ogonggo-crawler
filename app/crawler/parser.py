@@ -235,10 +235,10 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
             missing.append(name)
 
     end = fields.get(DEADLINE, "")
+    labeled = labeled_deadline(soup)
     if not _HAS_DATE.search(end) or _OPEN_PERIOD.search(end.strip()):
         # 셀렉터가 마감일을 못 잡았다. 페이지의 `마감일` 라벨 옆 날짜를 읽는다 — 사이트마다 셀렉터를
         # 고치지 않아도 되게 (GS리테일 실측, 2026-10-02)
-        labeled = labeled_deadline(soup)
         if labeled:
             fields[DEADLINE] = labeled
             if DEADLINE in missing:
@@ -266,10 +266,15 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
 
     container = block_text(fallback) if fallback is not None else source_text(soup, selectors.body)
     structured = structured_text(soup, container) if container.strip() else ""
+    source = f"{container}\n{structured}" if structured else container
+    if labeled and labeled not in " ".join(source.split()):
+        # 마감일이 본문 밖 상자에 있으면 AI 가 읽는 원문에 없다. 한 줄로 붙여 AI 도 마감일을 짚게
+        # 한다 — GS리테일은 "마감일까지 접수" 문장만 짚었다 (2026-10-02)
+        source = f"{source}\n마감일: {labeled}"
     return DetailParseResult(
         fields=fields,
         missing=missing,
-        source_text=f"{container}\n{structured}" if structured else container,
+        source_text=source,
         images=images,
         cover_image=og_image(soup),
         site_icon=site_icon(soup),
