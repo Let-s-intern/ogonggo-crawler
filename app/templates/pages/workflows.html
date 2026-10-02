@@ -12,6 +12,8 @@
   <button type="button" data-modal-open hx-get="/ui/sites/new" hx-target="#app-modal-body" hx-swap="innerHTML"
           class="mt-0 border-slate-800 bg-slate-800 text-white hover:bg-slate-700">+ 사이트 추가</button>
 </div>
+{# 사이트 전체 원문 다시 수집. 도는 동안 스스로 갱신한다 (`app/api/ui_recollect_all.py`) #}
+<div id="recollect-all" hx-get="/ui/sites/recollect-all" hx-trigger="load" hx-swap="outerHTML"></div>
 <div id="site-list" class="card" hx-get="/ui/sites" hx-trigger="load, panel-closed from:body, site-added from:body" hx-swap="innerHTML">
   <div class="px-4 py-3">{{ empty("목록을 불러오는 중") }}</div>
 </div>

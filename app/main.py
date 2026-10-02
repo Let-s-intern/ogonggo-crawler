@@ -32,6 +32,7 @@ from app.api import (
     ui_notify,
     ui_posting_add,
     ui_prompt_rules,
+    ui_recollect_all,
     ui_rules,
     ui_rules_preview,
     ui_runs,
@@ -144,6 +145,7 @@ app.include_router(ui_crawlers.router)
 app.include_router(ui_tests.router)
 app.include_router(ui_workflows.router)
 app.include_router(ui_sites.router)
+app.include_router(ui_recollect_all.router)
 app.include_router(ui_site_add.router)
 app.include_router(ui_posting_add.router)
 app.include_router(ui_runs.router)

@@ -1,0 +1,59 @@
+{# 사이트 전체 원문 다시 수집 (`app/api/ui_recollect_all.py`). 사이트 목록 위에 있다.
+   도는 동안 5초마다 스스로 다시 불려 몇 번째 사이트인지 보인다 #}
+{% from "macros.html" import notice_box %}
+<div id="recollect-all" class="card mb-3 px-4 py-3 text-sm"
+     {% if progress.running %}hx-get="/ui/sites/recollect-all" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+  {% if progress.running %}
+  <div class="flex flex-wrap items-center gap-3">
+    <p class="m-0 font-semibold text-slate-900" role="status">
+      전체 원문 다시 수집 중 · {{ progress.done }} / {{ progress.total }} 사이트
+      {% if progress.current %}<span class="font-normal text-slate-600">· 지금 {{ progress.current }}</span>{% endif %}
+    </p>
+    <span class="h-1.5 min-w-24 flex-1 overflow-hidden rounded-full bg-slate-100">
+      <span class="block h-full rounded-full bg-emerald-500"
+            style="width: {{ (progress.done * 100 // progress.total) if progress.total else 0 }}%"></span>
+    </span>
+    {% if progress.stop_requested %}
+    <span class="text-slate-500">지금 사이트까지 하고 멈춰요</span>
+    {% else %}
+    <button type="button" class="mt-0 btn-quiet" hx-post="/ui/sites/recollect-all/stop"
+            hx-target="#recollect-all" hx-swap="outerHTML">멈추기</button>
+    {% endif %}
+  </div>
+  <p class="mt-1 text-xs text-slate-500">
+    사이트마다 상세를 다시 읽고 공고를 전부 AI로 다시 분류한 뒤 다음 사이트로 가요.
+    {% if progress.include_closed %}저장된 마감일은 보지 않고 전부 열어요.{% endif %}
+    {% if progress.failed %}실패 {{ progress.failed | length }}곳.{% endif %}
+  </p>
+  {% else %}
+  <div class="flex flex-wrap items-center gap-3">
+    <form class="m-0 flex flex-wrap items-center gap-3"
+          hx-post="/ui/sites/recollect-all" hx-target="#recollect-all" hx-swap="outerHTML"
+          hx-confirm="공고를 담은 사이트 {{ sites }}곳의 공고 {{ jobs }}건을 한 곳씩 다시 수집하고 AI로 다시 분류할까요? 공고마다 AI 비용이 들고 몇 시간 걸릴 수 있어요">
+      <label class="m-0 inline-flex items-center gap-1.5 font-normal text-slate-700">
+        <input type="checkbox" name="include_closed" value="1" checked>
+        저장된 마감일 무시하고 전부 다시 열기
+      </label>
+      <button type="submit" class="mt-0" {% if not sites %}disabled{% endif %}
+              title="사이트 카드의 원문 다시 수집을 공고를 담은 사이트마다 차례로 돌린다">전체 사이트 원문 다시 수집 ({{ sites }}곳)</button>
+    </form>
+    {% if progress.finished_at %}
+    <p class="m-0 text-slate-600">
+      지난번: {{ progress.done }} / {{ progress.total }} 사이트 끝냄{% if progress.stop_requested %}(멈춤){% endif %}
+      {% if progress.failed %}· 실패 {{ progress.failed | length }}곳{% endif %}
+      {% if progress.skipped %}· 건너뜀 {{ progress.skipped | length }}곳{% endif %}
+    </p>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if progress.failed or progress.skipped %}
+  <details class="mt-2">
+    <summary class="text-xs text-slate-500">실패·건너뛴 사이트</summary>
+    <ul class="mt-1 list-disc pl-5 text-xs">
+      {% for name, reason in progress.failed %}<li class="text-red-700">{{ name }} — {{ reason }}</li>{% endfor %}
+      {% for name, reason in progress.skipped %}<li class="text-slate-600">{{ name }} — {{ reason }}</li>{% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+  {% if message %}{{ notice_box(message) }}{% endif %}
+</div>
