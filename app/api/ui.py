@@ -103,6 +103,8 @@ NAV: tuple[tuple[str, str], ...] = (
     ("/workflows", "사이트"),
     # 새싹 부트캠프 (2026-09-22 결정, LC-3364). 공고 파이프라인과 따로 돌아 메뉴도 따로다
     ("/bootcamps", "부트캠프"),
+    # 미래내일 일경험 (2026-10-02 결정, LC-3432). 부트캠프처럼 전용 수집기라 메뉴도 따로다
+    ("/work-experiences", "미래내일 일경험"),
     ("/cost", "비용"),
     ("/settings", "설정"),
 )
@@ -563,6 +565,12 @@ def jobs_page() -> RedirectResponse:
 def bootcamps_page(request: Request) -> HTMLResponse:
     """새싹 부트캠프 수집·전송 화면 (`app/api/ui_bootcamps.py`)."""
     return render_page(request, "pages/bootcamps.html")
+
+
+@router.get("/work-experiences", response_class=HTMLResponse)
+def work_experiences_page(request: Request) -> HTMLResponse:
+    """미래내일 일경험 수집·전송 화면 (`app/api/ui_work_experiences.py`)."""
+    return render_page(request, "pages/work_experiences.html")
 
 
 @router.get("/deliver", response_class=HTMLResponse)

@@ -43,6 +43,7 @@ from app.api import (
     ui_storage,
     ui_taxonomy,
     ui_tests,
+    ui_work_experiences,
     ui_workflows,
     workflows,
 )
@@ -54,6 +55,8 @@ from app.crawler.runner import close_orphan_runs
 from app.log_ring import handler as _log_ring_handler
 from app.scheduler import get_scheduler, shutdown_scheduler
 from app.side.runs import close_orphans as close_orphan_side_runs
+from app.work_experience import schedule as work_experience_schedule
+from app.work_experience.runner import close_orphan_runs as close_orphan_work_experience_runs
 
 logger = logging.getLogger(__name__)
 
@@ -109,10 +112,17 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             logger.warning(
                 "지난 프로세스가 남긴 미완 부트캠프 수집 %d건을 닫았다", bootcamp_orphans
             )
+        work_experience_orphans = close_orphan_work_experience_runs(conn)
+        if work_experience_orphans:
+            logger.warning(
+                "지난 프로세스가 남긴 미완 미래내일 일경험 수집 %d건을 닫았다",
+                work_experience_orphans,
+            )
         try:
             _seed_empty_tables(conn)
             get_scheduler().start(conn)
             bootcamp_schedule.sync(get_scheduler().scheduler, conn)
+            work_experience_schedule.sync(get_scheduler().scheduler, conn)
         except sqlite3.OperationalError:
             # 스키마가 아직 없는 DB 다. 등록할 워크플로우도 없다.
             #
@@ -166,6 +176,7 @@ app.include_router(ui_taxonomy.router)
 app.include_router(ui_industries.router)
 app.include_router(ui_prompt_rules.router)
 app.include_router(ui_bootcamps.router)
+app.include_router(ui_work_experiences.router)
 # 조각 요청의 실패는 200 과 오류 조각으로 나간다. HTMX 가 4xx·5xx 를 갈아 끼우지 않아
 # 그대로 두면 화면이 조용해진다. `/api/...` 의 상태 코드는 건드리지 않는다
 ui.install_ui_error_handlers(app)

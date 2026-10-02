@@ -54,7 +54,14 @@ def client(path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestClient]
 
 
 def test_위_메뉴() -> None:
-    assert [label for _, label in NAV] == ["공고", "사이트", "부트캠프", "비용", "설정"]
+    assert [label for _, label in NAV] == [
+        "공고",
+        "사이트",
+        "부트캠프",
+        "미래내일 일경험",
+        "비용",
+        "설정",
+    ]
 
 
 def test_첫_화면은_공고_목록이다(client: TestClient) -> None:
