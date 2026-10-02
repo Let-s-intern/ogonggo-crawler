@@ -1,0 +1,2169 @@
+
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  
+
+
+
+
+
+
+
+
+
+<!-- 헤더에 csrf토큰 -->
+
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+<meta name="format-detection" content="telephone=no, address=no, email=no">
+
+<link rel="stylesheet" type="text/css" href="/static/css/common.css?v=20260518">
+<link rel="stylesheet" type="text/css" href="/static/external/jquery-ui/jquery-ui.min.css">
+<link rel="stylesheet" type="text/css" href="/static/css/style.css?v=20260304">
+<link rel="icon" href="/static/images/common/KEIS.ico">
+
+<script type="text/javascript" src="/static/external/jquery/jquery-1.12.4.min.js"></script>
+<script type="text/javascript" src="/static/external/jquery-ui/jquery-ui.min.js"></script>
+<script type="text/javascript" src="/static/external/jquery-ui/jquery.ui.touch-punch.min.js"></script>
+<script type="text/javascript" src="/static/external/spin/spin.js"></script>
+<script type="text/javascript" src="/static/external/moment/moment.min.js"></script>
+<script type="text/javascript" src="/static/external/moment/locale/locales.min.js"></script>
+<script type="text/javascript" src="/static/external/blockui/jquery.blockUI.js"></script>
+<script type="text/javascript" src="/static/external/index/index.global.min.js"></script>
+<script type="text/javascript" src="/static/js/xh_commonUtil.js?v=20260304"></script>
+<script type="text/javascript" src="/static/js/xh_common.js?v=20260304"></script>
+<script type="text/javascript">
+  
+    
+      const sessionCurrentMenuPurpSecd = "EBM02";
+    
+    
+  
+  
+  
+    const sessionConcTrgtSeCd = "EBM02";
+  
+  
+    const head_menuId = "MXH0000009";
+    const head_prgmId = "xhda00_m02";
+  
+  //메시지 출력
+  if ("") {
+      setTimeout(function(){
+        alert("");
+      }, 100);
+  } else if ("") {
+      setTimeout(function(){
+        alert("");
+      }, 100);
+  }
+  ComLib.c.CONTEXT_PATH = "/";
+</script>
+<!-- title 내용 생성 -->
+
+    
+
+
+    
+    
+        
+        
+    
+        
+        
+            
+        
+    
+
+
+    
+        
+    
+    
+
+<!-- ./ title 내용 생성 -->
+<title>프로그램 상세 정보 | 홈 &gt; 일경험 프로그램 &gt; 프로그램 정보 &gt; 프로그램 상세 정보 | 청년일경험 포털</title>
+</head>
+<body>
+  <!-- SKIP NAVI -->
+  <div class="skip-nav">
+    <a href="#content">본문으로 바로가기</a>
+    <a href="#gnb">주메뉴 바로가기</a>
+  </div>
+  <!-- // SKIP NAVI -->
+  <div class="wrapper">
+    <!-- HEADER -->
+    
+
+
+
+
+
+
+
+
+
+
+<link rel="stylesheet" type="text/css" href="/static/css/commonNew.css?v=20260309">
+<link rel="stylesheet" type="text/css" href="/static/css/layoutNew.css?v=20260309">
+<link rel="stylesheet" type="text/css" href="/static/external/swiper/swiper-bundle.min.css">
+
+<script type="text/javascript" src="/static/external/swiper/swiper-bundle.min.js"></script>
+<script type="text/javascript" src="/static/js/commonNew.js?v=20260309"></script>
+<script type="text/javascript" src="/static/js/common/header.js?v=20260422"></script>
+<!-- 20260204 검색 js 추가 -->
+<script type="text/javascript" src="/static/solution/wisenut/js/searchMain.js?v=20260309"></script>
+<!-- HEADER -->
+<header id="header-new">
+            <div class="header-top-new">
+                <div class="inner">
+                    <span class="nuri-text">이 누리집은 대한민국 공식 전자정부 누리집입니다.</span>
+                </div>
+            </div>
+            <!-- 비로그인시에만, 배너가 보임, 닫기버튼 주석처리 -->
+            
+            
+            
+            <div class="header-bottom-new">
+                <div class="inner">
+                        <div class="nav-wrap">
+                            <div class="logoBox-wrap">
+                                <h1 class="logo-box"><a href="/main.do" class="logoNew">청년 일경험 포털</a></h1>
+                            </div>
+                                                <div class = "util-new-wrap">
+                    <ul class="util-new">
+                        
+                              <!-- 비로그인시 -->
+                             <li class="login-new"><a href="/a/b/openLogin.do" onclick="onSpinBlockUI();"><i class="icon"></i>로그인</a></li>
+                             <li class="join"><a href="/a/b/openJoin.do" class="join"><i class="icon"></i>회원가입</a></li>
+                             <!-- //비로그인시 -->
+                        
+                        
+                    </ul>
+                    </div>
+                    <div class = "all-menu-wrap">
+                            <button type="button" class="all-menu"><span class="blind">전체메뉴 열기</span></button>
+
+                        </div>
+                    </div>
+
+              <!-- MOBILE 펼침 메뉴를 별도 처리 -->
+              <div class="mob-util" style="display:none">
+                <button type="button" class="mobile-close"><span class="blind">메뉴 닫기</span></button>
+                <ul class="util">
+                  
+                    <!-- 비로그인시 -->
+                    <li class="txt before">로그인하시면 <br>더 많은 서비스를 이용할 수 있어요</li>
+                    <li class="join"><a href="/a/b/openJoin.do" onclick="onSpinBlockUI();">회원가입</a></li>
+                    <li class="login"><a href="/a/b/openLogin.do" onclick="onSpinBlockUI();">로그인</a></li>
+                    <!-- //비로그인시 -->
+                  
+                  
+              </ul>
+            </div>
+                 
+                    <div class="srch-wrap">
+                        <div class="inp-wrap">
+                            <div class="inp-box">
+                                <span class="inp-search-icon" aria-hidden="true"></span>
+                                <label for="totalSearch" class="blind">통합 검색어 입력</label>
+                                <input id="totalSearch" type="text" placeholder="검색어를 입력해주세요." class="inp" title="검색어를 입력해주세요." role="cobmobox" aria-autocomplete="list" aria-expanded="false" aria-controls="autocompleteList" aria-activedescendant="" onkeyup="if(window.event.keyCode==13){fn_totalSearch();}">
+                                <!-- 자동완성 추가 -->
+                                <ul id="autocompleteList" class="autocomplete-list" style="display: none;" role="listbox">
+                                  <li class="auto-item word_link" data-text="프로그램"><font style="font-size:11px;color:#0011ff">프</font><font style="font-size:11px;">로그램</font></li>
+                                </ul>
+                            </div>
+                            <button type="button" class="btn-srch" onclick="fn_totalSearch();"><span class="blind">검색</span></button>
+                        </div>
+                        <div class="history-area">
+                            <!-- 검색창 클릭 시 .active 생성 -->
+                            <div>
+                                <div class="left">
+                                    <div class="trend-box">
+                                        <p class="tit">인기 검색어</p>
+                                        <div id="searchPopword" aria-label="인기 검색어" class="item-list">
+                                        </div>
+                                    </div>
+                                    <div class="history-box" >
+                                        <p class="tit">최근 본 일경험 프로그램</p>
+                                        <!-- 로그인 전 -->
+                                        
+                                          <div class="center">
+                                              <P>최근 본 일경험 프로그램은 로그인 후 <br>확인 가능합니다.</P>
+                                              <a href="/a/b/openLogin.do" aria-label="최근 본 일경험 프로그램은 로그인 후 확인 가능합니다. 로그인" onclick="onSpinBlockUI();" class="go-to-login">로그인</a>
+                                          </div>
+                                          <div class="item-list" id="recent_list" style="display:none"></div>
+                                        
+                                        
+                                    </div>
+                                </div>
+
+                                <form id="detailPageForm" method="POST"></form>
+                                <div class="right">
+                                    <p class="tit">지원 마감 임박 공고</p>
+                                    <ul class="list" id ="deadline_work_list">
+                                     <!-- js추가 -->
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                 <div class="keyword-box">
+                 <div id="keyword-wrap-line" class="keyword-wrap">
+                  <p>인기 검색어</p>
+                  <div class="item" aria-hidden="true">
+                    <span class="num"></span>
+                    <a href=""></a>
+                    <span class="rank down"><em>1</em><i class="blind"></i></span>
+                  </div>
+                </div>
+                </div>
+                </div>
+            
+                </div>
+            </div>
+            <!-- 비로그인시 -->
+    <div class="header-bottom">
+        <div class="gnb-bg"></div>
+        <div class="wrap">
+            <!-- GNB -->
+            <nav class="gnb" id="gnb">
+                <ul aria-label="상단 메뉴">
+            
+              
+               
+                  
+                  
+          <li>
+                        <!-- 2026.02.24 웹 접근성 조치(depth1 메뉴에만 aria-expanded 적용하기 위해 클래스 추가 css적용x) -->
+                        <a href="javascript:void(0);" aria-expanded='false' class="dep1" aria-label="사업소개 상단메뉴">사업소개</a>
+            <ul aria-label="사업소개 메뉴">
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000004');" aria-label="청년일경험 포털 메뉴">청년일경험 포털</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000136');" aria-label="고용노동부 청년일경험 메뉴">고용노동부 청년일경험</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000005');" aria-label="주관기관별 일경험 사업 메뉴">주관기관별 일경험 사업</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+            </ul>
+          </li>
+                
+               
+                  
+                  
+          <li>
+                        <!-- 2026.02.24 웹 접근성 조치(depth1 메뉴에만 aria-expanded 적용하기 위해 클래스 추가 css적용x) -->
+                        <a href="javascript:void(0);" aria-expanded='false' class="dep1" aria-label="일경험 프로그램 상단메뉴">일경험 프로그램</a>
+            <ul aria-label="일경험 프로그램 메뉴">
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000008');" aria-label="프로그램 정보 메뉴">프로그램 정보</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000019');" aria-label="모집일정 메뉴">모집일정</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000022');" aria-label="운영기관 메뉴">운영기관</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000024');" aria-label="참여기업 메뉴">참여기업</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+            </ul>
+          </li>
+                
+               
+                  
+                  
+          <li>
+                        <!-- 2026.02.24 웹 접근성 조치(depth1 메뉴에만 aria-expanded 적용하기 위해 클래스 추가 css적용x) -->
+                        <a href="javascript:void(0);" aria-expanded='false' class="dep1" aria-label="우수사례 커뮤니티 상단메뉴">우수사례 커뮤니티</a>
+            <ul aria-label="우수사례 커뮤니티 메뉴">
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000125');" aria-label="인턴형 우수사례 메뉴">인턴형 우수사례</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000127');" aria-label="프로젝트형 우수사례 메뉴">프로젝트형 우수사례</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000129');" aria-label="ESG지원형 우수사례 메뉴">ESG지원형 우수사례</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000131');" aria-label="기업탐방형 우수사례 메뉴">기업탐방형 우수사례</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+            </ul>
+          </li>
+                
+               
+                  
+                  
+          <li>
+                        <!-- 2026.02.24 웹 접근성 조치(depth1 메뉴에만 aria-expanded 적용하기 위해 클래스 추가 css적용x) -->
+                        <a href="javascript:void(0);" aria-expanded='false' class="dep1" aria-label="알림마당 상단메뉴">알림마당</a>
+            <ul aria-label="알림마당 메뉴">
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000072');" aria-label="공지사항 메뉴">공지사항</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000074');" aria-label="자료실 메뉴">자료실</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000078');" aria-label="VR 직업체험 메뉴">VR 직업체험</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000076');" aria-label="직업정보 동영상 메뉴">직업정보 동영상</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000026');" aria-label="수료증 진위확인 메뉴">수료증 진위확인</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000142');" aria-label="우수사례 공모전 메뉴">우수사례 공모전</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+            </ul>
+          </li>
+                
+               
+                  
+                  
+          <li>
+                        <!-- 2026.02.24 웹 접근성 조치(depth1 메뉴에만 aria-expanded 적용하기 위해 클래스 추가 css적용x) -->
+                        <a href="javascript:void(0);" aria-expanded='false' class="dep1" aria-label="고객센터 상단메뉴">고객센터</a>
+            <ul aria-label="고객센터 메뉴">
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000084');" aria-label="자주하는질문(FAQ) 메뉴">자주하는질문(FAQ)</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000086');" aria-label="이용안내 메뉴">이용안내</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000087');" aria-label="사이트맵 메뉴">사이트맵</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+              <li>
+                <a href="javascript:fn_header_menuMove('MXH0000088');" aria-label="운영 정책 메뉴">운영 정책</a>
+              </li>
+              
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+                  
+                  
+                
+                
+                  
+                
+            
+              
+               
+                  
+                  
+                  
+                  
+                
+                
+                  
+            </ul>
+          </li>
+                  
+                
+            
+                </ul>
+            </nav>
+            <!-- // GNB -->
+            <!-- 웹 접근성 :
+             선택 시 사이트맵 페이지로 이동하는 기능을 하는 버튼에 숨김 텍스로 '전체메뉴 열기'를 제공하고 있어 화면 낭독기 사용자에게 혼란을 주고 있습니다.
+             * 버튼의 용도와 목적에 맞는 안내를 제공하여 화면 낭독기 사용자가 버튼의 용도와 목적을 올바르게 인지할 수 있도록 제공해야 합니다.-->
+            <button class="btn-menu" onclick="fn_header_menuMove('MXH0000087');"><span class="blind">사이트맵으로 이동하기</span></button>
+        </div>
+    </div>
+
+            <div class="dim"></div>
+        </header>
+        <!--............. mobile gnb .............-->
+        <div class="mobile-gnb-wrap">
+            <div class="mobile-gnb">
+              <nav class="gnb">
+                <ul class="depth1">
+                    
+                      
+                        
+                          
+                          
+                            <li class="depth1-item ">
+                              <a href="javascript:void(0);" aria-expanded='false'>사업소개<i></i></a>
+                <ul class="depth2">
+                      
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000004');" aria-label="청년일경험 포털 메뉴">청년일경험 포털</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000136');" aria-label="고용노동부 청년일경험 메뉴">고용노동부 청년일경험</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000005');" aria-label="주관기관별 일경험 사업 메뉴">주관기관별 일경험 사업</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                  </ul>
+                </li>
+                        
+                        
+                          
+                          
+                            <li class="depth1-item is-expanded">
+                              <a href="javascript:void(0);" aria-expanded='false'>일경험 프로그램<i></i></a>
+                <ul class="depth2">
+                      
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item on">
+                  <a href="javascript:fn_header_menuMove('MXH0000008');" aria-label="프로그램 정보 메뉴">프로그램 정보</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000019');" aria-label="모집일정 메뉴">모집일정</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000022');" aria-label="운영기관 메뉴">운영기관</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000024');" aria-label="참여기업 메뉴">참여기업</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                  </ul>
+                </li>
+                        
+                        
+                          
+                          
+                            <li class="depth1-item ">
+                              <a href="javascript:void(0);" aria-expanded='false'>우수사례 커뮤니티<i></i></a>
+                <ul class="depth2">
+                      
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000125');" aria-label="인턴형 우수사례 메뉴">인턴형 우수사례</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000127');" aria-label="프로젝트형 우수사례 메뉴">프로젝트형 우수사례</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000129');" aria-label="ESG지원형 우수사례 메뉴">ESG지원형 우수사례</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000131');" aria-label="기업탐방형 우수사례 메뉴">기업탐방형 우수사례</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                  </ul>
+                </li>
+                        
+                        
+                          
+                          
+                            <li class="depth1-item ">
+                              <a href="javascript:void(0);" aria-expanded='false'>알림마당<i></i></a>
+                <ul class="depth2">
+                      
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000072');" aria-label="공지사항 메뉴">공지사항</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000074');" aria-label="자료실 메뉴">자료실</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000078');" aria-label="VR 직업체험 메뉴">VR 직업체험</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000076');" aria-label="직업정보 동영상 메뉴">직업정보 동영상</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000026');" aria-label="수료증 진위확인 메뉴">수료증 진위확인</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000142');" aria-label="우수사례 공모전 메뉴">우수사례 공모전</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                  </ul>
+                </li>
+                        
+                        
+                          
+                          
+                            <li class="depth1-item ">
+                              <a href="javascript:void(0);" aria-expanded='false'>고객센터<i></i></a>
+                <ul class="depth2">
+                      
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000084');" aria-label="자주하는질문(FAQ) 메뉴">자주하는질문(FAQ)</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000086');" aria-label="이용안내 메뉴">이용안내</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+              
+                  <li class="depth2-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000087');" aria-label="사이트맵 메뉴">사이트맵</a>
+                </li>
+                
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+                  <li class="depth2-item ">
+                  <span>운영 정책</span>
+                </li>
+              
+              
+              
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+                  <li class="depth3-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000089');" aria-label="이용약관 메뉴"> &bull; 이용약관</a>
+                </li>
+              
+              
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+                  <li class="depth3-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000090');" aria-label="개인정보처리방침 메뉴"> &bull; 개인정보처리방침</a>
+                </li>
+              
+              
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+                  <li class="depth3-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000091');" aria-label="이메일무단수집거부 메뉴"> &bull; 이메일무단수집거부</a>
+                </li>
+              
+              
+        
+                      
+                          
+                    
+                    
+                      
+                    
+              
+                      
+                        
+                          
+                           
+              
+              
+                  <li class="depth3-item ">
+                  <a href="javascript:fn_header_menuMove('MXH0000092');" aria-label="저작권보호정책 메뉴"> &bull; 저작권보호정책</a>
+                </li>
+              
+              
+        
+                      
+                          
+                    
+                    
+                      
+                </ul>
+              </li>
+                      
+                    
+              
+                </ul>
+              </nav>
+
+            </div>
+        </div>
+        <!--............. //mobile gnb .............-->
+        <!--............. // header .............-->
+
+<!-- User Authentication popup -->
+<div class="popup" style="display: none;" id="userAuthenticationPopup">
+    <div class="popup-wrap">
+        <p class="popup-header">로그인 필요</p>
+        <div class="popup-body" tabindex="0">
+          <p>로그인이 필요한 서비스 입니다.<br><br>로그인 페이지로 이동 하시겠습니까?</p>
+        </div>
+        <div class="popup-footer">
+            <button class="btn normal-line md">닫기</button>
+            <button class="btn normal-line md ico-prev" onclick="fn_header_prevMenuMove();">이전</button>
+            <button class="btn primary-color md ico-home">메인으로</button>
+            <button class="btn primary-color md ico-login">로그인</button>
+        </div>
+        <button class="popup-close"><span class="blind">닫기</span></button>
+    </div>
+</div>
+<!-- // User Authentication popup -->
+
+<!-- User RlnmCrfcCfrm popup -->
+<div class="popup" style="display: none;" id="userRlnmCrfcCfrmPopup">
+    <div class="popup-wrap">
+        <p class="popup-header">실명인증 필요</p>
+        <div class="popup-body" tabindex="0">
+          <p>실명인증이 필요한 서비스 입니다.<br/><br/>실명인증 페이지로 이동 하시겠습니까?</p><br/>
+          <small>* 실명인증 진행 &rarr; 로그아웃 &rarr; 재 로그인 완료하여야 실명인증 적용됩니다.</small>
+        </div>
+        <div class="popup-footer">
+            <button class="btn normal-line md">닫기</button>
+            <a class="btn primary-color md" href="/a/b/openIndvMberRlnmCrfcPage.do" target="_blank">실명인증</a>
+        </div>
+        <button class="popup-close"><span class="blind">닫기</span></button>
+    </div>
+</div>
+<!-- // User Authentication popup -->
+
+
+<!-- 20260204 검색 스크립트 -->
+<!-- 퍼블 이후 검색 구현 -->
+<script type="text/javascript">
+ //const CONTEXT_PATH="";
+
+ function openDetailPage(linkUrl, params, keyword){
+   saveWorkExpKeyword(keyword);
+
+ //최근본 공고 시작
+   let recentHtml = "";
+   const cookie = getCookie("recent_work_keywords");
+   if(!cookie){
+     recentHtml += "<div class=\"center\" id=\"recentWorkNoData\" style=\"display: block;\">";
+     recentHtml += "<p>최근 본 내역이 없습니다.</p>";
+     recentHtml += "</div>";
+   }else{
+   var keywordList = [];
+
+   if(cookie){
+     try{
+       keywordList = JSON.parse(decodeURIComponent(cookie));
+       console.log("keywordList try : " + keywordList);
+       if(typeof keywordList == "string"){
+         keywordList = keywordList.split(",").map(s => s.trim()).filter(Boolean);
+       }
+
+       if(Array.isArray(keywordList) && keywordList.length == 1 && typeof keywordList[0] === "string" && keywordList[0].includes(",")){
+       keywordList = keywordList[0].split(",").map(s => s.trim()).filter(Boolean);
+     }
+
+     }catch(e){
+       keywordList = [];
+     }
+   }
+
+   for(let i=0; i<keywordList.length; i++){
+
+     recentHtml += "<div class=\"item recentKeyword\">";
+     recentHtml += "<a href=\"\">" + keywordList[i] + "</a>";
+     recentHtml += "<button class=\"btn-delete\" onmousedown=\"event.preventDefault(); event.stopPropagation()\"; onclick=\"removeOneKeyword('" + keywordList[i] + "', this)\" title=\"삭제\"></button>";
+     recentHtml += "</div>";
+   }
+     recentHtml += "<button class=\"btn-delete all\" onmousedown=\"event.preventDefault(); event.stopPropagation()\"; onclick=\"removeAllKeywords()\">전체삭제</button>";
+   }
+
+   if(!(typeof recent_list == "undefined" || recent_list == undefined || recent_list == null)){
+       recent_list.innerHTML = "";
+       recent_list.innerHTML = recentHtml;
+   }
+
+   const form = document.getElementById('detailPageForm');
+   form.action = ComLib.c.CONTEXT_PATH + linkUrl;
+   form.target = "_self";
+ /* 이전 클릭시 생성된 내용 제거 */
+   form.innerHTML = '';
+   /* form 내부에 파라미터들 생성 */
+   for (const key in params){
+     /* params 객체가 실제로 해당 key를 소유하고 있는지 분기 처리 */
+     if(params.hasOwnProperty(key)){
+       const input = document.createElement('input');
+       input.type = 'hidden';
+       input.name = key;
+       input.value = params[key];
+       /* 생성한 input을 form 내부에 추가 */
+       form.appendChild(input);
+     }
+   }
+   form.submit();
+ }
+
+//2. 쿠키 저장 로직
+ function saveWorkExpKeyword(keyword){
+ var COOKIE_NAME = "recent_work_keywords";
+ var MAX_COUNT = 5;
+
+ var cookieValue = getCookie(COOKIE_NAME);
+ var keywordList = [];
+
+ if(cookieValue){
+   try{
+     keywordList = JSON.parse(decodeURIComponent(cookieValue));
+   }catch(e){
+     keywordList = [];
+   }
+ }
+
+ //중복제거
+ var index = keywordList.indexOf(keyword);
+ if(index !== -1){
+   keywordList.splice(index, 1);
+ }
+
+ //추가 및 자르기
+ keywordList.unshift(keyword);
+ if(keywordList.length > MAX_COUNT){
+   keywordList = keywordList.slice(0, MAX_COUNT);
+ }
+
+ //저장
+ setCookie_search(COOKIE_NAME, (JSON.stringify(keywordList)),7);
+ }
+
+ //3.쿠키 저장(set)
+ function setCookie_search(name, value, days){
+   var expires = "";
+   if(days){
+     var date = new Date();
+     date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+     expires = "; expires=" + date.toUTCString();
+   }
+   document.cookie = name + "=" + (value || "") + expires + "; path=/";
+ }
+
+ //4. 쿠키 조회(get)
+ function getCookie(name){
+   var nameEQ = name + "=";
+   var ca = document.cookie.split(';');
+   for(var i=0; i < ca.length; i++){
+     var c = ca[i];
+     while(c.charAt(0) == ' ')c = c.substring(1, c.length);
+     if(c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
+   }
+   return null;
+ }
+</script>
+
+    <main class="container">
+      <div class="wrap">
+        <!-- LNB -->
+        
+
+
+
+
+
+
+
+
+<!-- LNB -->
+<div class="lnb">
+    <div class="wrap">
+        <nav id="lnbNav" aria-label="일경험 프로그램 메뉴">
+            <h2>일경험 프로그램</h2>
+            <ul>
+              
+              
+                
+              
+                
+                  
+                    
+                    
+                      <li class="on">
+                        <a href="javascript:fn_header_menuMove('MXH0000008');">프로그램 정보</a>
+                    
+                  
+                  
+                    </li>
+                    
+                  
+                
+              
+                
+                  
+                    
+                    
+                      <li class="">
+                        <a href="javascript:fn_header_menuMove('MXH0000019');">모집일정</a>
+                    
+                  
+                  
+                    </li>
+                    
+                  
+                
+              
+                
+                  
+                    
+                    
+                      <li class="">
+                        <a href="javascript:fn_header_menuMove('MXH0000022');">운영기관</a>
+                    
+                  
+                  
+                    </li>
+                    
+                  
+                
+              
+                
+                  
+                    
+                    
+                      <li class="">
+                        <a href="javascript:fn_header_menuMove('MXH0000024');">참여기업</a>
+                    
+                  
+                  
+                    </li>
+                    
+                  
+                
+              
+            </ul>
+            <button type="button" class="btn-lnb" aria-controls="lnbNav"><span class="blind">메뉴 닫기</span></button>
+        </nav>
+    </div>
+</div>
+<!-- // LNB -->
+
+        <div class="content" id="content">
+          
+
+
+
+
+
+
+
+<!-- TOP -->
+<div class="content-top">
+  
+      <div class="location">
+          <ul>
+              <li class="home"><a href="/" onclick="onSpinBlockUI();">홈</a></li>
+              <!-- 2025.10.02 웹편의성 조치 브레드크럼에 현재 화면의 전체 정보 계층 구조를 표시하여야 함
+              	   브레드크럼은 탐색 중인 화면의 상위 경로로 이동하는 데 사용되고,
+              	   페이지 위치를 파악할 수 있는 탐색 수단이기 때문에 페이지 탐색 계층 구조를 빠짐 없이 표시하여
+              	   사용자가 현재 위치를 파악하고 계층 구조의 수준을 이동할 수 있도록 해야합니다. -->
+              
+              	
+              		
+              			<li><span>일경험 프로그램</span></li>
+              		
+					
+              	
+              
+              	
+              		
+					
+              			
+              				
+        		                <li><a href="javascript:fn_header_menuMove('MXH0000008');">프로그램 정보</a></li>
+        		                <li><span>프로그램 상세 정보</span></li>
+              				
+              				
+						
+					
+              	
+              
+          </ul>
+      </div>
+    
+    <h3>
+      
+        프로그램 상세 정보
+        
+      
+    </h3>
+</div>
+<!-- // TOP -->
+          <!-- contents-body -->
+          
+
+
+
+<script>
+    $(document).ready(function(){
+        fn_search(1);
+        // 프로그램유형, 직무, 지역코드 셋팅
+        fn_chkSet("prgmSecd", "");
+        fn_chkSet("dtyCd", "");
+        fn_chkSet("areaCd", "");
+    })
+
+    function fn_list(){
+        fn_header_checkMenuAuth("/d/a/selectWkexPrgmList.do", function(){
+            fn_listSumbit();
+        });
+        function fn_listSumbit(){
+
+            var totalSearchYn = "";
+            if( totalSearchYn == "Y" ){ // 고용24에서 모바일에서 청년 일경험 화면을 호출할때만 "Y"전달. PC에서도 동일기능 적용이 필요할경우 www.~의 url 적용이 필요함
+              var profile = "";
+              var action = "https://m.work24.go.kr/cm/f/e/0100/empPrgSrchYoungMainPost.do";
+
+              if(profile == "prod") {
+                  action = "https://m.work24.go.kr/cm/f/e/0100/empPrgSrchYoungMainPost.do";
+              }else if(profile == "test") {
+                  action = "https://twww.work24.go.kr:44380/cm/f/e/0100/empPrgSrchYoungMainPost.do";
+              }else if(profile == "local"){
+                  action = "http://localhost:8800/cm/f/e/0100/empPrgSrchYoungMainPost.do";
+              }
+
+              $("#parameterForm2").attr("action", action);
+              var form = new FormLib.Form();
+              form.setForm("parameterForm2");
+              ComLib.submit("parameterForm2");
+            } else {
+                var form = new FormLib.Form();
+                form.setForm("parameterForm");
+                ComLib.submit("parameterForm");
+            }
+
+            //var form = new FormLib.Form();
+            //form.setForm("#parameterForm");
+            //ComLib.submit("parameterForm");
+        }
+     }
+
+    function fn_apply(){
+        if(parseInt("0") >= parseInt("1")) {
+            alert("모집인원이 초과되어 참여할 수 없습니다.");
+            return false;
+        }
+        // CNTC01 연계등록(01) 행정시스템등록(02)
+        var rgstSecd = "02"
+        if(rgstSecd == "01"){
+            var hmpgAdr = ""
+            window.open(hmpgAdr); // i_vdongwon 2025-03-07 새탭에서 열리게 수정
+        } else {
+            var result = ""
+            var url = "/d/a/selectpgmPrcpHist.do"
+            var param = {untyPrgmCtn : "PG0031168202609230009"}
+            var request = ComLib.ajaxReqObj(url, param, false);
+            request.done(function (responseObj, statusText, xhr) {
+                if(!(responseObj == null || responseObj == "" || responseObj == "undefined")){
+                    var result = JSON.parse(responseObj).selectpgmPrcpHist;
+                    if(!(result == null || result == "" || result == "undefined")){
+                        var pgmPrcpChk = result.pgmPrcpChk;
+                        var prtcCtn = result.prtcCtn;
+                        var valdChk = result.valdChk;
+                        var msg = result.msg;
+                        if (valdChk == "Y"){
+                            alert(msg);
+                            return false;
+                        }
+                        fn_header_checkMenuAuth("/d/a/selectItrnPrjtEsgPrgmRqutDtal.do", function(){
+                            //i_vha 2025-02-03 실명인증 여부 체크 추가
+                            fn_header_checkRlnmCrfcCfrmYn(function(){
+                                applySumit(pgmPrcpChk, prtcCtn);
+                            });
+                        });
+                        function applySumit(pgmPrcpChk, prtcCtn){
+                            var prtcCtnChk = ""
+                            if(!(prtcCtn == null || prtcCtn == "" || prtcCtn == "undefined")) prtcCtnChk ="Y"
+                            var url =(pgmPrcpChk == "Y" &&  prtcCtnChk == "Y") ? "/d/a/selectItrnPrjtEsgPrgmRqutDtal.do" : "/d/a/selectItrnPrjtEsgPrgmRqutReg.do"
+                            var goView =(pgmPrcpChk == "Y" &&  prtcCtnChk == "Y") ? "goRcitPbsbRqutHist" : ""
+                            $('#parameterForm').attr("action",url)
+                            var form = new FormLib.Form();
+                            form.setForm("#parameterForm");
+                            form.setHidden("untyPrgmCtn", "PG0031168202609230009");
+                            form.setHidden("goView", goView);
+                            ComLib.submit("parameterForm");
+                        }
+                    } else {
+                        // 로그인이 안됐을 경우 분기
+                        fn_header_checkMenuAuth("/d/a/selectItrnPrjtEsgPrgmRqutReg.do", function(){
+                            //i_vha 2025-02-03 실명인증 여부 체크 추가
+                            fn_header_checkRlnmCrfcCfrmYn(function(){
+                                applySumit(pgmPrcpChk, prtcCtn);
+                            });
+                        });
+                        function applySumit(pgmPrcpChk, prtcCtn){
+                            $('#parameterForm').attr("action","/d/a/selectItrnPrjtEsgPrgmRqutReg.do")
+                            var form = new FormLib.Form();
+                            form.setForm("#parameterForm");
+                            form.setHidden("untyPrgmCtn", "PG0031168202609230009");
+                            ComLib.submit("parameterForm");
+                        }
+                    }// confirm
+                }
+            })
+        }
+    }
+
+    function fn_prneDtal(joMbn){
+        fn_header_checkMenuAuth("/d/d/selectPrneDtal.do", function(){
+            fn_prneDtalSumit(joMbn);
+        });
+        function fn_prneDtalSumit(joMbn) {
+             $('#parameterForm').attr("action","/d/d/selectPrneDtal.do");
+             $('#parameterForm').find("input[type='hidden']").val("");
+             var form = new FormLib.Form();
+             form.setForm("#parameterForm");
+             form.setHidden("joMbn", joMbn);
+             form.setHidden("prevPage", "pgm");
+             ComLib.submit("parameterForm");
+        }
+    }
+
+    function fn_search(currentPageNo){
+        var url = "/d/a/selectPrneList.do"
+        var param = {currentPageNo: currentPageNo, untyPrgmCtn : "PG0031168202609230009"}
+        var request = ComLib.ajaxReqObj(url, param);
+        request.done(function (responseObj, statusText, xhr) {
+            // 초기화
+            $("#prneList").find("tr").remove();
+            if(!(responseObj == null || responseObj == "" || responseObj == "undefined")){
+                var selectPrneListInfo = JSON.parse(responseObj).selectPrneList
+                var paginationInfo = JSON.parse(responseObj).paginationInfo;
+                if(selectPrneListInfo.length > 0){
+                    for (var i = 0; i < selectPrneListInfo.length; i++){
+                         $tr = $("<tr><td class='m-hidden'>" + selectPrneListInfo[i].rn +"<\/td>"
+                              + "<td class='tal link' title= '" + selectPrneListInfo[i].prcpEpnm + "'>" + selectPrneListInfo[i].prcpEpnm + "<\/td>"
+                              //+ "<td aria-label='직무' title= '" + selectPrneListInfo[i].dtyCdNm + "'>" + selectPrneListInfo[i].dtyCdNm + "<\/td>"
+                              // + "<td aria-label='모집인원' title= '" + selectPrneListInfo[i].rcitNmpr + "'>" + selectPrneListInfo[i].rcitNmpr + "<\/td>"
+                              + "<td title= '" + selectPrneListInfo[i].dtyCdNm + "'>" + selectPrneListInfo[i].ncsCdNm + "<\/td>"
+                              + "<td><a href='javascript:fn_prneDtal(\""
+                              + selectPrneListInfo[i].joMbn +"\");' class='btn normal-line xs'>기업정보<\/a>" + "<\/td>"
+                              + "<\/tr>");
+                          $("#prneList").append($tr)
+                          $("#prneListHeader").html("총&nbsp;<strong class='blue'>"+ paginationInfo.totalRecordCount +"<\/strong>건")
+                    }
+                } else {
+                    $tr = $("<tr><td colspan='4' class='no-data'><div class='answer'>참여기업이 존재하지 않습니다.<\/div><\/td><\/tr>");
+                    $("#prneList").append($tr)
+                    $("#prneListHeader").html("총&nbsp;<strong class='blue'>0<\/strong>건")
+                }
+                var paginationInfo = {
+                        currentPageNo        :  paginationInfo.currentPageNo
+                      , recordCountPerPage   :  paginationInfo.recordCountPerPage
+                      , pageSize             :  Number(10)
+                      , totalRecordCount     :  paginationInfo.totalRecordCount
+                      , totalPageCount       :  paginationInfo.totalPageCount
+                      , firstPageNoOnPageList:  paginationInfo.firstPageNoOnPageList
+                      , lastPageNoOnPageList :  paginationInfo.lastPageNoOnPageList
+                      , firstRecordIndex     :  paginationInfo.firstRecordIndex
+                      , lastRecordIndex      :  paginationInfo.lastRecordIndex
+                      , firstPageNo          :  paginationInfo.firstPageNo
+                      , lastPageNo           :  paginationInfo.lastPageNo
+                }
+                //페이징 넣을곳, 페이징객체, 현재페이지번호(onclick), 조회함수
+                gfn_pagination($("#prneListInfo"), paginationInfo, "fn_search", "image");
+            }
+        })
+    }
+
+    // 목록 체크박스 parameter 정리
+    function fn_chkSet(chkNm,chkVal){
+       if(!(chkVal == null)){
+          chkVal = chkVal.replace(/[\[|\]]/g, "");  // ('[', ']', ' ') 제거
+          $("input[name=" + chkNm +"]").val($.trim(chkVal));
+       }
+    }
+
+    function fn_fileDownload(downloadUrl){
+        var form = new FormLib.Form();
+        form.createForm("fileDownload", downloadUrl, "POST", null, "_blank")
+        form.addBody();
+        form.form.submit();
+        form.removeForm();
+    }
+
+    function fn_filePreView(previewUrl){
+        gfn_filePreview(previewUrl);
+    }
+
+   // i_vhyuklee
+    // 찜하기(즐겨찾기) 클릭
+    function fn_bkmk() {
+
+        var curBtnText = $("#bkmkBtn").text();
+
+        // ajax 호출
+        var result = ""
+        var url = "/d/a/savePrgmBkmk.do"
+        var param = { "untyPrgmCtn" : "PG0031168202609230009" }
+        var request = ComLib.ajaxReqObj(url, param, false);
+        request.done(function (responseObj, statusText, xhr) {
+            if(!(responseObj == null || responseObj == "" || responseObj == "undefined")){
+                // 로그인이 정상적이지 않은 메시지가 return 되었을 경우
+                var notLoginForBkmkMsg = JSON.parse(responseObj).notLoginForBkmkMsg;
+                if(!(notLoginForBkmkMsg == null || notLoginForBkmkMsg == "" || notLoginForBkmkMsg == "undefined")){
+                    alert(notLoginForBkmkMsg.notLoginForBkmkMsg);
+                    return false;
+                }
+                // 저장 결과가 1이 아닌 다른값이 return 되었을 경우
+                var insertResult = JSON.parse(responseObj).insertResult;
+                if(!(insertResult == null || insertResult == "" || insertResult == "undefined")){
+                    if(insertResult < 1) {
+                        alert('찜하기 등록/취소가 정상적으로 저장되지 않았습니다. 페이지 새로고침 이후 다시 시도 바랍니다.');
+                        return false;
+                    }
+                }
+
+                // ajax 성공 여부에 따른 버튼 텍스트 switching 처리
+                if(curBtnText.trim() == "찜하기") {
+                    $("#bkmkBtn").text("찜하기 취소");
+                }else {
+                    $("#bkmkBtn").text("찜하기");
+                }
+            }
+
+        })
+     }
+
+</script>
+<!-- BODY -->
+<div class="content-body">
+
+
+    <h4>사업정보</h4>
+
+    <div class="tbl view">
+        <table>
+            <caption>사업정보 표 - 사업명, 주관기관, 사업일정으로 구성</caption>
+            <colgroup>
+                <col class="label">
+                <col>
+                <col class="label">
+                <col>
+            </colgroup>
+            <tbody>
+                <tr>
+                    <th scope="row">사업명</th>
+                    <td colspan="3"><strong>2026년 청년 일경험 지원사업</strong></td>
+                </tr>
+                <tr>
+                    <th scope="row">주관기관</th>
+                    <td>고용노동부</td>
+                    <th scope="row">사업일정</th>
+                    <td>2026-02-27 ~ 2027-02-28</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+  <h4>일경험 프로그램 정보</h4>
+    <div class="tbl view">
+        <table>
+            
+            <caption>프로그램정보 표 - 프로그램명, 프로그램 유형, 지역, 사전직무교육여부, 일경험기간, 주요내용관련 키워드로 구성</caption>
+            <colgroup>
+                <col class="label">
+                <col>
+                <col class="label">
+                <col>
+            </colgroup>
+            <tbody>
+                <tr>
+                    <th scope="row">프로그램명</th>
+                    <td colspan="3"><strong>(엘캠퍼스) 미래내일 일경험(제로인턴) 12기 - 경영사무(사무행정)</strong></td>
+                </tr>
+                <tr>
+                    <th scope="row">프로그램 유형 </th>
+                    <td>인턴형</td>
+                    <th scope="row">지역</th>
+                    <td>서울</td>
+                </tr>
+                <!-- kyoung97 인턴형, 프로젝트형일때 사전직무교육기간 표시 -->
+                
+                <tr>
+                  <th scope="row">사전직무교육여부</th>
+                  
+                    
+                      <td colspan="3">있음</td>
+                    
+                    
+                  
+                </tr>
+                
+                <tr>
+                  <th scope="row">일경험 기간</th>
+                  <td colspan="3">2026-10-12 ~ 2026-12-04</td>
+                </tr>
+                <tr>
+                  <th scope="row">주요내용</th>
+                  <td colspan="3">1. AI 기술 및 도구에 대한 개념, 활용 방법을 습득하여 실무형 인재 양성<br>2. AI 기술 및 도구를 활영하여 콘텐츠 생성하는 방법 습득</td>
+                </tr>
+                <!-- kyoung97 '프로젝트형'일때 보이는 추가 컬럼 -->
+                
+                <tr>
+                  <th scope="row">관련 키워드</th>
+                    <td colspan="3">
+                      <div class="hashTag-list">
+                        
+                          
+                              
+                          
+                          
+                        
+                      </div>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h4>모집정보</h4>
+
+    <div class="tbl view">
+        <table>
+            
+            <caption>모집정보 표 - 직무, 모집기간, 운영기간, 선발기준내용으로 구성</caption>
+            <colgroup>
+                <col class="label">
+                <col>
+                <col class="label">
+                <col>
+            </colgroup>
+            <tbody>
+                <tr>
+                    <th scope="row">직무(모집인원)</th>
+                 <td colspan="3">경영·사무(1)</td>
+                </tr>
+                <tr>
+                    <th scope="row">모집기간</th>
+                    <td colspan="3">2026-09-28 ~ 2026-10-02</td>
+                </tr>
+                <tr>
+                  <th scope="row">모집내용</th>
+                  <td colspan="3">"▶ 프로그램 주요 사항<br> - 모집인원 : 1명<br> - 모집직무(세부직무) : 경영사무(사무행정) <br>▶주요 일정 안내<br> - 모집기간 : 2026.09.28 ~ 2026.10.02<br> - 선발기간 : 2026.10.05 ~ 2026.10.06<br> - 면접기간 : 2026.10.05 ~ 2026.10.07 (면접 일정 개별 통보)<br> - 사전직무교육 : 2026.10.07 ~ 2026.10.08 (총 15시간)<br> - 일경험 : 2026.10.12 ~ 2026.12.04 (8주)<br>▶ 일경험 구성<br> - 일경험 형태 : 주5일, 25시간(5시간x5일)<br> - 일경험 시간 : 기업별 상이, 운영계획서 참고"</td>
+                </tr>
+                <!-- '선발기준내용'은 인턴, 프로젝트형일때만 표시 -->
+                
+                <tr>
+                    <th scope="row">선발기준내용</th>
+                    <td colspan="3">
+                        "▶ 자격 요건<br> - 기본 자격 요건(예, 지원 가능한 학력, 전공 등)<br> - 기타 필요 자격(예, 자격증, 토익 등)<br>▶ 우대사항<br> - 구체적 선호 조건(예, 기업 소재 거주자 우선 선발 등)<br>▶ 선발 절차<br> - 서류 심사(제출된 이력서 및 포트폴리오 평가)<br> - 면접 심사(대면/비대면)<br>▶ 합격자 발표<br> - 발표 일정 및 방식(발표일시 : 2026년 10월 07일 18:00 이후, 방식 : 문자로 개별 통보 등)<br>▶ 기타 조건<br> - 성실성 또는 일경험 태도 등<br>- 자세한 내용 운영계획서 참고"
+                    </td>
+                </tr>
+                
+            </tbody>
+        </table>
+    </div>
+    
+    <h4>사전직무교육정보</h4>
+    <div class="tbl view">
+        <table>
+            
+            <caption>사전직무교육정보 표 - 교육기관명, 전화번호, 사전직무교육기간, 교육장소, 교육과정 내용으로 구성</caption>
+            <colgroup>
+                <col class="label">
+                <col>
+                <col class="label">
+                <col>
+            </colgroup>
+            <tbody>
+                <tr>
+                    <th scope="row">교육기관명</th>
+                    <td colspan="3"><strong> (주)고려아카데미컨설팅</strong></td>
+                </tr>
+                <tr>
+                    <th scope="row">전화번호</th>
+                    <td colspan="3">070-7663-8272</td>
+
+                </tr>
+                <tr>
+                    <th scope="row">사전직무교육기간</th>
+                    <td colspan="3">2026-10-07 ~ 2026-10-08</td>
+                </tr>
+                <tr>
+                    <th scope="row">교육장소</th>
+                    <td colspan="3">
+                        <div class="d-flex">
+                            <span class="txt">
+                              
+                                
+                                
+                                
+                                  (08512)서울특별시 금천구 디지털로9길 32(가산동)  17층 오아시스강의장1
+                                
+                              
+                            </span>
+                            
+                                <a href="javascript:;" onclick="javascript:MapLib.mapView('서울특별시 금천구 디지털로9길 32(가산동)',  '17층(가산동,갑을그레이트밸리B동17층)', '08512')"  class="btn normal-line xs">위치보기</a>
+                            
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row">교육과정 내용</th>
+                    <td colspan="3">
+                         -교육시간: 15시간<br>-교육방법: 혼합<br>-상세 교육장: 서울시 금천구 디지털로9길32 갑을그레이트밸리B동 17층  오아시스강의장1<br>-교육내용 1일차/2일차: 비즈커뮤니케이션(8h)/ AI를 활용한 비즈커뮤니케이션(7h)
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    
+
+    <div class="list-top">
+         <div class="left">
+             <h4 style="margin-bottom: 0; line-height: 40px;">참여기업 정보</h4>
+         </div>
+         <div class="right total" style="margin-right: 0; align-self: center;" id= "prneListHeader" aria-live="polite">
+         </div>
+    </div>
+
+    <div class="tbl list">
+        <table>
+            
+            <caption>참여기업 정보 표 - 번호, 기업명, 수행업무, 기업정보로 구성</caption>
+            <colgroup>
+                <col style="width:80px;">
+                <col>
+                
+                
+                <col style="width:200px;">
+                <col style="width:200px;">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th scope="col" class="m-hidden">번호</th>
+                    <th scope="col">기업명</th>
+                    
+                    
+                    <th scope="col">수행업무</th>
+                    <th scope="col">기업정보</th>
+                </tr>
+            </thead>
+            <tbody id="prneList">
+            </tbody>
+        </table>
+    </div>
+    <div id ="prneListInfo">
+    </div>
+
+    <h4>운영기관 담당자 정보</h4>
+
+    <div class="tbl view">
+        <table>
+            
+            <caption>운영기관 담당자 정보 표 - 운영기관, 담당자, 전화번호첨부파일로 구성</caption>
+            <colgroup>
+                <col class="label">
+                <col>
+                <col class="label">
+                <col>
+            </colgroup>
+            <tbody>
+                <tr>
+                    <th scope="row">운영기관</th>
+                    <td colspan="3"><strong>(주)데이원컴퍼니</strong></td>
+                </tr>
+                <tr>
+                    <th scope="row">담당자</th>
+                    <td>김윤경</td>
+                    <th scope="row">전화번호</th>
+                    <td>02-508-0375</td>
+                </tr>
+                <!-- 'Esg형'일때 이메일 표시 -->
+                
+                <tr>
+                    <th scope="row">첨부파일</th>
+                    <td colspan="3">
+                        <div class="d-flex flex-column">
+                        
+                        
+                            
+                                <div class="d-flex">
+                                    <a href="javascript:void(0);" class="txt-link attach ico-pdf" onclick="javascript:fn_fileDownload('/cmm/fileDownload.do?athflSeq=lExVqLXUjQ7cp4%2F6UqAeEg%3D%3D&amp;atchFsno=67IdUZIPPQrJ0a7CaPt%2BYw%3D%3D&amp;sId=yob7Ux4Uo9Pa2RaawPpXoVPqB57v3gXL0laXOwBqmo_zxMaL9rtX%21854765702%21-273927965%211790922923540')">엘캠퍼스_인턴형 일경험 운영 계획서(12기)_경영사무(사무행정).pdf</a>
+                                    
+                                        <a href="javascript:void(0);" class="btn normal-line xs" onclick="javascript:fn_filePreView('/cmm/previewFile.do?athflSeq=lExVqLXUjQ7cp4%2F6UqAeEg%3D%3D&amp;atchFsno=67IdUZIPPQrJ0a7CaPt%2BYw%3D%3D')">미리보기</a>
+                                    
+                                </div>
+                            
+                        
+                        
+                        
+                        </div>
+                    </td>
+                </tr>
+
+            </tbody>
+        </table>
+    </div>
+
+    <div class="btn-group">
+        <a href="javascript:fn_list();" class="btn normal-line lg mr-auto">목록</a>
+        <!-- i_vhyuklee -->
+        
+        
+            <a href="javascript:fn_apply();" title="(엘캠퍼스) 미래내일 일경험(제로인턴) 12기 - 경영사무(사무행정)" class="btn primary-color lg">신청</a>
+        
+    </div>
+</div>
+<!-- // BODY -->
+<form id="parameterForm" action="/d/a/selectWkexPrgmList.do" method="POST">
+    <input type="hidden" id="prneCurrentPageNo" name="prneCurrentPageNo" value=""/>
+    <input type="hidden" name="sortOption" value=""/>
+    <input type="hidden" name="pgnm" value="">
+    <input type="hidden" name="mnstIssn" value=""/>
+    <input type="hidden" name="operEnde" value='' />
+    <input type="hidden" name="operInstNm" value='' />
+    <input type="hidden" name="currentPageNo" value='' />
+    <input type="hidden" name="prgmSecd"/>
+    <input type="hidden" name="operBgde" value='' />
+    <input type="hidden" name="rcitBe" value='' />
+    <input type="hidden" name="operBe" value='' />
+    <input type="hidden" name="listCnt" value='' />
+    <input type="hidden" name="recordCountPerPage" value='' />
+    <input type="hidden" name="prtcInstNm" value='' />
+    <input type="hidden" name="areaCd"/>
+    <input type="hidden" name="rcitEnde" value='' />
+    <input type="hidden" name="dtyCd"/>
+    <input type="hidden" name="rcitBgde" value='' />
+    <input type="hidden" name="closeYnInc" value=""/>
+    <input type="hidden" name="prevPage" value="pgm"/>
+    <input type="hidden" name="myBkmkedYn" value='false' />
+</form>
+
+<form id="parameterForm2"  method="POST">
+    <input type="hidden" name="totalSearchYn" value=""/>
+    <input type="hidden" name="srchKeyWord" value=""/>
+    <input type="hidden" name="upprAreaCd" value="">
+    <input type="hidden" name="areaCd" value=""/>
+    <input type="hidden" name="empMode" value=""/>
+    <input type="hidden" name="startDt" value=""/>
+    <input type="hidden" name="endDt" value=""/>
+    <input type="hidden" name="resultCnt" value=""/>
+    <input type="hidden" name="currentPageNo" value=""/>
+</form>
+        </div>
+      </div>
+    </main>
+    <!-- FOOTER -->
+    
+
+<!-- Nethru Tag Manager -->
+<script>
+(function(f,d,k,h){var b;var a=m()+"ver="+c(d);g();function e(){var o=document.getElementsByTagName(f)[0];var n=document.createElement(f);n.async=true;n.charset="utf-8";n.src=a;o.parentNode.insertBefore(n,o)}function m(){return window.location.protocol=="https:"?"https://tag.work.go.kr/static/00002/install.js?":"https://tag.work.go.kr/static/00002/install.js?"}function c(n){var o=new Date().getTime();var p=n*1000*60;return n>0?Math.floor(o/p)*p:o}function g(){var n=l();if(!n){return false}n.open("GET",a,true);n.withCredentials=h;n.send(null);n.onload=function(){j();e()};n.onerror=n.onabort=function(){j()};i(function(){n.abort()},k)}function l(){var q;var o=[function(){return new XDomainRequest()},function(){return new XMLHttpRequest()},function(){return new ActiveXObject("Msxml2.XMLHTTP")},function(){return new ActiveXObject("Msxml3.XMLHTTP")},function(){return new ActiveXObject("Microsoft.XMLHTTP")}];for(var n=0;n<o.length;n++){try{q=o[n]()}catch(p){continue}break}return q}function i(o,n){b=setTimeout(o,n)}function j(){if(b){clearTimeout(b);b=null}}})("script",60,/*{{timeout}}*/2000,/*{{withCredentials}}*/false);
+
+</script>
+<!-- End Nethru Tag Manager -->
+<!-- FOOTER -->
+
+<footer class="footer-new">
+    <div class="inner">
+        <div class="logoNew"><img src="/static/images/commonNew/logo.png" alt="청년 일경험 포털 로고"></div>
+        <div class="footer-top-new">
+            <p class="addr">(27740) 충청북도 음성군 맹동면 태정로 6 한국고용정보원</p>
+            <ul class="info">
+                <li><span class="bold">홈페이지 전산 이용 문의</span><a href="tel:1577-7114">1577-7114</a><p>(유료, 한국고용정보원 고객상담센터 평일 09:00~18:00)</p></li>
+                <li><span class="bold">고용·노동 분야 제도 문의</span><a href="tel:1350">국번없이 1350</a><p>(유료, 고용노동부 고객상담센터 평일 09:00~18:00)</p></li>
+            </ul>
+            <div class="link-list">
+                <a href="/a/c/selectUtzeStptInfo.do" onclick="onSpinBlockUI();" title="이용약관 바로가기">이용약관</a>
+                <a href="/a/c/selectIdifPrssPlcyInfo.do" onclick="onSpinBlockUI();" title="개인정보처리방침 바로가기" class="blue"><strong>개인정보처리방침</strong></a>
+                <a href="/a/c/openEmailAdrPrssPlcy.do" onclick="onSpinBlockUI();" title="이메일무단수집거부 바로가기">이메일무단수집거부</a>
+                <a href="/a/c/openCpyrPoly.do" onclick="onSpinBlockUI();" title="저작권보호정책 바로가기">저작권보호정책</a>
+                <a href="/h/d/selectSiteMapDtal.do" onclick="onSpinBlockUI();" title="사이트맵 바로가기">사이트맵</a>
+            </div>
+            <ul class="footer-bottom-new">
+                <li><a href="http://www.moel.go.kr" target="_blank" title="고용노동부 홈페이지 새창열림"> <img src="/static/images/commonNew/logo-moel.png" alt="고용노동부 홈페이지 이미지">고용노동부 <i class="new-tab"></i></a></li>
+                <li><a href="https://www.keis.or.kr" target="_blank" title="한국고용정보원 홈페이지 새창열림"><img src="/static/images/commonNew/logo-keis.png" alt="한국고용정보원 홈페이지 이미지"> 한국고용정보원 <i class="new-tab"></i></a></li>
+            </ul>
+            <div class="wa"><a href="http://www.webwatch.or.kr/Situation/WA_Situation.html?MenuCD=110" ><img src="/static/images/commonNew/logo-wa.png"alt="과학기술정보통신부 WEB ACCESSIBILITY 마크(웹 접근성 품질인증 마크) 2026.03.13 ~ 2027.03.12" title="국가 공인 인증기관 : 웹와치"></a></div>
+        </div>
+        <div class="copyright-new"><p>Copyright © 2025 고용노동부 한국고용정보원 all rights reserved.</p></div>
+        <div class="family-site-wrap">
+            <div class="family-site-new">
+                <button type="button" title="패밀리사이트 열기" class="family-site-button" aria-controls="familySiteList">패밀리사이트</button>
+                    <ul class="family-site-list" id="familySiteList">
+                        <li><a href="https://www.work24.go.kr" target="_blank" title="고용24 홈페이지 새창열림">고용24</a></li>
+                        <li><a href="https://eis.work.go.kr" target="_blank" title="고용행정통계 홈페이지 새창열림">고용행정통계</a></li>
+                        <li><a href="https://www.workplus.go.kr" target="_blank" title="고용복지센터 홈페이지 새창열림">고용복지센터</a></li>
+                        <li><a href="https://www.work.go.kr/cyberedu/main.do" target="_blank" title="사이버진로교육센터 홈페이지 새창열림">사이버진로교육센터</a></li>
+                        <li><a href="https://saeil.mogef.go.kr/hom/HOM_Main.do" target="_blank" title="여성새로일하기센터 홈페이지 새창열림">여성새로일하기센터</a></li>
+                        <li><a href="https://www.worktogether.or.kr" target="_blank" title="장애인고용포털 홈페이지 새창열림">장애인고용포털</a></li>
+                        <li><a href="https://www.gasarang.go.kr/hpgsMain.do" target="_blank" title="가사랑 홈페이지 새창열림">가사랑</a></li>
+                        <li><a href="https://www.work.go.kr/gongsi/empReportInfo/retrieveGetGongsiList.do" target="_blank" title="고용형태공시제 홈페이지 새창열림">고용형태공시제</a></li>
+                        <li><a href="https://www.eps.go.kr" target="_blank" title="외국인고용(외국인전용) 홈페이지 새창열림">외국인고용(외국인전용)</a></li>
+                    </ul>
+           </div>
+       </div>
+    </div>
+</footer>
+  <!-- // FOOTER -->
+<div id="spin"></div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,169 @@
+"""미래내일 일경험 화면의 조각 라우트 (2026-10-02 결정, LC-3432).
+
+위 메뉴 `미래내일 일경험` 한 페이지가 조각 하나(`fragments/work_experience_panel.html`)로 돈다.
+설정 저장, 지금 수집, 지금 보내기가 모두 이 조각을 다시 그려 돌려준다. 수집·전송은
+`app/work_experience/` 가 한다. 부트캠프 화면(`app/api/ui_bootcamps.py`)과 같은 모양이다.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import sqlite3
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import HTMLResponse
+
+from app import db
+from app.api.settings import get_connection
+from app.api.ui import render
+from app.config import Settings, get_settings
+from app.deliver import settings as deliver_store
+from app.scheduler import get_gate, get_scheduler
+from app.work_experience import deliver, schedule, store
+from app.work_experience import settings as work_settings
+from app.work_experience.portal import LIST_URL
+from app.work_experience.runner import MANUAL, MAX_FILLS_PER_RUN, run_all
+
+router = APIRouter(tags=["ui"], include_in_schema=False)
+
+RECENT_RUNS = 5
+
+
+def _panel(
+    request: Request,
+    conn: sqlite3.Connection,
+    settings: Settings,
+    *,
+    message: str = "",
+    error: str = "",
+) -> HTMLResponse:
+    rows = store.listing(conn)
+    return render(
+        request,
+        "fragments/work_experience_panel.html",
+        config=work_settings.read_config(conn),
+        deliver_configured=deliver_store.read_config(conn).configured,
+        key_configured=bool(settings.ogonggo_internal_api_key.strip()),
+        next_run=_iso(schedule.next_run_time(get_scheduler().scheduler)),
+        runs=conn.execute(
+            "SELECT * FROM work_experience_runs ORDER BY id DESC LIMIT ?", (RECENT_RUNS,)
+        ).fetchall(),
+        rows=rows,
+        payloads={
+            int(row["id"]): deliver.payload(conn, row)
+            for row in rows
+            if row["filled_hash"] is not None
+        },
+        today=deliver.today(settings),
+        pending=deliver.pending_count(conn, settings),
+        running=_busy(conn),
+        max_attempts=deliver.MAX_ATTEMPTS,
+        max_fills=MAX_FILLS_PER_RUN,
+        list_url=LIST_URL,
+        message=message,
+        error=error,
+    )
+
+
+def _iso(value: object | None) -> str | None:
+    isoformat = getattr(value, "isoformat", None)
+    return str(isoformat()) if callable(isoformat) else None
+
+
+@router.get("/ui/work-experiences", response_class=HTMLResponse)
+def work_experience_panel_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> HTMLResponse:
+    return _panel(request, conn, settings)
+
+
+@router.put("/ui/work-experiences/settings", response_class=HTMLResponse)
+def update_work_experience_settings_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    run_time: Annotated[str, Form()] = work_settings.DEFAULT_RUN_TIME,
+    schedule_enabled: Annotated[str, Form()] = "",
+    deliver_enabled: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    config = work_settings.WorkExperienceConfig(
+        schedule_enabled=schedule_enabled == "1",
+        run_time=run_time.strip(),
+        deliver_enabled=deliver_enabled == "1",
+    )
+    try:
+        work_settings.write_config(conn, config)
+    except work_settings.WorkExperienceSettingError as exc:
+        return _panel(request, conn, settings, error=str(exc))
+    schedule.sync(get_scheduler().scheduler, conn)
+    return _panel(request, conn, settings, message="저장했다")
+
+
+@router.post("/ui/work-experiences/run", response_class=HTMLResponse)
+async def run_work_experiences_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> HTMLResponse:
+    """지금 한 번 수집한다. 백그라운드에서 돌고 화면은 끝날 때까지 몇 초마다 다시 그린다.
+
+    새 프로그램마다 AI 를 부르므로 처음 수집은 수십 분 걸린다. 요청 하나가 그동안 붙잡혀 있으면
+    프록시가 끊는다.
+    """
+    if _busy(conn):
+        return _panel(request, conn, settings, message="이미 수집하는 중이다")
+    _start(settings)
+    return _panel(
+        request, conn, settings, message="수집을 시작했다. 끝나면 최근 수집에 결과가 나온다"
+    )
+
+
+_task: asyncio.Task[None] | None = None
+
+
+def _start(settings: Settings) -> None:
+    global _task
+
+    async def run() -> None:
+        background = db.connect()
+        try:
+            await run_all(background, trigger=MANUAL, settings=settings, slot=get_gate().slot)
+        finally:
+            background.close()
+
+    _task = asyncio.create_task(run())
+
+
+def _busy(conn: sqlite3.Connection) -> bool:
+    """수집 중인가. 묶음과 묶음 사이에는 `running` 기록이 잠깐 없어 백그라운드 작업도 본다."""
+    return _running(conn) or (_task is not None and not _task.done())
+
+
+def _running(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM work_experience_runs WHERE status = 'running' LIMIT 1"
+    ).fetchone()
+    return row is not None
+
+
+@router.post("/ui/work-experiences/send", response_class=HTMLResponse)
+async def send_work_experiences_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> HTMLResponse:
+    """정리가 끝났는데 아직 보내지 않은 프로그램을 보낸다. 켜기·끄기와 시도 상한을 보지 않는다."""
+    result = await deliver.deliver_pending(conn, settings=settings, retry_failed=True)
+    if result.reason:
+        return _panel(request, conn, settings, error=result.reason)
+    if not result.sent and not result.failed:
+        return _panel(request, conn, settings, message="보낼 프로그램이 없다")
+    return _panel(
+        request,
+        conn,
+        settings,
+        message=f"오공고에 {result.sent}건 보냈다. 실패 {result.failed}건",
+    )

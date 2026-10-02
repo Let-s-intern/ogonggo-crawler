@@ -44,6 +44,7 @@ FEATURE_GROUPS: dict[str, str] = {
     "selector_repair": "셀렉터 생성·수정",
     "image_read": "이미지 읽기",
     "bootcamp_fill": "부트캠프 정리",
+    "work_experience_fill": "미래내일 일경험 정리",
 }
 # 막대 색. 묶음 이름 순서대로 쓴다
 GROUP_COLORS: dict[str, str] = {
@@ -51,6 +52,7 @@ GROUP_COLORS: dict[str, str] = {
     "셀렉터 생성·수정": "bg-sky-500",
     "이미지 읽기": "bg-amber-400",
     "부트캠프 정리": "bg-emerald-500",
+    "미래내일 일경험 정리": "bg-rose-400",
 }
 OTHER_COLOR = "bg-slate-400"
 
