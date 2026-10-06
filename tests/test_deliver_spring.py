@@ -321,6 +321,38 @@ async def test_지금_보내기는_필수_칸만_본다(
     assert (automatic.sent, forced.sent) == (0, 1)
 
 
+async def test_임시로_정한_직군과_인턴부터_3년차까지만_보낸다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-10-06 결정. 연수는 원문에 있을 때만 차므로 비면 보낸다. 지금 보내기도 같다."""
+    marketing = add_job(conn, 1, job_field="마케팅·광고", job_role="퍼포먼스마케팅")
+    md = add_job(conn, 2, job_field="상품기획·MD", job_role="온라인MD", experience_min_years="3")
+    add_job(conn, 3, job_field="디자인", job_role="웹디자인")
+    add_job(conn, 4, job_field="영업", job_role="B2B영업", experience_min_years="5")
+    data = add_job(conn, 5, job_field="AI·데이터", job_role="데이터엔지니어")
+    seen = mock(lambda request: created(1), monkeypatch)
+
+    assert spring.pending_count(conn, "2026-09-01 00:00:00") == 3
+    automatic = await spring.deliver_pending(conn, settings=SETTINGS)
+    add_job(conn, 6, job_field="교육", job_role="입시학원강사", industry=None)
+    forced = await spring.deliver_pending(conn, settings=SETTINGS, force=True)
+
+    assert (automatic.sent, forced.sent) == (3, 0)
+    assert [json.loads(request.content)["sourceUrl"] for request in seen] == [marketing, md, data]
+
+
+async def test_골라_보내기는_직군과_연차를_보지_않는다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    add_job(conn, 1, job_field="디자인", job_role="웹디자인", experience_min_years="7")
+    job_id = conn.execute("SELECT id FROM normalized_jobs").fetchone()["id"]
+    mock(lambda request: created(1), monkeypatch)
+
+    result = await spring.deliver_ids(conn, [job_id], settings=SETTINGS)
+
+    assert result.sent == 1
+
+
 def test_자동_전송을_막는_빈_칸을_가린다() -> None:
     full = job_row(**{**{name: "값" for name in spring.AUTO_FIELDS}, "recruitment_type": "PERIOD"})
     assert spring.auto_missing(full) == []
@@ -364,8 +396,9 @@ async def test_분류_배치가_끝나면_보낸다(
     conn.execute("DELETE FROM workflows")
     conn.execute("DELETE FROM crawlers")
     _seed(conn, count=1)
-    # 분류 배치 끝의 전송 경로만 본다. 칸이 다 찼는지는 위 테스트들이 본다
+    # 분류 배치 끝의 전송 경로만 본다. 칸이 다 찼는지와 직군·연차는 위 테스트들이 본다
     monkeypatch.setattr(spring, "COMPLETE_SQL", spring.READY_SQL)
+    monkeypatch.setattr(spring, "TARGET_SQL", "1")
     seen = mock(lambda request: created(9), monkeypatch)
     text = response(
         responsibilities="제휴사 데이터 연동 구조 기획",
