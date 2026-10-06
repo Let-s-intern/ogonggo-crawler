@@ -127,9 +127,9 @@ def test_지금_보내기가_보내고_실패_사유를_보인다(
     conn.execute(
         """
         INSERT INTO normalized_jobs (raw_job_id, source_url, company_name, title, employment_type,
-                                     experience_type, education_level, recruitment_type)
+                                     experience_type, education_level, recruitment_type, job_field)
         VALUES (1, 'https://x/1', '예시', '공고', 'FULL_TIME', 'EXPERIENCED', 'ANY',
-                'ALWAYS_OPEN')
+                'ALWAYS_OPEN', '영업')
         """
     )
     monkeypatch.setattr(

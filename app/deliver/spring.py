@@ -27,6 +27,10 @@
   공고는 사람이 채우거나 골라 보내기로 보낸다. 골라 보내기와 `지금 보내기` 는 필수 칸만 본다
 - 아직 보내지 않았는데 마감 일시가 이미 지난 공고
 - 세 번 실패한 공고. 마지막 거절 사유는 전달 화면에 남는다
+- **임시로 직군·연차를 좁힌다** (2026-10-06 결정). 마케팅·인사·기획·영업·개발 직군이고 인턴~3년차
+  공고만 자동 전송·`지금 보내기` 로 보낸다 (`TARGET_SQL`). 직군은 분류 뒤에야 알아 분류는 모든
+  공고에 그대로 돈다. 골라 보내기는 사람이 고른 것이라 좁히지 않는다. 풀 때는 `TARGET_SQL` 을
+  지운다
 
 공고 본문과 판정 근거는 보내지 않는다 — 오공고에 받는 칸이 없다.
 
@@ -251,12 +255,33 @@ def auto_missing(job: Mapping[str, Any] | sqlite3.Row) -> list[str]:
     return empty
 
 
+# 임시로 보내는 직군 (2026-10-06 결정). 한글 이름은 `app/job_roles.py` 씨앗 파일의 직군 이름이다.
+# 인사는 HR·총무, 개발은 IT·개발과 AI·데이터, 상품기획·MD 는 마케팅 쪽으로 넣는다
+TARGET_FIELDS: tuple[str, ...] = (
+    "마케팅·광고",
+    "상품기획·MD",
+    "HR·총무",
+    "기획·전략",
+    "영업",
+    "IT·개발",
+    "AI·데이터",
+)
+# 인턴~3년차. 최소 경력 연수는 경력 공고에서 원문이 말할 때만 차므로, 비었으면 보낸다
+TARGET_MAX_YEARS = 3
+TARGET_SQL = (
+    "(n.job_field IN (" + ", ".join(f"'{name}'" for name in TARGET_FIELDS) + ")"
+    " AND (trim(coalesce(n.experience_min_years, '')) = ''"
+    f" OR CAST(n.experience_min_years AS INTEGER) <= {TARGET_MAX_YEARS}))"
+)
+
+
 def pending(
     conn: sqlite3.Connection, limit: int, now: str, *, complete: bool = True
 ) -> list[sqlite3.Row]:
     """보낼 공고. 아직 보내지 않은 것이 먼저이고, 실패한 것은 `MAX_ATTEMPTS` 전까지 다시 고른다.
 
-    `complete` 면 자동 전송 조건(`COMPLETE_SQL`)을, 아니면 필수 칸만(`READY_SQL`) 본다.
+    `complete` 면 자동 전송 조건(`COMPLETE_SQL`)을, 아니면 필수 칸만(`READY_SQL`) 본다. 어느 쪽이든
+    임시 직군·연차 조건(`TARGET_SQL`)을 건다.
 
     필수 칸이 빈 공고는 여기서 빼 1회 상한을 차지하지 않게 한다 — 분류 전 공고가 수백 건 쌓여 있으면
     그것들이 매번 앞자리를 먹는다. 목록 밖 값처럼 SQL 로 가를 수 없는 것은 보내기 전에 걸러 실패로
@@ -266,7 +291,8 @@ def pending(
         f"""
         SELECT n.* FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
-         WHERE {_UNSENT} AND {_OPEN} AND {COMPLETE_SQL if complete else _READY}
+         WHERE {_UNSENT} AND {_OPEN} AND {TARGET_SQL}
+           AND {COMPLETE_SQL if complete else _READY}
          ORDER BY d.source_url IS NOT NULL, n.id
          LIMIT ?
         """,
@@ -280,7 +306,7 @@ def pending_count(conn: sqlite3.Connection, now: str) -> int:
         f"""
         SELECT count(*) AS n FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
-         WHERE {_UNSENT} AND {_OPEN} AND {COMPLETE_SQL}
+         WHERE {_UNSENT} AND {_OPEN} AND {TARGET_SQL} AND {COMPLETE_SQL}
         """,
         (MAX_ATTEMPTS, now),
     ).fetchone()
@@ -296,7 +322,7 @@ def unready_count(conn: sqlite3.Connection, now: str) -> int:
         f"""
         SELECT count(*) AS n FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
-         WHERE d.source_url IS NULL AND {_OPEN} AND NOT {_READY}
+         WHERE d.source_url IS NULL AND {_OPEN} AND {TARGET_SQL} AND NOT {_READY}
            AND EXISTS (SELECT 1 FROM job_classifications c WHERE c.raw_job_id = n.raw_job_id)
         """,
         (now,),
