@@ -184,7 +184,7 @@ async def analyze(
             answer = AnalysisAnswer.model_validate_json(text)
         except ValidationError as exc:
             if attempt == MAX_ATTEMPTS:
-                raise AnalysisError("unparsable", f"AI 답을 읽을 수 없다: {exc}") from exc
+                raise AnalysisError("unparsable_answer", f"AI 답을 읽을 수 없다: {exc}") from exc
             retry = _retry_block("답이 정해진 모양이 아니었다", str(exc)[:1500])
             continue
 

@@ -27,7 +27,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 # 개수 상한. 모델이 더 내면 앞에서부터 이만큼만 쓴다
 MAX_TASKS = 3
@@ -57,8 +57,23 @@ class AnalysisTask(BaseModel):
 
 
 class AnalysisFact(BaseModel):
+    """칸 하나의 값과 보충.
+
+    글자 하나로 오면 그 글자를 값으로 받는다. DeepSeek 가 strict 도구로 답해도 이 칸을 `"정규직"`
+    처럼 글자로 내는 일이 잦아(2026-10-07 실측), 거절하면 공고마다 한 번씩 다시 묻게 된다.
+    """
+
     value: str
     note: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_text(cls, data: Any) -> Any:
+        if isinstance(data, str):
+            return {"value": data, "note": ""}
+        if isinstance(data, dict):
+            return {"value": data.get("value") or "", "note": data.get("note") or ""}
+        return data
 
 
 class AnalysisEmployment(BaseModel):
@@ -150,7 +165,18 @@ def squash(text: str) -> str:
 
 
 def _fact(fact: AnalysisFact) -> dict[str, str | None]:
-    return {"value": _clip(fact.value) or None, "note": _clip(fact.note) or None}
+    """값과 보충. 보충이 '명시 없음' 뿐이면 버린다 — 빈 값이 이미 그 말로 그려진다."""
+    value = _clip(fact.value)
+    note = _clip(fact.note)
+    if _UNSTATED.fullmatch(value):
+        value = ""
+    if _UNSTATED.fullmatch(note) or (note and note == value):
+        note = ""
+    return {"value": value or None, "note": note or None}
+
+
+# 모델이 빈 값 대신 적곤 하는 말. 빈 값으로 본다
+_UNSTATED = re.compile(r"(공고에\s*)?(명시\s*)?(없음|없어요|미기재|명시되지 않음)\.?")
 
 
 def _list(items: list[str], limit: int) -> list[str]:

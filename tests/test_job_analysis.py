@@ -298,3 +298,37 @@ def test_올린_파일을_검사한다(name: str, data: bytes, reason: str) -> N
     with pytest.raises(guide.GuideError) as raised:
         guide.decode_file(name, data)
     assert raised.value.reason == reason
+
+
+async def test_명시_없음이라고_적은_값은_빈_값으로_본다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    employment = answer()["employment"]
+    employment["salary"] = {"value": "공고에 명시 없음", "note": "공고에 명시 없음"}
+    employment["type"] = {"value": "인턴", "note": "인턴"}
+    use(monkeypatch, FakeProvider(answer(employment=employment)))
+
+    result = await analyze(conn, POSTING, guide.DEFAULT_GUIDE)
+
+    assert result.analysis["employment"]["salary"] == {"value": None, "note": None}
+    assert result.analysis["employment"]["type"] == {"value": "인턴", "note": None}
+
+
+async def test_칸이_글자_하나로_와도_값으로_받는다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = answer()
+    body["employment"] = {
+        "type": "정규직",
+        "conversion": "",
+        "salary": "월 230만원",
+        "affiliation": "",
+    }
+    provider = FakeProvider(body)
+    use(monkeypatch, provider)
+
+    result = await analyze(conn, POSTING, guide.DEFAULT_GUIDE)
+
+    assert len(provider.prompts) == 1
+    assert result.analysis["employment"]["type"] == {"value": "정규직", "note": None}
+    assert result.analysis["employment"]["conversion"] == {"value": None, "note": None}

@@ -89,7 +89,8 @@ class Posting:
         if self.recruitment_type == "ALWAYS_OPEN":
             head.append("모집 기간: 상시 채용")
         elif self.recruitment_end_at:
-            head.append(f"모집 마감: {self.recruitment_end_at}")
+            # 오공고 요청 칸은 `2026-10-31T23:59:59` 모양이다. 사람이 읽는 모양으로 적는다
+            head.append(f"모집 마감: {self.recruitment_end_at.replace('T', ' ')[:16]}")
         blocks = ["\n".join(head)]
         for name, label in CONTENT_FIELDS:
             body = self.contents.get(name, "")

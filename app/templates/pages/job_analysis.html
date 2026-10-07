@@ -1,0 +1,12 @@
+{# AI 공고 분석 화면 (2026-10-07 결정, LC-3446). 오공고 공고 상세의 '공고 분석' 탭을 AI 가 어떻게 쓰는지
+   — 시스템 지시, 항목별 지침, 참고 파일 — 를 여기서 고치고 공고 하나로 시험한다. 항목의 이름과 개수,
+   원문에 없으면 비운다는 규칙 같은 골격은 코드에 남는다 (`app/job_analysis/guide.py`). #}
+{% extends "base.html" %}
+{% from "macros.html" import empty %}
+{% block title %}AI 공고 분석{% endblock %}
+{% block heading %}AI 공고 분석{% endblock %}
+{% block content %}
+<div id="job-analysis" hx-get="/ui/job-analysis" hx-trigger="load" hx-swap="innerHTML">
+  {{ empty("분석 방법을 불러오는 중") }}
+</div>
+{% endblock %}

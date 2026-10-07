@@ -28,6 +28,7 @@ from app.api import (
     ui_deliver,
     ui_fields,
     ui_industries,
+    ui_job_analysis,
     ui_llm,
     ui_notify,
     ui_posting_add,
@@ -175,6 +176,7 @@ app.include_router(ui_ai_quick.router)
 app.include_router(ui_taxonomy.router)
 app.include_router(ui_industries.router)
 app.include_router(ui_prompt_rules.router)
+app.include_router(ui_job_analysis.router)
 app.include_router(ui_bootcamps.router)
 app.include_router(ui_work_experiences.router)
 # 조각 요청의 실패는 200 과 오류 조각으로 나간다. HTMX 가 4xx·5xx 를 갈아 끼우지 않아
