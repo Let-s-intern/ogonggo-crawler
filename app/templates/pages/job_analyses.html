@@ -1,0 +1,17 @@
+{# 공고 분석 화면 (2026-10-08 결정, LC-3446). 어떤 공고를 AI 로 분석했고 오공고로 어디까지 보냈는지 본다.
+   분석 방법은 설정 > AI 공고 분석에서 고친다. 조각 하나(`fragments/job_analyses_panel.html`)로 돈다 #}
+{% extends "base.html" %}
+{% from "macros.html" import empty %}
+{% block title %}공고 분석{% endblock %}
+{% block heading %}공고 분석{% endblock %}
+{% block content %}
+<section>
+  <p class="text-sm text-slate-600">
+    오공고 공고(크롤러·고용24·직접 등록)를 AI 로 분석해 공고 상세의 '공고 분석' 탭에 올려요.
+    분석할 공고는 오공고 서버가 골라 줘요 — 분석이 없거나 본문이 바뀐 공고예요.
+  </p>
+  <div id="job-analyses-panel" class="mt-3" hx-get="/ui/job-analyses" hx-trigger="load" hx-swap="innerHTML">
+    {{ empty("공고 분석 기록을 불러오는 중") }}
+  </div>
+</section>
+{% endblock %}

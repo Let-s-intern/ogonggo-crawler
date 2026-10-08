@@ -1,0 +1,77 @@
+{# 공고 분석 한 건의 오른쪽 패널 (`app/api/ui_job_analyses.py`). 틀(<dialog id="app-panel">)은 base.html 에
+   있고 이 조각이 안을 채운다. 위에 상태와 동작(다시 보내기·다시 분석), 아래에 오공고 화면 모양의 분석과
+   분석에 쓴 공고 글이 있다 #}
+{% from "macros.html" import badge, blank, wait %}
+{% set status_tone = {"sent": "ok", "unsent": "warn", "failed": "bad", "stale": "idle"} %}
+<div class="modal-body h-full !max-h-none">
+{% if row is none %}
+  <div class="modal-head flex items-center justify-between">
+    <h3 id="app-panel-title" class="text-base font-semibold text-slate-900">기록을 찾지 못했어요</h3>
+    <button type="button" data-panel-close class="mt-0">닫기</button>
+  </div>
+{% else %}
+  <div class="border-b border-slate-200 px-6 py-4">
+    <div class="flex items-start gap-3">
+      <div class="min-w-0 flex-1">
+        <p class="text-xs text-slate-500">
+          {{ sources.get(row.source, row.source or "출처 모름") }} · {{ row.company or "회사 모름" }} · 오공고 공고 {{ row.ogonggo_job_id }}
+        </p>
+        <h3 id="app-panel-title" class="mt-0.5 text-lg font-bold leading-snug text-slate-900">{{ row.title or "(제목 없음)" }}</h3>
+        <p class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+          {{ badge(status_labels[row.status], status_tone[row.status]) }}
+          {% if row.guide_version is not none %}<span class="chip chip-idle">판 {{ row.guide_version }}</span>{% endif %}
+          {% if row.model %}<span>{{ row.model }}</span>{% endif %}
+          {% if row.input_tokens %}<span>· 입력 {{ "{:,}".format(row.input_tokens) }} · 출력 {{ "{:,}".format(row.output_tokens) }} 토큰{% if cost is not none %} · ${{ "%.4f" | format(cost) }}{% endif %}</span>{% endif %}
+        </p>
+      </div>
+      <button type="button" data-panel-close class="mt-0">닫기</button>
+    </div>
+
+    {% if error %}
+    <div class="notice notice-bad">{{ error }}</div>
+    {% elif message %}
+    <div class="notice notice-idle">{{ message }}</div>
+    {% endif %}
+    {% if row.status != "sent" and row.error %}
+    <div class="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+      <span class="font-semibold">{{ status_labels[row.status] }}</span> — {{ row.error }}
+    </div>
+    {% endif %}
+
+    <div class="mt-3 flex flex-wrap items-center gap-2 text-sm">
+      <span class="text-xs text-slate-500">
+        분석 {% if row.analyzed_at %}{{ row.analyzed_at | as_time }}{% else %}–{% endif %} ·
+        보냄 {% if row.sent_at %}{{ row.sent_at | as_time }}{% else %}–{% endif %} · 시도 {{ row.attempts }}번
+      </span>
+      <span class="flex-1"></span>
+      {% if data %}
+      <button type="button" class="btn-quiet" hx-post="/ui/job-analyses/{{ row.id }}/resend"
+              hx-target="#app-panel-body" hx-swap="innerHTML" hx-disabled-elt="this"
+              hx-indicator="#job-analysis-record-wait">다시 보내기</button>
+      {% endif %}
+      <button type="button" class="!border-indigo-600 !bg-indigo-600 !text-white hover:!bg-indigo-500"
+              hx-post="/ui/job-analyses/{{ row.id }}/reanalyze" hx-target="#app-panel-body" hx-swap="innerHTML"
+              hx-disabled-elt="this" hx-indicator="#job-analysis-record-wait"
+              hx-confirm="지금 판으로 다시 분석하고 오공고로 보내요. 모델을 불러 토큰이 들어요. 계속할까요?">지금 판으로 다시 분석</button>
+      {{ wait("처리하는 중", id="job-analysis-record-wait") }}
+    </div>
+  </div>
+
+  <div class="modal-scroll flex-1 space-y-4">
+    {% if data %}
+    {% include "fragments/job_analysis_preview.html" %}
+    <details>
+      <summary>AI 답 (오공고로 보낸 JSON)</summary>
+      <pre class="mt-2 max-h-80 overflow-y-auto">{{ data | tojson(indent=2) }}</pre>
+    </details>
+    {% else %}
+    <p class="text-sm text-slate-600">아직 분석이 없어요. 지금 판으로 다시 분석을 누르면 만들어요.</p>
+    {% endif %}
+    <details {% if not data %}open{% endif %}>
+      <summary>분석에 쓴 공고 글</summary>
+      <pre class="mt-2 max-h-96 overflow-y-auto">{{ posting.text() }}</pre>
+      {% if row.source_url %}<p class="mt-2 text-xs"><a href="{{ row.source_url }}" target="_blank" rel="noopener" class="underline">원문 열기</a></p>{% endif %}
+    </details>
+  </div>
+{% endif %}
+</div>

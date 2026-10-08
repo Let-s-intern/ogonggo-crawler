@@ -107,6 +107,8 @@ NAV: tuple[tuple[str, str], ...] = (
     ("/bootcamps", "부트캠프"),
     # 미래내일 일경험 (2026-10-02 결정, LC-3432). 부트캠프처럼 전용 수집기라 메뉴도 따로다
     ("/work-experiences", "미래내일 일경험"),
+    # 오공고 공고 분석 (2026-10-08 결정, LC-3446). 무엇을 분석해 보냈는지 본다
+    ("/job-analyses", "공고 분석"),
     ("/cost", "비용"),
     ("/settings", "설정"),
 )
@@ -535,6 +537,12 @@ def industries_page(request: Request) -> HTMLResponse:
 def prompt_rules_page(request: Request) -> HTMLResponse:
     """분류 AI 에게 주는 칸별·공통 규칙 화면. 직무 분류와 같은 묶음이다 — 둘 다 분류의 입력이다."""
     return render_page(request, "pages/prompt_rules.html")
+
+
+@router.get("/job-analyses", response_class=HTMLResponse)
+def job_analyses_page(request: Request) -> HTMLResponse:
+    """어떤 공고를 AI 로 분석했고 오공고로 어디까지 보냈는지 보는 화면."""
+    return render_page(request, "pages/job_analyses.html")
 
 
 @router.get("/job-analysis", response_class=HTMLResponse)

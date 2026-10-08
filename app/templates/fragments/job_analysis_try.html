@@ -28,92 +28,7 @@
     <div class="notice notice-warn">{{ note }}</div>
     {% endfor %}
 
-    {# 오공고 화면 미리보기 #}
-    <div class="analysis-preview rounded-2xl border border-[#E8ECF4] bg-white p-5 text-[14px] text-[#1A1A1A]">
-      <h4 class="!mt-0 !text-[17px] font-extrabold tracking-tight">오공고 체크포인트</h4>
-
-      <div class="mt-4">
-        <h5 class="!mt-0 text-[13px] font-bold text-[#8B95A1]">실제 하는 일</h5>
-        <div class="mt-2 space-y-2">
-          {% for task in data.tasks %}
-          <div class="flex gap-2">
-            <span class="h-fit shrink-0 rounded-md bg-[#EEF3FF] px-2 py-0.5 text-xs font-bold text-[#4F7BFF]">{{ task.tag }}</span>
-            <span class="leading-6">{{ task.text }}</span>
-          </div>
-          {% else %}
-          <div class="text-[#8B95A1]">공고에 명시 없음</div>
-          {% endfor %}
-        </div>
-      </div>
-
-      <div class="mt-5" data-conditions>
-        <h5 class="!mt-0 text-[13px] font-bold text-[#8B95A1]">지원 조건</h5>
-        {% for group, items in [("필수", data.required), ("우대", data.preferred)] %}
-        <div class="mt-2 text-xs font-bold {% if group == '필수' %}text-[#4F7BFF]{% else %}text-[#8B95A1]{% endif %}">{{ group }} {{ items | length }}개</div>
-        <div class="mt-1 space-y-1">
-          {% for item in items %}
-          <label class="flex cursor-pointer gap-2 rounded-lg px-2 py-1.5 hover:bg-[#F3F4F6]">
-            <input type="checkbox" class="peer sr-only" {% if group == '필수' %}data-required{% endif %}>
-            <span class="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border border-[#D1D6DE] text-[10px] font-bold text-transparent peer-checked:border-[#4F7BFF] peer-checked:bg-[#4F7BFF] peer-checked:text-white">✓</span>
-            <span class="leading-6">{{ item }}</span>
-          </label>
-          {% else %}
-          <div class="px-2 text-[#8B95A1]">공고에 명시 없음</div>
-          {% endfor %}
-        </div>
-        {% endfor %}
-        <div class="mt-2 rounded-lg bg-[#F9FAFC] px-3 py-2 text-xs text-[#4B5563]" data-meter>해당하는 항목을 체크하면 필수 조건 충족 여부를 보여드려요.</div>
-      </div>
-
-      {% for title, keys, values in [("고용 형태", employment_keys, data.employment), ("제출물과 전형", submission_keys, data.submission)] %}
-      <div class="mt-5">
-        <h5 class="!mt-0 text-[13px] font-bold text-[#8B95A1]">{{ title }}</h5>
-        <div class="mt-2 grid grid-cols-[3.5rem_minmax(0,1fr)] gap-x-3 gap-y-2">
-          {% for key, label in keys %}
-          {% set fact = values[key] %}
-          <span class="text-xs font-semibold leading-6 text-[#8B95A1]">{{ label }}</span>
-          <span class="leading-6">
-            {% if fact.value %}{{ fact.value }}{% else %}<span class="text-[#8B95A1]">공고에 명시 없음</span>{% endif %}
-            {% if fact.note %}<span class="text-[#8B95A1]"> · {{ fact.note }}</span>{% endif %}
-          </span>
-          {% endfor %}
-        </div>
-      </div>
-      {% endfor %}
-
-      <div class="mt-5" data-competencies>
-        <h5 class="!mt-0 text-[13px] font-bold text-[#8B95A1]">연결하기 좋은 경험</h5>
-        {% if data.competencies %}
-        <div class="mt-1 text-xs text-[#4B5563]">이 공고가 요구하는 역량 {{ data.competencies | length }}가지와, 각 역량에 연결할 수 있는 경험이에요.</div>
-        <div class="mt-2 flex flex-wrap gap-1.5">
-          {% for comp in data.competencies %}
-          <button type="button" data-tab="{{ loop.index0 }}"
-                  class="!mt-0 rounded-full border px-3 py-1 text-xs font-semibold {% if loop.first %}border-[#4F7BFF] bg-[#4F7BFF] text-white hover:bg-[#4F7BFF]{% else %}border-[#E8ECF4] bg-white text-[#8B95A1]{% endif %}">{{ loop.index }} {{ comp.name }}</button>
-          {% endfor %}
-        </div>
-        {% for comp in data.competencies %}
-        <div data-panel="{{ loop.index0 }}" class="{% if not loop.first %}hidden{% endif %} mt-3 space-y-2">
-          <div class="rounded-lg bg-[#F9FAFC] px-3 py-2 leading-6">
-            <span class="mr-1 rounded bg-white px-1.5 py-0.5 text-[11px] font-bold text-[#4F7BFF] ring-1 ring-[#DCE6FF]">공고 속 문구</span>{{ comp.quote }}
-          </div>
-          <div class="leading-6 text-[#4B5563]">{{ comp.description }}</div>
-          <div class="rounded-lg border border-[#E8ECF4] px-3 py-2">
-            <strong class="text-xs">내 경험을 이렇게 연결하세요</strong>
-            <div class="mt-1 space-y-1">
-              {% for link in comp.experiences %}
-              <div class="flex gap-1.5 leading-6"><span class="font-bold text-[#4F7BFF]">{{ loop.index }}.</span><span>{{ link }}</span></div>
-              {% endfor %}
-            </div>
-          </div>
-        </div>
-        {% endfor %}
-        {% else %}
-        <div class="mt-2 text-[#8B95A1]">원문에서 근거를 찾은 역량이 없어요</div>
-        {% endif %}
-      </div>
-
-      <div class="mt-5 text-[11px] text-[#B0B8C4]">원문에 없는 내용은 추측하지 않고 "공고에 명시 없음"으로 표시해요. 지원 전 원문과 기업 채용 페이지를 함께 확인하세요.</div>
-    </div>
+    {% include "fragments/job_analysis_preview.html" %}
 
     <details>
       <summary>AI 답 (오공고로 보내는 JSON)</summary>
@@ -131,40 +46,5 @@
   {% endfor %}
 </div>
 
-<script>
-  (() => {
-    const box = document.getElementById("job-analysis-try");
-    if (!box) return;
-    box.querySelectorAll(".analysis-preview").forEach((card) => {
-      // 지원 조건 체크: 필수 조건을 몇 개 채웠는지만 센다. 저장하지 않는다
-      const meter = card.querySelector("[data-meter]");
-      const required = card.querySelectorAll("input[data-required]");
-      card.querySelectorAll("[data-conditions] input[type=checkbox]").forEach((input) => {
-        input.addEventListener("change", () => {
-          const met = [...required].filter((item) => item.checked).length;
-          if (!meter || !required.length) return;
-          meter.textContent = met === required.length
-            ? `필수 조건 ${required.length}개를 모두 충족해요. 지원해 볼 만해요!`
-            : `필수 조건 ${required.length}개 중 ${met}개를 충족해요.`;
-        });
-      });
-      // 역량 탭
-      const tabs = card.querySelectorAll("[data-tab]");
-      tabs.forEach((tab) => tab.addEventListener("click", () => {
-        tabs.forEach((other) => {
-          const on = other === tab;
-          other.classList.toggle("bg-[#4F7BFF]", on);
-          other.classList.toggle("border-[#4F7BFF]", on);
-          other.classList.toggle("text-white", on);
-          other.classList.toggle("bg-white", !on);
-          other.classList.toggle("border-[#E8ECF4]", !on);
-          other.classList.toggle("text-[#8B95A1]", !on);
-        });
-        card.querySelectorAll("[data-panel]").forEach((panel) => {
-          panel.classList.toggle("hidden", panel.dataset.panel !== tab.dataset.tab);
-        });
-      }));
-    });
-  })();
-</script>
+
 {% endif %}
