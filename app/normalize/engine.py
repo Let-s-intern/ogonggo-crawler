@@ -108,7 +108,12 @@ from datetime import date, datetime, time
 from bs4 import BeautifulSoup
 
 from app import companies
-from app.classify.schema import FALLBACK_FIELDS, POSTING_TITLE, STORED_CLASSIFY_FIELDS
+from app.classify.schema import (
+    DATES_BY_AI,
+    FALLBACK_FIELDS,
+    POSTING_TITLE,
+    STORED_CLASSIFY_FIELDS,
+)
 from app.classify.store import read_classification, read_parts
 
 # 어디서 줄이 바뀌어야 하는지는 HTML 이 정하고, 그 목록은 저기 하나뿐이다. 여기에 같은
@@ -339,17 +344,22 @@ def fill_fallbacks(
 
     2026-09-17 결정.
 
-    사이트에서 읽은 값이 있으면 건드리지 않는다. 날짜 두 칸은 분류가 원문에서 짚어 온 글자라
-    `loose_date` 가 날짜를 찾아 읽고, 못 읽으면 빈 채로 둔다 — 사이트 규칙처럼 실패로 멈추지
-    않는다. 모집 시작이 끝까지 비면 수집한 날로 둔다. 오공고는 시작 일시를 받고, 공고가 우리에게
-    보인 날이 가장 가까운 값이다.
+    회사 이름은 사이트에서 읽은 값이 있으면 건드리지 않는다. **모집 시작·마감은 AI 가 정했으면
+    (`dates_by_ai`) 사이트 값이 있어도 AI 값이다** (2026-10-08 결정). AI 에게 사이트 값을 함께
+    보여 주고 고르게 했으므로, AI 가 못 찾았다고 한 칸은 사이트 값으로 되살리지 않고 비운다. AI 에게
+    묻지 못한 분류(이 결정 전 분류, 호출 실패)는 예전처럼 사이트 값이 먼저다.
+
+    날짜 두 칸은 분류가 원문에서 짚어 온 글자라 `loose_date` 가 날짜를 찾아 읽고, 못 읽으면 빈
+    채로 둔다 — 사이트 규칙처럼 실패로 멈추지 않는다. 모집 시작이 끝까지 비면 수집한 날로 둔다.
+    오공고는 시작 일시를 받고, 공고가 우리에게 보인 날이 가장 가까운 값이다.
     """
     classified = classification or {}
     company = classified.get("company_name", "").strip()
     if not fields.get("company_name") and company:
         fields["company_name"] = company
+    by_ai = bool(classified.get(DATES_BY_AI))
     for name in (START, END):
-        if fields.get(name):
+        if fields.get(name) and not by_ai:
             continue
         text = classified.get(name, "").strip()
         fields[name] = loose_date.read(text, collected_on, end=name == END) if text else None

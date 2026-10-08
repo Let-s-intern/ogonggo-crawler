@@ -1,0 +1,212 @@
+{# 공고 분석 화면 조각 (`app/api/ui_job_analyses.py`). 위에서부터 오늘 숫자, 매일 분석 설정·지금 분석·최근 실행,
+   공고 목록이다. 행을 누르면 오른쪽 패널(base.html 의 #app-panel)에 그 공고의 분석이 열린다.
+   필터·검색·쪽 넘기기는 이 조각을 다시 받는다 #}
+{% from "macros.html" import badge, blank, empty, empty_row, failure, notice_box, state, wait %}
+{% set status_tone = {"sent": "ok", "unsent": "warn", "failed": "bad", "stale": "idle"} %}
+{% if running %}
+{# 분석이 도는 동안 몇 초마다 이 조각을 다시 받는다. 끝나면 이 줄이 빠져 멈춘다 #}
+<div hx-get="/ui/job-analyses?status={{ filters.status }}&source={{ filters.source }}&q={{ filters.q | urlencode }}&page={{ page }}"
+     hx-trigger="every 5s" hx-target="#job-analyses-panel" hx-swap="innerHTML"></div>
+{% endif %}
+{% if error %}
+{{ failure("", error, title="처리하지 못했어요") }}
+{% endif %}
+{% if message %}
+{{ notice_box(message) }}
+{% endif %}
+
+{# 한눈에 보기 #}
+<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+  <div class="card px-4 py-3">
+    <div class="text-xs font-medium text-slate-500">오늘 분석</div>
+    <div class="mt-1 text-2xl font-bold text-slate-900">{{ today.analyzed }}<span class="ml-1 text-sm font-medium text-slate-500">건</span></div>
+    <div class="text-xs text-slate-500">지금 방법 {% if version is not none %}판 {{ version }}{% else %}{{ state("읽지 못함", "bad") }}{% endif %} · <a href="/job-analysis" class="underline">방법 고치기</a></div>
+  </div>
+  <div class="card px-4 py-3">
+    <div class="text-xs font-medium text-slate-500">오늘 오공고로 보냄</div>
+    <div class="mt-1 text-2xl font-bold text-emerald-700">{{ today.sent }}<span class="ml-1 text-sm font-medium text-slate-500">건</span></div>
+    <div class="text-xs text-slate-500">전체 보냄 {{ counts.sent }}건</div>
+  </div>
+  <div class="card px-4 py-3">
+    <div class="text-xs font-medium text-slate-500">확인 필요</div>
+    <div class="mt-1 text-2xl font-bold {% if counts.failed or counts.unsent %}text-red-700{% else %}text-slate-400{% endif %}">{{ counts.failed + counts.unsent }}<span class="ml-1 text-sm font-medium text-slate-500">건</span></div>
+    <div class="text-xs text-slate-500">분석 실패 {{ counts.failed }} · 못 보냄 {{ counts.unsent }} · 다음 실행에 다시 해요</div>
+  </div>
+  <div class="card px-4 py-3">
+    <div class="text-xs font-medium text-slate-500">오늘 비용</div>
+    <div class="mt-1 text-2xl font-bold text-slate-900">
+      {% if today_cost is none %}<span class="text-base text-slate-500">단가 모름</span>{% else %}${{ "%.3f" | format(today_cost) }}{% endif %}
+    </div>
+    <div class="text-xs text-slate-500">비용 화면의 '공고 분석' 과 같아요</div>
+  </div>
+</div>
+
+<div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+  <div class="space-y-4">
+    <form hx-put="/ui/job-analyses/settings" hx-target="#job-analyses-panel" hx-swap="innerHTML"
+          hx-disabled-elt="find button">
+      <fieldset>
+        <legend>매일 분석</legend>
+        <p>
+          <label class="inline-flex items-center gap-2">
+            <input name="schedule_enabled" type="checkbox" value="1" {% if config.schedule_enabled %}checked{% endif %}>
+            매일 분석한다
+          </label>
+          <span class="ml-2 text-sm">{{ state("켜짐") if config.schedule_enabled else state("꺼짐") }}</span>
+        </p>
+        <div class="flex flex-wrap gap-3">
+          <p class="!my-0">
+            <label for="job-analyses-start" class="block">시작</label>
+            <input id="job-analyses-start" name="start_time" type="time" required value="{{ config.start_time }}" class="w-28">
+          </p>
+          <p class="!my-0">
+            <label for="job-analyses-stop" class="block">멈춤</label>
+            <input id="job-analyses-stop" name="stop_time" type="time" required value="{{ config.stop_time }}" class="w-28">
+          </p>
+        </div>
+        <p class="text-xs text-slate-500">
+          고용24(04:00) → 매일 수집(08:30~) 뒤에 돌아요. 멈춤 시각이 되면 남은 공고는 다음 날 이어서 해요.
+          한 번에 {{ max_per_run }}건까지예요.
+          {% if next_run %}<span class="block">다음 분석 {{ next_run | as_time }}</span>{% endif %}
+        </p>
+        <p class="text-xs text-slate-500">
+          오공고 주소 {{ state("설정됨", "ok") if deliver_configured else state("없음", "bad") }} ·
+          내부 API 키 {{ state("설정됨", "ok") if key_configured else state("없음", "bad") }}
+        </p>
+        <p class="flex items-center gap-2">
+          <button type="submit">저장</button>
+          {{ wait("저장하는 중") }}
+        </p>
+      </fieldset>
+    </form>
+    <form hx-post="/ui/job-analyses/run" hx-target="#job-analyses-panel" hx-swap="innerHTML"
+          hx-disabled-elt="find button">
+      <fieldset>
+        <legend>지금 분석</legend>
+        <p class="text-sm text-slate-600">오공고에서 분석할 공고를 받아 바로 돌려요. 멈춤 시각을 보지 않고 {{ max_per_run }}건까지 가요.</p>
+        <p class="flex items-center gap-2">
+          <button type="submit" class="!border-indigo-600 !bg-indigo-600 hover:!bg-indigo-500">지금 분석</button>
+          {% if running %}{{ state("분석 중", "warn") }}{% endif %}
+          {{ wait("시작하는 중") }}
+        </p>
+      </fieldset>
+    </form>
+  </div>
+
+  <div class="min-w-0">
+    <h4 class="!mt-0">최근 실행</h4>
+    <div class="table-scroll !mt-0">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">시작</th>
+          <th scope="col">결과</th>
+          <th scope="col" class="num">대상</th>
+          <th scope="col" class="num">분석</th>
+          <th scope="col" class="num">보냄</th>
+          <th scope="col" class="num">실패</th>
+          <th scope="col" class="num">남김</th>
+          <th scope="col">메모</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in runs %}
+        <tr>
+          <td>{{ run.started_at | as_time }}<span class="block text-xs text-slate-500">{{ "매일" if run.trigger == "schedule" else "지금 분석" }}</span></td>
+          <td>{% if run.status == "running" %}{{ state("도는 중", "warn") }}{% elif run.status == "success" %}{{ state("끝남", "ok") }}{% else %}{{ state("실패", "bad") }}{% endif %}</td>
+          <td class="num">{{ run.target_count }}</td>
+          <td class="num">{{ run.analyzed_count }}</td>
+          <td class="num">{{ run.sent_count }}</td>
+          <td class="num">{% if run.failed_count %}<span class="state-bad">{{ run.failed_count }}</span>{% else %}0{% endif %}</td>
+          <td class="num">{{ run.left_count }}</td>
+          <td class="cell-text text-xs text-slate-600">{{ run.notes or blank("") }}</td>
+        </tr>
+        {% else %}
+        {{ empty_row(8, "아직 실행한 적이 없어요. 지금 분석을 누르거나 매일 분석을 켜요") }}
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+{# 공고 목록 #}
+<div class="mt-6">
+  <form class="flex flex-wrap items-end gap-3" hx-get="/ui/job-analyses" hx-target="#job-analyses-panel"
+        hx-swap="innerHTML" hx-trigger="change, submit">
+    <div>
+      <span class="block text-sm font-medium text-slate-700">상태</span>
+      <div class="mt-1 flex gap-1 rounded-md bg-slate-100 p-1 text-sm">
+        {% for value, label in [("", "전체")] + statuses | list %}
+        <label class="cursor-pointer rounded px-2 py-0.5 has-[:checked]:bg-white has-[:checked]:font-semibold has-[:checked]:shadow-sm">
+          <input type="radio" name="status" value="{{ value }}" class="sr-only" {% if filters.status == value %}checked{% endif %}>
+          {{ label }}{% if value %} <span class="text-xs text-slate-500">{{ counts[value] }}</span>{% endif %}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div>
+      <label for="job-analyses-source" class="block">출처</label>
+      <select id="job-analyses-source" name="source">
+        <option value="">전체</option>
+        {% for value, label in sources.items() %}
+        <option value="{{ value }}" {% if filters.source == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="min-w-[14rem] flex-1">
+      <label for="job-analyses-q" class="block">회사·제목 검색</label>
+      <input id="job-analyses-q" name="q" type="search" value="{{ filters.q }}" class="w-full" placeholder="예: 한빛물류">
+    </div>
+  </form>
+
+  <div class="table-scroll">
+  <table class="data-table">
+    <caption>최근에 바뀐 것부터 · {{ total }}건{% if pages > 1 %} · {{ page }}/{{ pages }}쪽{% endif %} · 행을 누르면 분석을 열어요</caption>
+    <thead>
+      <tr>
+        <th scope="col">상태</th>
+        <th scope="col">출처</th>
+        <th scope="col">회사 · 공고</th>
+        <th scope="col" class="num">판</th>
+        <th scope="col" class="num">역량</th>
+        <th scope="col">분석</th>
+        <th scope="col">보냄</th>
+        <th scope="col" class="num">토큰</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr class="cursor-pointer" data-panel-open hx-get="/ui/job-analyses/{{ row.id }}"
+          hx-target="#app-panel-body" hx-swap="innerHTML">
+        <td>{{ badge(status_labels[row.status], status_tone[row.status]) }}</td>
+        <td><span class="chip chip-idle">{{ sources.get(row.source, row.source or "모름") }}</span></td>
+        <td class="cell-text">
+          <span class="text-xs text-slate-500">{{ row.company or "회사 모름" }}</span>
+          <span class="block font-medium text-slate-900">{{ row.title or "(제목 없음)" }}</span>
+          {% if row.status != "sent" and row.error %}<span class="block text-xs text-red-700">{{ row.error | truncate(80) }}</span>{% endif %}
+        </td>
+        <td class="num">{% if row.guide_version is not none %}{{ row.guide_version }}{% else %}{{ blank("–") }}{% endif %}</td>
+        <td class="num">{% if competencies[row.id] is not none %}{{ competencies[row.id] }}{% else %}{{ blank("–") }}{% endif %}</td>
+        <td>{% if row.analyzed_at %}{{ row.analyzed_at | as_time }}{% else %}{{ blank("–") }}{% endif %}</td>
+        <td>{% if row.sent_at %}{{ row.sent_at | as_time }}{% else %}{{ blank("–") }}{% endif %}</td>
+        <td class="num">{% if row.input_tokens %}{{ "%.1f" | format((row.input_tokens + row.output_tokens) / 1000) }}k{% else %}{{ blank("–") }}{% endif %}</td>
+      </tr>
+      {% else %}
+      {{ empty_row(8, "분석한 공고가 없어요" if not (filters.status or filters.source or filters.q) else "조건에 맞는 공고가 없어요") }}
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if pages > 1 %}
+  <div class="flex items-center justify-end gap-2 text-sm">
+    {% for target, label in [(page - 1, "이전"), (page + 1, "다음")] %}
+    {% if 1 <= target <= pages %}
+    <button type="button" class="btn-quiet"
+            hx-get="/ui/job-analyses?status={{ filters.status }}&source={{ filters.source }}&q={{ filters.q | urlencode }}&page={{ target }}"
+            hx-target="#job-analyses-panel" hx-swap="innerHTML">{{ label }}</button>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>

@@ -1,0 +1,50 @@
+{# 시험 분석 결과 (`app/api/ui_job_analysis.py`). 오공고 '공고 분석' 탭과 같은 짜임으로 그린다 —
+   실제 하는 일, 지원 조건(체크), 고용 형태, 제출물과 전형, 연결하기 좋은 경험. 체크와 역량 탭은 이
+   화면에서만 움직이고 저장하지 않는다. 비교하면 두 결과를 나란히 둔다. #}
+{% from "macros.html" import failure, notice_box %}
+{% if error %}
+{{ failure(error.reason, error.message, title="시험하지 못했어요") }}
+{% else %}
+<div class="grid gap-4 {% if trials | length > 1 %}2xl:grid-cols-2{% endif %}">
+  {% for trial in trials %}
+  <div class="min-w-0">
+    <div class="mb-2 flex flex-wrap items-center gap-2">
+      <span class="chip {% if loop.first %}chip-ok{% else %}chip-idle{% endif %}">{{ trial.label }}</span>
+      {% if trial.result %}
+      <span class="text-xs text-slate-500">
+        {{ trial.result.model }} · 입력 {{ "{:,}".format(trial.result.input_tokens) }} · 출력 {{ "{:,}".format(trial.result.output_tokens) }} 토큰
+        {% if trial.cost is not none %} · ${{ "%.4f" | format(trial.cost) }}{% endif %}
+        · {{ "%.1f" | format(trial.latency_ms / 1000) }}초
+        {% if trial.result.usages | length > 1 %} · 다시 물음 {{ trial.result.usages | length - 1 }}회{% endif %}
+      </span>
+      {% endif %}
+    </div>
+
+    {% if trial.error %}
+    {{ failure(trial.error.reason, trial.error.message, title="분석하지 못했어요") }}
+    {% else %}
+    {% set data = trial.result.analysis %}
+    {% for note in trial.result.notes %}
+    <div class="notice notice-warn">{{ note }}</div>
+    {% endfor %}
+
+    {% include "fragments/job_analysis_preview.html" %}
+
+    <details>
+      <summary>AI 답 (오공고로 보내는 JSON)</summary>
+      <pre class="mt-2 max-h-80 overflow-y-auto">{{ data | tojson(indent=2) }}</pre>
+    </details>
+    <details>
+      <summary>실제로 보낸 프롬프트</summary>
+      <h5>시스템 지시</h5>
+      <pre class="max-h-40 overflow-y-auto">{{ trial.result.system }}</pre>
+      <h5>사용자 프롬프트</h5>
+      <pre class="max-h-96 overflow-y-auto">{{ trial.result.prompt }}</pre>
+    </details>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+
+{% endif %}

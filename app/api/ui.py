@@ -78,6 +78,8 @@ SETTINGS_SECTIONS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("/taxonomy", "직무 분류"),
             ("/industries", "산업 분류"),
             ("/prompt-rules", "AI 분류 규칙"),
+            # 오공고 공고 상세의 공고 분석 (2026-10-07 결정, LC-3446)
+            ("/job-analysis", "AI 공고 분석"),
             ("/rules", "정규화 규칙"),
             ("/companies", "회사 로고"),
         ),
@@ -105,6 +107,8 @@ NAV: tuple[tuple[str, str], ...] = (
     ("/bootcamps", "부트캠프"),
     # 미래내일 일경험 (2026-10-02 결정, LC-3432). 부트캠프처럼 전용 수집기라 메뉴도 따로다
     ("/work-experiences", "미래내일 일경험"),
+    # 오공고 공고 분석 (2026-10-08 결정, LC-3446). 무엇을 분석해 보냈는지 본다
+    ("/job-analyses", "공고 분석"),
     ("/cost", "비용"),
     ("/settings", "설정"),
 )
@@ -185,6 +189,13 @@ NEXT_STEPS: dict[str, str] = {
     "그 판을 대신한다",
     "no_posting": "시험할 공고를 고른다. 목록이 비었으면 분류를 한 번 돌린다",
     "empty_body": "그 공고에 원문도 본문도 없다. 다른 공고를 고른다",
+    # AI 공고 분석 화면 (`app/job_analysis/guide.py`)
+    "empty_system": "시스템 지시를 적는다. 모델의 역할과 말투를 정하는 자리다",
+    "duplicate_file": "같은 이름의 파일을 하나 뺀다",
+    "file_type": ".md 나 .txt 로 저장해 다시 올린다",
+    "file_encoding": "편집기에서 UTF-8 로 다시 저장해 올린다",
+    "empty_file": "내용이 있는 파일을 올린다",
+    "unparsable_answer": "다시 시험한다. 계속되면 지침이 답의 모양과 어긋나는지 본다",
 }
 
 
@@ -526,6 +537,18 @@ def industries_page(request: Request) -> HTMLResponse:
 def prompt_rules_page(request: Request) -> HTMLResponse:
     """분류 AI 에게 주는 칸별·공통 규칙 화면. 직무 분류와 같은 묶음이다 — 둘 다 분류의 입력이다."""
     return render_page(request, "pages/prompt_rules.html")
+
+
+@router.get("/job-analyses", response_class=HTMLResponse)
+def job_analyses_page(request: Request) -> HTMLResponse:
+    """어떤 공고를 AI 로 분석했고 오공고로 어디까지 보냈는지 보는 화면."""
+    return render_page(request, "pages/job_analyses.html")
+
+
+@router.get("/job-analysis", response_class=HTMLResponse)
+def job_analysis_page(request: Request) -> HTMLResponse:
+    """오공고 공고 분석을 AI 가 어떻게 쓰는지 고치고 시험하는 화면. AI 분류 규칙과 같은 묶음이다."""
+    return render_page(request, "pages/job_analysis.html")
 
 
 @router.get("/companies", response_class=HTMLResponse)

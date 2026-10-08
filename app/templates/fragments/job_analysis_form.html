@@ -1,0 +1,304 @@
+{# AI 공고 분석 편집. 저장·되돌리기가 모두 이 조각으로 돌아온다 (`app/api/ui_job_analysis.py`).
+
+   한 화면에 세 가지를 둔다 — 맨 위 요약(지금 판, 지침·파일, 공고 1건당 토큰), 왼쪽 편집, 오른쪽 시험.
+   편집과 시험이 한 폼이라 저장하지 않은 지침과 새로 고른 파일로도 시험할 수 있다. 이력의 되돌리기
+   폼은 폼 안에 폼을 둘 수 없어 편집 폼 밖에 둔다. #}
+{% from "macros.html" import failure, notice_box, state, wait, empty, empty_row, blank, badge %}
+{% if error %}
+{{ failure(error.reason, error.message, title="저장하지 못했어요") }}
+{% endif %}
+{% if message %}
+{{ notice_box(message) }}
+{% endif %}
+
+{# 한눈에 보기. 지금 어떤 방법으로 돌고 있고, 공고 하나에 얼마가 드는지 #}
+<div class="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+  <div class="card px-4 py-3">
+    <div class="text-xs font-medium text-slate-500">지금 쓰는 방법</div>
+    {% if version is none %}
+    <div class="mt-1 text-lg font-bold">{{ state("읽지 못함", "bad") }}</div>
+    {% else %}
+    <div class="mt-1 text-lg font-bold text-slate-900">판 {{ version.number }}</div>
+    <div class="truncate text-xs text-slate-500" title="{{ version.note }}">
+      {% if version.number == 0 %}코드의 기본 방법{% else %}{{ version.note or "메모 없음" }} · {{ version.created_at | as_time }}{% endif %}
+    </div>
+    {% endif %}
+  </div>
+  <div class="card px-4 py-3">
+    <div class="text-xs font-medium text-slate-500">지침 · 참고 파일</div>
+    <div class="mt-1 text-lg font-bold text-slate-900">
+      {{ sections | length }}개 항목 · 파일 {{ guide.files | length }}개
+    </div>
+    <div class="text-xs text-slate-500">파일 {{ "{:,}".format(guide.file_chars) }}자 / {{ "{:,}".format(limits.files_total) }}자</div>
+  </div>
+  <div class="card px-4 py-3">
+    <div class="text-xs font-medium text-slate-500">방법만의 토큰 (공고 1건마다)</div>
+    <div class="mt-1 text-lg font-bold text-slate-900">약 {{ "{:,}".format(guide_tokens) }}</div>
+    <div class="text-xs text-slate-500">지시·지침·파일을 늘리면 공고마다 이만큼 더 들어요</div>
+  </div>
+  <div class="card px-4 py-3">
+    <div class="text-xs font-medium text-slate-500">최근 분석 평균</div>
+    {% if usage.calls %}
+    <div class="mt-1 text-lg font-bold text-slate-900">
+      {% if usage.cost is not none %}${{ "%.4f" | format(usage.cost) }}{% else %}단가 모름{% endif %}
+    </div>
+    <div class="text-xs text-slate-500">입력 {{ "{:,}".format(usage.input) }} · 출력 {{ "{:,}".format(usage.output) }} 토큰 · 최근 호출 {{ usage.calls }}번</div>
+    {% else %}
+    <div class="mt-1 text-lg font-bold text-slate-400">아직 없음</div>
+    <div class="text-xs text-slate-500">시험이나 분석을 돌리면 나와요</div>
+    {% endif %}
+  </div>
+</div>
+
+<form id="job-analysis-editor" hx-put="/ui/job-analysis" hx-target="#job-analysis"
+      hx-swap="innerHTML" hx-encoding="multipart/form-data"
+      hx-disabled-elt="find button[type=submit]">
+<div class="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+
+  {# 왼쪽: 분석 방법 #}
+  <div class="min-w-0 space-y-4">
+    <section class="!mb-0">
+      <div class="flex items-baseline justify-between gap-2">
+        <h3>1. 시스템 지시</h3>
+        <span class="text-xs text-slate-500" data-count-for="job-analysis-system">{{ guide.system | length }} / {{ limits.system }}자</span>
+      </div>
+      <p>모델이 어떤 역할로, 어떤 말투와 원칙으로 쓰는지 정해요. 모든 항목에 걸려요.</p>
+      <textarea id="job-analysis-system" name="system" rows="8" class="w-full"
+                maxlength="{{ limits.system }}" data-count>{{ guide.system }}</textarea>
+    </section>
+
+    <section class="!mb-0">
+      <h3>2. 항목별 지침</h3>
+      <p>오공고 '공고 분석' 탭의 항목 순서 그대로예요. 항목마다 무엇을 어떻게 쓸지 적어요.</p>
+      <div class="space-y-3">
+        {% for key, label, fields in sections %}
+        <div class="rounded-md border border-slate-200">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-3 py-2">
+            <div class="flex items-center gap-2">
+              <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-white">{{ loop.index }}</span>
+              <label for="job-analysis-section-{{ key }}" class="font-semibold text-slate-900">{{ label }}</label>
+              <span class="chip chip-idle">{{ fields }}</span>
+            </div>
+            <span class="text-xs text-slate-500" data-count-for="job-analysis-section-{{ key }}">{{ guide.sections[key] | length }} / {{ limits.section }}자</span>
+          </div>
+          <textarea id="job-analysis-section-{{ key }}" name="section__{{ key }}" rows="5"
+                    class="!mt-0 w-full !rounded-none !rounded-b-md !border-0 !shadow-none"
+                    maxlength="{{ limits.section }}" data-count>{{ guide.sections[key] }}</textarea>
+        </div>
+        {% endfor %}
+      </div>
+      <details>
+        <summary>화면에서 바꿀 수 없는 규칙 보기</summary>
+        <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
+          <li>공고에 없는 값은 비워요. 빈 값은 오공고 화면에 '공고에 명시 없음' 으로 나와요.</li>
+          <li>'공고 속 문구'(quote)는 공고 문장 그대로여야 해요. 원문에서 못 찾으면 한 번 다시 묻고, 그래도 없으면 그 역량을 빼요.</li>
+          <li>개수: 실제 하는 일 3개, 필수·우대 각 8개, 역량 3개, 역량마다 연결할 경험 3개까지.</li>
+          <li>고용 형태 칸(형태·전환·급여·소속)과 제출물 칸(제출·자소서·전형·마감)의 이름.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="!mb-0">
+      <div class="flex items-baseline justify-between gap-2">
+        <h3>3. 참고 파일</h3>
+        <span class="text-xs text-slate-500">{{ guide.files | length }} / {{ limits.files }}개</span>
+      </div>
+      <p>
+        직무별 역량 가이드, 좋은 분석 예시처럼 모델이 참고할 글을 올려요. 내용이 프롬프트 뒤에 그대로 붙어요.
+        <span class="text-slate-500">{{ suffixes }} · UTF-8 · 파일 하나 {{ "{:,}".format(limits.file) }}자, 합쳐서 {{ "{:,}".format(limits.files_total) }}자까지</span>
+      </p>
+      {% if guide.files %}
+      <ul class="divide-y divide-slate-100 rounded-md border border-slate-200">
+        {% for item in guide.files %}
+        <li class="px-3 py-2">
+          <input type="hidden" name="file_name" value="{{ item.name }}">
+          <textarea name="file_content" hidden>{{ item.content }}</textarea>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="min-w-0">
+              <span class="font-medium text-slate-900">{{ item.name }}</span>
+              <span class="ml-2 text-xs text-slate-500">{{ "{:,}".format(item.chars) }}자 · 약 {{ "{:,}".format((item.chars / chars_per_token) | round | int) }} 토큰</span>
+            </div>
+            <label class="inline-flex items-center gap-1 text-xs text-red-700">
+              <input type="checkbox" name="remove_file" value="{{ item.name }}"> 저장할 때 빼기
+            </label>
+          </div>
+          <details class="!my-1 !border-0 !p-0">
+            <summary class="text-xs">내용 보기</summary>
+            <pre class="mt-1 max-h-60 overflow-y-auto">{{ item.content }}</pre>
+          </details>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      {{ empty("올린 파일이 없어요") }}
+      {% endif %}
+      <p>
+        <label for="job-analysis-upload">파일 추가</label>
+        <br>
+        <input id="job-analysis-upload" name="upload" type="file" multiple accept="{{ suffixes }}"
+               class="mt-1 text-sm file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-2.5 file:py-1 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-50">
+        <br>
+        <span class="text-xs text-slate-500">고른 파일은 저장하거나 시험할 때 함께 올라가요. 같은 이름이면 새 파일로 바뀌어요</span>
+      </p>
+    </section>
+
+    <section class="!mb-0 border-slate-300">
+      <h3>4. 새 판으로 저장</h3>
+      <p data-dirty class="!text-amber-800 {% if not dirty %}hidden{% endif %}">아직 저장하지 않은 내용이 있어요.</p>
+      {% if error %}
+      <div class="notice notice-bad">{{ error.message }}</div>
+      {% elif message %}
+      <div class="notice notice-idle">{{ message }}</div>
+      {% endif %}
+      <div class="flex flex-wrap items-end gap-2">
+        <div class="min-w-[16rem] flex-1">
+          <label for="job-analysis-note">바꾼 이유</label>
+          <input id="job-analysis-note" name="note" type="text" class="w-full"
+                 maxlength="{{ limits.note }}" placeholder="예: 역량 설명을 2문장으로 줄임">
+        </div>
+        <button type="submit">새 판으로 저장</button>
+        {{ wait("저장하는 중") }}
+      </div>
+      <p class="text-xs">저장하면 다음 분석부터 이 방법을 써요. 이미 만든 분석은 공고 본문이 바뀌거나 다시 분석할 때 바뀌어요.</p>
+    </section>
+  </div>
+
+  {# 오른쪽: 시험 — 넓은 화면에서는 스크롤해도 따라온다 #}
+  <div class="min-w-0 xl:sticky xl:top-4">
+    <section class="!mb-0">
+      <h3>공고 하나로 시험</h3>
+      <p>왼쪽에 적은 방법(저장 안 한 것 포함)으로 분석해 오공고 화면처럼 보여 줘요. 결과는 저장하지 않아요.</p>
+
+      <div class="flex gap-1 rounded-md bg-slate-100 p-1 text-sm" role="radiogroup" aria-label="시험할 공고">
+        <label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded px-2 py-1 has-[:checked]:bg-white has-[:checked]:font-semibold has-[:checked]:shadow-sm">
+          <input type="radio" name="source" value="job" class="sr-only" {% if choices %}checked{% endif %}> 수집한 공고
+        </label>
+        <label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded px-2 py-1 has-[:checked]:bg-white has-[:checked]:font-semibold has-[:checked]:shadow-sm">
+          <input type="radio" name="source" value="paste" class="sr-only" {% if not choices %}checked{% endif %}> 원문 붙여넣기
+        </label>
+      </div>
+
+      <div data-source="job" class="mt-3">
+        {% if choices %}
+        <label for="job-analysis-try-job">공고 (최근 수집한 것부터)</label>
+        <select id="job-analysis-try-job" name="job_id" class="w-full">
+          {% for choice in choices %}
+          <option value="{{ choice.job_id }}">{{ choice.company or "회사 모름" }} · {{ choice.title or "(제목 없음)" }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        {{ empty("수집한 공고가 아직 없어요. 원문 붙여넣기로 시험해요") }}
+        {% endif %}
+      </div>
+
+      <div data-source="paste" class="mt-3 hidden space-y-2">
+        <div>
+          <label for="job-analysis-paste-title">공고 제목</label>
+          <input id="job-analysis-paste-title" name="paste_title" type="text" class="w-full"
+                 placeholder="예: [전환형 인턴] B2B AI Product Owner Intern">
+        </div>
+        <div>
+          <label for="job-analysis-paste-body">공고 원문</label>
+          <textarea id="job-analysis-paste-body" name="paste_body" rows="8" class="w-full"
+                    placeholder="고용24·채용 페이지의 원문을 그대로 붙여 넣어요"></textarea>
+        </div>
+      </div>
+
+      <div class="mt-3 flex flex-wrap items-center gap-3">
+        <button type="button" class="!border-indigo-600 !bg-indigo-600 !text-white hover:!bg-indigo-500"
+                hx-post="/ui/job-analysis/try" hx-target="#job-analysis-try" hx-swap="innerHTML"
+                hx-encoding="multipart/form-data" hx-disabled-elt="this"
+                hx-indicator="#job-analysis-try-wait">이 방법으로 분석해 보기</button>
+        <label class="inline-flex items-center gap-1 text-sm">
+          <input type="checkbox" name="compare" value="1"> 지금 판과 나란히 비교
+        </label>
+        {{ wait("모델을 부르는 중", id="job-analysis-try-wait") }}
+      </div>
+      <p class="text-xs">모델을 실제로 불러 토큰이 들어요. 비교하면 두 번 불러요. 호출은 비용 화면에 '공고 분석' 으로 남아요.</p>
+      <div id="job-analysis-try" class="wait-dim mt-4"></div>
+    </section>
+  </div>
+</div>
+</form>
+
+<section class="mt-4">
+  <h3>저장한 판</h3>
+  <div class="table-scroll">
+  <table class="data-table">
+    <caption>최근 것부터. 되돌리면 그 판을 복사한 새 판이 생겨요 — 옛 판은 지우지 않아요</caption>
+    <thead>
+      <tr>
+        <th scope="col" class="num">판</th>
+        <th scope="col">바꾼 이유</th>
+        <th scope="col">저장 시각</th>
+        <th scope="col">동작</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in history %}
+      <tr>
+        <td class="num">{{ entry.number }}</td>
+        <td class="cell-text">{{ entry.note or blank() }}</td>
+        <td>{{ entry.created_at | as_time }}</td>
+        <td>
+          {% if loop.first %}
+          {{ badge("지금 방법", "ok") }}
+          {% else %}
+          <form hx-post="/ui/job-analysis/{{ entry.number }}/restore" hx-target="#job-analysis"
+                hx-swap="innerHTML" hx-disabled-elt="find button"
+                hx-confirm="판 {{ entry.number }} 을 새 판으로 복사해 지금 방법으로 써요. 계속할까요?">
+            <button type="submit" class="btn-quiet">이 판으로 되돌리기</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      {{ empty_row(4, "저장한 판이 아직 없어요. 지금은 코드의 기본 방법(판 0)으로 분석해요. 고쳐서 저장하면 판 1 이 생겨요") }}
+      {% endfor %}
+      {% if history %}
+      <tr>
+        <td class="num">0</td>
+        <td class="cell-text">코드의 기본 방법</td>
+        <td>{{ blank("저장한 적 없음") }}</td>
+        <td>
+          <form hx-post="/ui/job-analysis/0/restore" hx-target="#job-analysis"
+                hx-swap="innerHTML" hx-disabled-elt="find button"
+                hx-confirm="코드의 기본 방법을 새 판으로 복사해 지금 방법으로 써요. 계속할까요?">
+            <button type="submit" class="btn-quiet">기본 방법으로 되돌리기</button>
+          </form>
+        </td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<script>
+  (() => {
+    const root = document.getElementById("job-analysis-editor");
+    if (!root) return;
+    // 시험할 공고: 고른 쪽 입력만 보인다
+    const sync = () => {
+      const picked = root.querySelector("input[name=source]:checked")?.value;
+      root.querySelectorAll("[data-source]").forEach((block) => {
+        block.classList.toggle("hidden", block.dataset.source !== picked);
+      });
+    };
+    root.querySelectorAll("input[name=source]").forEach((radio) => radio.addEventListener("change", sync));
+    sync();
+    // 고친 것이 있으면 저장 칸에 알린다
+    const dirty = root.querySelector("[data-dirty]");
+    root.querySelectorAll("textarea[data-count], input[name=upload], input[name=remove_file]").forEach((field) => {
+      field.addEventListener("change", () => dirty?.classList.remove("hidden"));
+      field.addEventListener("input", () => dirty?.classList.remove("hidden"));
+    });
+    // 글자 수: 칠 때마다 바로 센다
+    root.querySelectorAll("textarea[data-count]").forEach((area) => {
+      const label = root.querySelector(`[data-count-for="${area.id}"]`);
+      area.addEventListener("input", () => {
+        if (label) label.textContent = `${area.value.length} / ${area.maxLength}자`;
+      });
+    });
+  })();
+</script>

@@ -60,6 +60,7 @@ from app.api.review_filter import (
 )
 from app.api.ui import display_zone, render, render_page
 from app.classify import refill
+from app.classify.store import read_classification
 from app.normalize.engine import read_raw
 from app.taxonomy import list_majors
 
@@ -312,7 +313,9 @@ def render_panel(
     edited = job_detail.overrides(conn, int(row["raw_job_id"]), int(row["part"]))
     classified = job_detail.classification(conn, row)
     _, raw = read_raw(conn, int(row["raw_job_id"]))
-    ai_filled = job_detail.ai_filled_fields(raw, row)
+    ai_filled = job_detail.ai_filled_fields(
+        raw, row, read_classification(conn, int(row["raw_job_id"]), int(row["part"]))
+    )
     return render(
         request,
         "fragments/job_panel.html",

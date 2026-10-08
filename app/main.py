@@ -28,6 +28,8 @@ from app.api import (
     ui_deliver,
     ui_fields,
     ui_industries,
+    ui_job_analyses,
+    ui_job_analysis,
     ui_llm,
     ui_notify,
     ui_posting_add,
@@ -52,6 +54,8 @@ from app.bootcamp.runner import close_orphan_runs as close_orphan_bootcamp_runs
 from app.config import get_settings
 from app.crawler.fetcher import close_fetcher
 from app.crawler.runner import close_orphan_runs
+from app.job_analysis import schedule as job_analysis_schedule
+from app.job_analysis.runner import close_orphan_runs as close_orphan_job_analysis_runs
 from app.log_ring import handler as _log_ring_handler
 from app.scheduler import get_scheduler, shutdown_scheduler
 from app.side.runs import close_orphans as close_orphan_side_runs
@@ -118,11 +122,17 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                 "지난 프로세스가 남긴 미완 미래내일 일경험 수집 %d건을 닫았다",
                 work_experience_orphans,
             )
+        job_analysis_orphans = close_orphan_job_analysis_runs(conn)
+        if job_analysis_orphans:
+            logger.warning(
+                "지난 프로세스가 남긴 미완 공고 분석 %d건을 닫았다", job_analysis_orphans
+            )
         try:
             _seed_empty_tables(conn)
             get_scheduler().start(conn)
             bootcamp_schedule.sync(get_scheduler().scheduler, conn)
             work_experience_schedule.sync(get_scheduler().scheduler, conn)
+            job_analysis_schedule.sync(get_scheduler().scheduler, conn)
         except sqlite3.OperationalError:
             # 스키마가 아직 없는 DB 다. 등록할 워크플로우도 없다.
             #
@@ -175,6 +185,8 @@ app.include_router(ui_ai_quick.router)
 app.include_router(ui_taxonomy.router)
 app.include_router(ui_industries.router)
 app.include_router(ui_prompt_rules.router)
+app.include_router(ui_job_analysis.router)
+app.include_router(ui_job_analyses.router)
 app.include_router(ui_bootcamps.router)
 app.include_router(ui_work_experiences.router)
 # 조각 요청의 실패는 200 과 오류 조각으로 나간다. HTMX 가 4xx·5xx 를 갈아 끼우지 않아

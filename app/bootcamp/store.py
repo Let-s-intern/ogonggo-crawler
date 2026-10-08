@@ -186,11 +186,13 @@ def curriculum(row: sqlite3.Row) -> list[CurriculumGroup]:
 
 
 def listing(conn: sqlite3.Connection, limit: int = 200) -> list[sqlite3.Row]:
-    """화면 목록. 신청할 수 있는 과정이 위고, 그 안에서는 새싹 번호가 큰(최근) 과정이 위다."""
+    """화면 목록. 최근에 처음 모은 과정이 위다 (2026-10-08 결정).
+
+    같은 수집에서 모은 과정끼리는 나중에 넣은 것이 위다. 예전에는 신청할 수 있는 과정을 먼저 두고
+    새싹 번호순으로 놓았는데, 이번 수집에서 새로 들어온 과정을 찾기 어려웠다.
+    """
     return conn.execute(
-        "SELECT * FROM bootcamps"
-        " ORDER BY status_label NOT IN ('모집중', '모집예정'), CAST(external_id AS INTEGER) DESC"
-        " LIMIT ?",
+        "SELECT * FROM bootcamps ORDER BY first_seen_at DESC, id DESC LIMIT ?",
         (limit,),
     ).fetchall()
 

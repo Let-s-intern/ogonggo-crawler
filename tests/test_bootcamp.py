@@ -629,3 +629,24 @@ def test_지금_수집은_백그라운드로_시작한다(
     assert "이미 수집하는 중이다" in second.text
     assert 'hx-trigger="every 5s"' in second.text
     assert len(started) == 1
+
+
+def test_목록은_최근에_처음_모은_과정이_위다(tmp_path: pathlib.Path) -> None:
+    connection = db.connect(tmp_path / "order.db")
+    db.migrate_up(connection)
+    for external_id, first_seen in [
+        ("900", "2026-10-01 09:00:00"),
+        ("100", "2026-10-08 09:00:00"),
+        ("500", "2026-10-08 09:00:00"),
+    ]:
+        connection.execute(
+            "INSERT INTO bootcamps (source_url, external_id, title, status_label, first_seen_at,"
+            " program_start_date, program_end_date, page_hash)"
+            " VALUES (?, ?, ?, '모집마감', ?, '2026-11-01', '2027-03-01', 'h')",
+            (f"https://sesac/{external_id}", external_id, f"과정 {external_id}", first_seen),
+        )
+
+    rows = store.listing(connection)
+
+    assert [row["external_id"] for row in rows] == ["500", "100", "900"]
+    connection.close()

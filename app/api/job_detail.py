@@ -20,11 +20,18 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from app import industries, taxonomy
-from app.classify.schema import FALLBACK_FIELDS, STORED_CLASSIFY_FIELDS, VALUE_LABELS
+from app.classify.schema import (
+    DATE_FIELDS,
+    DATES_BY_AI,
+    FALLBACK_FIELDS,
+    STORED_CLASSIFY_FIELDS,
+    VALUE_LABELS,
+)
 from app.deliver import spring
 from app.normalize.engine import OVERRIDABLE_FIELDS
 from app.normalize.rules import RULE_FIELDS
@@ -188,13 +195,21 @@ def source_of(
     return SOURCE_AUTO
 
 
-def ai_filled_fields(raw: dict[str, object], job: Any) -> frozenset[str]:
-    """회사·모집 시작·모집 마감 중 사이트에서 못 읽었는데 값이 있는 칸. 그 값은 AI 가 짚은 것이다.
+def ai_filled_fields(
+    raw: dict[str, object], job: Any, classified: Mapping[str, str] | None = None
+) -> frozenset[str]:
+    """회사·모집 시작·모집 마감 중 AI 가 정한 칸.
 
-    모집 시작은 AI 도 못 찾으면 수집한 날로 채워지지만 따로 가르지 않는다 — AI 로 보인다.
+    사이트에서 못 읽었는데 값이 있는 칸과, AI 가 모집 기간을 정한 분류(`dates_by_ai`)의 날짜 두
+    칸이다
+    (2026-10-08). 모집 시작은 AI 도 못 찾으면 수집한 날로 채워지지만 따로 가르지 않는다 — AI 로
+    보인다.
     """
+    by_ai = bool((classified or {}).get(DATES_BY_AI))
     return frozenset(
-        name for name in FALLBACK_FIELDS if not str(raw.get(name) or "").strip() and job[name]
+        name
+        for name in FALLBACK_FIELDS
+        if job[name] and (not str(raw.get(name) or "").strip() or (by_ai and name in DATE_FIELDS))
     )
 
 
