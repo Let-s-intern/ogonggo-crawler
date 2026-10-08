@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
@@ -171,8 +172,16 @@ async def find_basics(
     values: dict[str, str] = {}
     for name in wanted:
         piece = found.get(name)
-        values[name] = resolve([piece], lines).value if piece else ""
+        values[name] = _without_site_label(resolve([piece], lines).value) if piece else ""
     return values
+
+
+_SITE_LABEL = re.compile(r"^\s*(\[사이트 칸\]\s*)?(모집 시작|모집 마감)\s*:\s*")
+
+
+def _without_site_label(text: str) -> str:
+    """사이트 칸 줄을 골랐으면 줄 앞의 이름표(`[사이트 칸] 모집 마감:`)를 뗀다. 값만 남긴다."""
+    return _SITE_LABEL.sub("", text)
 
 
 __all__ = ["ClassifyError", "find_basics"]

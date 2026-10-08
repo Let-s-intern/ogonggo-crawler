@@ -208,3 +208,11 @@ def test_기간의_앞쪽만_있는_마감일은_AI_가_다시_짚는다(tmp_pat
 
     assert "recruitment_end_at" not in read_current_values(conn, 1)
     conn.close()
+
+
+def test_사이트_칸_줄을_골라도_이름표는_떼고_값만_남긴다() -> None:
+    from app.classify.basics import _without_site_label
+
+    assert _without_site_label("[사이트 칸] 모집 마감: 2026-11-15") == "2026-11-15"
+    assert _without_site_label("모집 시작: 2026-10-02") == "2026-10-02"
+    assert _without_site_label("2026.10.31(금) 18:00") == "2026.10.31(금) 18:00"
