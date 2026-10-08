@@ -31,7 +31,7 @@ from app.api.ui import render
 from app.api.ui_crawlers import error_detail
 from app.api.workflows import get_workflow_scheduler
 from app.config import get_settings
-from app.crawler import daily
+from app.crawler import daily, target_fields
 from app.scheduler import DAILY_JOB_ID, WorkflowScheduler
 
 logger = logging.getLogger(__name__)
@@ -132,6 +132,45 @@ def update_daily_fragment(
         scheduler,
         message=f"매일 {config.start_time}부터 {config.spread_minutes}분에 걸쳐 돈다",
     )
+
+
+def _target_fields_form(
+    request: Request, conn: sqlite3.Connection, *, message: str = "", error: str = ""
+) -> HTMLResponse:
+    """대상 직군 폼. 지금까지 거른 공고 수를 같이 적는다."""
+    screened = conn.execute("SELECT count(*) AS n FROM screened_jobs").fetchone()
+    return render(
+        request,
+        "fragments/target_fields_form.html",
+        choices=target_fields.choices(),
+        chosen=target_fields.read_fields(conn),
+        screened=int(screened["n"]),
+        message=message,
+        error=error,
+    )
+
+
+@router.get("/ui/settings/target-fields", response_class=HTMLResponse)
+def target_fields_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(settings_api.get_connection)],
+) -> HTMLResponse:
+    return _target_fields_form(request, conn)
+
+
+@router.post("/ui/settings/target-fields", response_class=HTMLResponse)
+def update_target_fields_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(settings_api.get_connection)],
+    fields: Annotated[list[str] | None, Form()] = None,
+) -> HTMLResponse:
+    """저장한다. 다음 수집 실행부터 적용된다. 거절된 값은 저장되지 않는다."""
+    try:
+        saved = target_fields.write_fields(conn, fields or [])
+    except target_fields.TargetFieldError as exc:
+        return _target_fields_form(request, conn, error=str(exc))
+    message = f"{len(saved)}개 직군만 수집하고 보낸다" if saved else "거르지 않는다"
+    return _target_fields_form(request, conn, message=message)
 
 
 @router.put("/ui/settings/{key}", response_class=HTMLResponse)

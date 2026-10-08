@@ -12,6 +12,18 @@
   </div>
 </section>
 <section>
+  <h3>대상 직군</h3>
+  <p>
+    고른 직군의 공고만 수집하고 오공고로 보낸다. 수집은 목록 제목으로 한 번, 상세 본문으로 한 번 AI 에게
+    물어 대상 밖인 공고를 상세·분류 전에 거른다. 애매하면 수집한다. AI 는 설정 > AI 의 본문 분류를 쓴다.
+    이미 거른 공고는 직군을 바꿔도 다시 수집하지 않는다.
+  </p>
+  <div id="target-fields-form" hx-get="/ui/settings/target-fields" hx-trigger="load"
+       hx-swap="innerHTML">
+    {{ empty("설정을 불러오는 중") }}
+  </div>
+</section>
+<section>
   <h3>동시 실행 상한</h3>
   <p>
     저장한 값은 다음에 값을 읽는 쪽부터 적용된다. 재시작하지 않는다.

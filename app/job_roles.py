@@ -47,3 +47,13 @@ def enum_names(field: str | None, role: str | None) -> tuple[str | None, str | N
     if field_name is None or not role:
         return field_name, None
     return field_name, _roles().get((str(field), role))
+
+
+def field_labels() -> tuple[str, ...]:
+    """오공고 직군 한글 이름. 씨앗 파일 순서 그대로다."""
+    return tuple(_fields())
+
+
+def role_labels(field: str) -> tuple[str, ...]:
+    """직군 하나에 딸린 직무 한글 이름. 모르는 직군이면 비어 있다."""
+    return tuple(role for (owner, role) in _roles() if owner == field)

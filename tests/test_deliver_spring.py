@@ -398,7 +398,7 @@ async def test_분류_배치가_끝나면_보낸다(
     _seed(conn, count=1)
     # 분류 배치 끝의 전송 경로만 본다. 칸이 다 찼는지와 직군·연차는 위 테스트들이 본다
     monkeypatch.setattr(spring, "COMPLETE_SQL", spring.READY_SQL)
-    monkeypatch.setattr(spring, "TARGET_SQL", "1")
+    monkeypatch.setattr(spring, "target_sql", lambda conn: "1")
     seen = mock(lambda request: created(9), monkeypatch)
     text = response(
         responsibilities="제휴사 데이터 연동 구조 기획",

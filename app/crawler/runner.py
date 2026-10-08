@@ -10,6 +10,10 @@
 건너뛴다. 건너뛴 수는 `skipped_count` 로
 따로 세고 `fail_count` 와 섞지 않는다 — 건너뜀은 정상이고 실패는 고칠 것이다.
 
+대상 직군(마케팅·인사·기획·영업·개발) 밖 공고도 건너뛴다. 목록 제목으로 한 번, 상세 본문으로 한 번
+AI 에게 묻고, 거른 주소는 `screened_jobs` 에 남겨 다음 실행이 아는 공고로 본다
+(`app/crawler/screen.py`). 테스트 실행은 거르지 않는다.
+
 정규화는 적재한 건에 대해서만 돌고, 실패해도 실행을 죽이지 않는다. 규칙이 틀렸다고 수집한
 공고를 버리면 규칙을 고쳐도 되살릴 원본이 없다. 실패한 건은 `raw_jobs` 에 그대로 남고
 `fail_count` 로 세어져, 규칙을 고친 뒤 재정규화로 복구된다.
@@ -57,6 +61,17 @@ from app.crawler.fetcher import FetchPolicy, PageSource, get_fetcher
 from app.crawler.hashing import content_hash
 from app.crawler.images import LlmImageReader
 from app.crawler.parser import DetailParseResult, ListItem
+from app.crawler.screen import (
+    BODY,
+    IN,
+    OUT,
+    TITLE,
+    Screener,
+    ScreenError,
+    is_screened,
+    make_screener,
+    record_screened,
+)
 from app.crawler.talent_pool import is_talent_pool
 from app.normalize.engine import NormalizeError, insert_normalized, load_rules
 from app.normalize.rules import Rule
@@ -80,6 +95,8 @@ logger = logging.getLogger(__name__)
 STORED = "stored"
 KNOWN = "known"
 PREVIEW = "preview"
+# 상세 본문으로 보니 대상 직군 밖이라 적재하지 않았다 (`app/crawler/screen.py`)
+SCREENED = "screened"
 
 # 실행을 무엇이 시작했는가. `crawl_runs.trigger` 에 그대로 들어간다
 # (`migrations/0007_run_trigger.sql`).
@@ -243,6 +260,8 @@ async def run_workflow(
             collectors=collectors,
             limit=limit,
             timeout_seconds=bound,
+            # 대상 직군 밖 공고를 상세·분류 전에 거른다. 직군을 비워 두었으면 None 이다
+            screener=make_screener(conn),
         )
     _record_outcome(conn, workflow_id, result)
     # 새 공고가 들어왔으면 알린다. 보내기가 실패해도 실행 결과는 그대로다 —
@@ -400,6 +419,7 @@ async def run_once(
     collectors: Collectors | None = None,
     limit: int | None = None,
     timeout_seconds: float | None = None,
+    screener: Screener | None = None,
 ) -> RunResult:
     """1회 실행. 예외를 밖으로 던지지 않고 실패한 `RunResult` 로 돌려준다.
 
@@ -424,7 +444,7 @@ async def run_once(
         # asyncio.timeout 은 안쪽의 취소를 경계에서 TimeoutError 로 바꿔 준다. 그래서 아래
         # BaseException 절(밖에서 온 취소)과 시간 제한이 섞이지 않는다
         async with asyncio.timeout(timeout_seconds) as bound:
-            await _crawl(conn, target, active, limit, result)
+            await _crawl(conn, target, active, limit, result, screener)
     except TimeoutError as exc:
         # 제한을 넘겨서 끊긴 것인지, 안쪽에서 올라온 TimeoutError 인지 구분한다.
         # 후자를 timeout 으로 적으면 사이트 문제를 실행 시간 문제로 잘못 읽게 된다
@@ -453,6 +473,7 @@ async def _crawl(
     collectors: Collectors,
     limit: int | None,
     result: RunResult,
+    screener: Screener | None = None,
 ) -> None:
     rules, rules_error = _load_rules(conn)
     parsed = await collectors.list.collect()
@@ -468,21 +489,36 @@ async def _crawl(
             )
         )
 
-    # 목록에서 읽은 날짜를 마감일로 볼 수 있는 크롤러인지는 수집기가 들고 있다. 항목마다
-    # 다시 볼 값이 아니라 이 크롤러의 설정이다 (`app/crawler/collect.py`)
-    for item in parsed.items[:limit]:
-        if collectors.list_date_is_deadline and is_closed(item.date, rules):
-            # 마감이 지난 공고다. 상세를 열지 않고 넘긴다 — 실패가 아니라 건너뜀이다.
-            # 읽지 못한 날짜는 진행 중으로 본다 (`app/crawler/deadline.py`)
+    items = parsed.items[:limit]
+    # 테스트 실행은 거르지 않는다. 남길 워크플로우가 없고, 보고 싶은 것은 셀렉터가 뽑은 값이다
+    active_screener = screener if target.workflow_id is not None else None
+    title_verdicts = await _screen_titles(
+        conn, target, items, collectors, rules, active_screener, result
+    )
+    for item in items:
+        if _closed_or_pool(item, collectors, rules):
+            # 마감이 지난 공고, 상시 인재 풀 등록이다. 상세를 열지 않고 넘긴다 — 실패가 아니라
+            # 건너뜀이다
             result.skipped_count += 1
             continue
-        if is_talent_pool(item.title):
-            # 상시 인재 풀 등록은 채용 공고가 아니다. 마감과 같은 건너뜀으로 센다
+        verdict = title_verdicts.get(item.link)
+        if verdict == OUT and target.workflow_id is not None:
+            # 제목에 드러난 직무가 대상 직군 밖이다. 상세를 열지 않는다
+            record_screened(
+                conn, target.workflow_id, item.link, item.title, TITLE, "제목이 대상 직군 밖"
+            )
             result.skipped_count += 1
             continue
 
         try:
-            collected = await _collect(conn, target, item, collectors)
+            collected = await _collect(
+                conn,
+                target,
+                item,
+                collectors,
+                # 제목으로 대상 직군임이 드러났으면 본문으로 다시 묻지 않는다
+                None if verdict == IN else active_screener,
+            )
         except Exception as exc:
             # 항목 하나가 실패해도 나머지는 계속 간다. 실패는 fail_count 로 남는다.
             classified = classify(exc)
@@ -505,16 +541,73 @@ async def _crawl(
             result.failures.append(
                 ItemFailure(source_url=item.link, error_class=None, message=note, title=item.title)
             )
-        if collected.state == KNOWN:
-            # 이미 아는 공고라 적재하지 않았다. 마감으로 넘긴 것과 같은 자리에 센다
+        if collected.state in (KNOWN, SCREENED):
+            # 이미 아는 공고이거나 대상 직군 밖이라 적재하지 않았다. 마감으로 넘긴 것과 같은
+            # 자리에 센다
             result.skipped_count += 1
         elif collected.state == STORED:
             result.new_count += 1
             _normalize(conn, collected, rules, rules_error, result)
 
 
+def _closed_or_pool(item: ListItem, collectors: Collectors, rules: list[Rule]) -> bool:
+    """상세를 열지 않고 넘기는 공고인가. 마감이 지났거나 상시 인재 풀 등록이다.
+
+    목록에서 읽은 날짜를 마감일로 볼 수 있는 크롤러인지는 수집기가 들고 있다. 항목마다 다시 볼
+    값이 아니라 이 크롤러의 설정이다 (`app/crawler/collect.py`). 읽지 못한 날짜는 진행 중으로
+    본다 (`app/crawler/deadline.py`). 상시 인재 풀 등록은 채용 공고가 아니다.
+    """
+    if collectors.list_date_is_deadline and is_closed(item.date, rules):
+        return True
+    return is_talent_pool(item.title)
+
+
+async def _screen_titles(
+    conn: sqlite3.Connection,
+    target: RunTarget,
+    items: list[ListItem],
+    collectors: Collectors,
+    rules: list[Rule],
+    screener: Screener | None,
+    result: RunResult,
+) -> dict[str, str]:
+    """상세를 열 새 공고의 제목을 한꺼번에 물어 주소마다 판정을 돌려준다.
+
+    아는 공고·마감·인재 풀처럼 어차피 상세를 열지 않을 공고는 묻지 않는다. 판정하지 못하면 빈
+    사전이다 — 전부 본문 단계로 간다.
+    """
+    if screener is None:
+        return {}
+    fresh = [
+        item
+        for item in items
+        if not item.detail_absent
+        and item.title.strip()
+        and not _closed_or_pool(item, collectors, rules)
+        and not _is_known(conn, target.workflow_id, "source_url", item.link)
+    ]
+    if not fresh:
+        return {}
+    try:
+        verdicts = await screener.titles([item.title for item in fresh])
+    except ScreenError as exc:
+        result.failures.append(
+            ItemFailure(
+                source_url=target.list_url,
+                error_class=None,
+                message=f"제목으로 직군을 거르지 못해 전부 본문으로 거른다: {exc}",
+            )
+        )
+        return {}
+    return {item.link: verdict for item, verdict in zip(fresh, verdicts, strict=True)}
+
+
 async def _collect(
-    conn: sqlite3.Connection, target: RunTarget, item: ListItem, collectors: Collectors
+    conn: sqlite3.Connection,
+    target: RunTarget,
+    item: ListItem,
+    collectors: Collectors,
+    screener: Screener | None = None,
 ) -> ItemResult:
     """항목 하나를 처리한다. 아는 공고면 상세를 가져오지 않는다.
 
@@ -557,6 +650,22 @@ async def _collect(
     if _is_known(conn, target.workflow_id, "content_hash", digest):
         return ItemResult(source_url=item.link, state=KNOWN, fields=record, notes=detail.notes)
 
+    notes = tuple(detail.notes)
+    if screener is not None:
+        try:
+            verdict = await screener.body(
+                record["title"], f"{record['department']}\n{record['body']}".strip()
+            )
+        except ScreenError as exc:
+            # 거르지 못했으면 수집한다. 대상 공고를 놓치는 쪽이 더 나쁘다
+            notes = (*notes, f"본문으로 직군을 거르지 못해 수집했다: {exc}")
+        else:
+            if verdict.verdict == OUT:
+                record_screened(
+                    conn, target.workflow_id, item.link, record["title"], BODY, verdict.reason
+                )
+                return ItemResult(source_url=item.link, state=SCREENED, fields=record, notes=notes)
+
     cursor = conn.execute(
         """
         INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash)
@@ -574,7 +683,7 @@ async def _collect(
         state=STORED,
         fields=record,
         raw_job_id=int(cursor.lastrowid or 0),
-        notes=detail.notes,
+        notes=notes,
     )
 
 
@@ -691,9 +800,15 @@ def raw_record(item: ListItem, detail: DetailParseResult) -> dict[str, str]:
 
 
 def _is_known(conn: sqlite3.Connection, workflow_id: int | None, column: str, value: str) -> bool:
-    """이미 적재한 공고인지 본다. 적재하지 않는 실행에는 아는 공고가 없다."""
+    """이미 적재한 공고인지 본다. 적재하지 않는 실행에는 아는 공고가 없다.
+
+    대상 직군 밖이라 거른 주소도 아는 공고다. 다시 열고 다시 묻지 않고, 쪽을 넘기는 목록이 그
+    쪽에서 멈춘다 (`app/crawler/screen.py`).
+    """
     if workflow_id is None:
         return False
+    if column == "source_url" and is_screened(conn, workflow_id, value):
+        return True
     # column 은 이 모듈 안에서 넘기는 고정 값 둘뿐이다. 밖에서 오는 값이 들어오지 않는다.
     row = conn.execute(
         f"SELECT 1 FROM raw_jobs WHERE workflow_id = ? AND {column} = ? LIMIT 1",

@@ -1,0 +1,32 @@
+{# 수집·전송 대상 직군 (`app/crawler/target_fields.py`) #}
+{% from "macros.html" import failure, notice_box, wait %}
+{% if error %}
+{{ failure("invalid_input", error, title="저장하지 못했다") }}
+{% endif %}
+{% if message %}
+{{ notice_box(message) }}
+{% endif %}
+
+<form hx-post="/ui/settings/target-fields" hx-target="#target-fields-form" hx-swap="innerHTML"
+      hx-disabled-elt="find button">
+  <fieldset>
+    <legend>대상 직군</legend>
+    {% for name in choices %}
+    <label>
+      <input type="checkbox" name="fields" value="{{ name }}"{% if name in chosen %} checked{% endif %}>
+      {{ name }}
+    </label>
+    {% endfor %}
+    <p>
+      <button type="submit">저장</button>
+      {{ wait("저장하는 중") }}
+    </p>
+    <p>
+      {% if chosen %}
+      지금 {{ chosen | length }}개 직군만 수집하고 보낸다. 거른 공고는 지금까지 {{ screened }}건이다.
+      {% else %}
+      아무 직군도 고르지 않아 거르지 않는다. 모든 공고를 수집하고 보낸다.
+      {% endif %}
+    </p>
+  </fieldset>
+</form>
