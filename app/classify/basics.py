@@ -1,4 +1,9 @@
-"""사이트에서 못 읽은 회사 이름·모집 시작·모집 마감을 AI 에게 따로 묻는다 (2026-09-17 결정).
+"""회사 이름·모집 시작·모집 마감을 AI 에게 따로 묻는다 (2026-09-17 결정, 2026-10-08 바뀜).
+
+회사 이름은 사이트에서 못 읽었을 때만 묻는다. **모집 시작·마감은 사이트에서 읽었어도 늘 묻는다**
+(2026-10-08 결정). 사이트가 따로 읽은 값을 공고 끝에 줄로 붙여 함께 보여 주고, AI 가 원문과 견줘
+고른 값을 무조건 쓴다 — 사이트 칸이 다른 공고의 날짜를 읽었거나 틀린 형식이어도 그대로 나가던 것을
+막는다. 사이트 값도 번호 붙은 줄이라 AI 가 그 줄을 고르면 사이트 값이 된다.
 
 셀렉터는 사이트마다 정해진 자리에서 글자를 읽는다. 회사 이름과 모집 기간은 사이트마다 적는 자리가
 달라서(`서류 제출 마감 기한은 9/20(일) 23:59 입니다` 처럼 문장 속에도 있다) 셀렉터로는 자주 빈다.
@@ -64,6 +69,19 @@ _FIELD_GUIDES: dict[str, str] = {
     ),
 }
 
+# 날짜 칸을 물을 때 붙이는 안내. 사이트가 따로 읽은 값이 공고 끝 줄에 있다
+_SITE_GUIDE = (
+    "- 공고 끝의 `[사이트 칸]` 줄은 사이트의 정해진 자리에서 따로 읽은 모집 기간이다. 맞는지 "
+    "원문과 "
+    "견줘 판단한다. 본문에 모집 기간이 있고 사이트 칸과 다르면 본문을 짚는다. 본문에 없으면 "
+    "사이트 칸 "
+    "줄을 짚는다. 사이트 칸이 모집 기간이 아닌 것(작성일·수정일·근무 기간)을 읽었으면 짚지 않는다"
+)
+_SITE_LABELS: dict[str, str] = {
+    "recruitment_start_at": "모집 시작",
+    "recruitment_end_at": "모집 마감",
+}
+
 
 class Basics(BaseModel):
     company_name: list[LinePiece] = Field(default_factory=list)
@@ -74,11 +92,21 @@ class Basics(BaseModel):
 assert tuple(Basics.model_fields) == FALLBACK_FIELDS
 
 
-def build_prompt(body: str, title: str, needed: Sequence[str]) -> str:
-    lines = number_lines(title, body[:MAX_CHARS])
-    return _PROMPT.format(
-        fields="\n".join(_FIELD_GUIDES[name] for name in needed), body=render(lines)
-    )
+def numbered(body: str, title: str, site_values: Mapping[str, str]) -> list[str]:
+    """번호를 붙일 줄. 제목과 본문 뒤에 사이트가 따로 읽은 모집 기간을 한 줄씩 붙인다."""
+    extra = [
+        f"[사이트 칸] {_SITE_LABELS[name]}: {value.strip()}"
+        for name, value in site_values.items()
+        if name in _SITE_LABELS and value.strip()
+    ]
+    return [*number_lines(title, body[:MAX_CHARS]), *extra]
+
+
+def build_prompt(lines: Sequence[str], needed: Sequence[str], *, site: bool = False) -> str:
+    guides = [_FIELD_GUIDES[name] for name in needed]
+    if site:
+        guides.append(_SITE_GUIDE)
+    return _PROMPT.format(fields="\n".join(guides), body=render(lines))
 
 
 def _parse(text: str) -> dict[str, tuple[int, str] | None]:
@@ -119,22 +147,27 @@ async def find_basics(
     settings: Settings | None = None,
     client: Any | None = None,
     on_call: Callable[[Usage], None] | None = None,
+    site_values: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
-    """`needed` 칸마다 원문에서 옮겨 온 글자. 못 찾은 칸은 빈 문자열이다."""
+    """`needed` 칸마다 원문에서 옮겨 온 글자. 못 찾은 칸은 빈 문자열이다.
+
+    `site_values` 는 사이트가 따로 읽은 모집 시작·마감이다. 공고 끝에 줄로 붙어 AI 가 원문과 견준다.
+    """
     wanted = [name for name in FALLBACK_FIELDS if name in needed]
     if not wanted or not body.strip():
         return {}
+    site = {name: value for name, value in (site_values or {}).items() if name in wanted}
+    lines = numbered(body, title, site)
     resolved = settings or get_settings()
     provider, model = chosen(resolved)
     asker = _Asker(client or build_client(resolved), model, provider, on_call)
     found, _, _ = await asker.ask(
-        build_prompt(body, title, wanted),
+        build_prompt(lines, wanted, site=any(value.strip() for value in site.values())),
         schema=Basics,
         instruction=_INSTRUCTION,
         kind=KIND,
         parse=_parse,
     )
-    lines = number_lines(title, body)
     values: dict[str, str] = {}
     for name in wanted:
         piece = found.get(name)

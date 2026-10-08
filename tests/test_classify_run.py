@@ -237,28 +237,39 @@ async def test_a_blank_classification_clears_the_old_collected_value(
     assert row["region"] is None
 
 
-async def test_the_six_collected_columns_are_untouched_by_the_classification(
-    conn: sqlite3.Connection,
-) -> None:
-    """분류가 이기는 것은 열한 칸뿐이다. 수집이 주는 여섯 칸은 그대로다."""
+def _set_raw(conn: sqlite3.Connection, **values: str) -> None:
+    """공고 1 하나만 남기고 원문 값을 바꾼다. 호출 순서를 그 공고 하나로 고정한다."""
+    conn.execute("DELETE FROM raw_jobs WHERE id <> 1")
+    record = {"source_url": "https://x/1", "title": "공고 1", "body": BODY, **values}
     conn.execute(
         "UPDATE raw_jobs SET raw_data_json = ? WHERE id = 1",
-        (
-            json.dumps(
-                {
-                    "source_url": "https://x/1",
-                    "title": "공고 1",
-                    "body": BODY,
-                    "company_name": "한화솔루션",
-                    "recruitment_end_at": "2026-09-30",
-                    "recruitment_start_at": "2026-09-01",
-                },
-                ensure_ascii=False,
-            ),
-        ),
+        (json.dumps(record, ensure_ascii=False),),
     )
 
-    await run(conn, GOOD)
+
+def _basics(**texts: str) -> str:
+    """회사·모집 기간 호출의 답. 줄 번호는 모르는 것으로 두고 글자로 찾게 한다."""
+    return json.dumps(
+        {name: [{"line": -1, "text": text}] for name, text in texts.items()}, ensure_ascii=False
+    )
+
+
+async def test_the_collected_columns_other_than_dates_are_untouched_by_the_classification(
+    conn: sqlite3.Connection,
+) -> None:
+    """분류가 이기는 것은 열한 칸이다. 수집이 주는 제목·본문·회사·주소는 그대로다."""
+    _set_raw(
+        conn,
+        company_name="한화솔루션",
+        recruitment_end_at="2026-09-30",
+        recruitment_start_at="2026-09-01",
+    )
+
+    await run(
+        conn,
+        GOOD,
+        _basics(recruitment_start_at="2026-09-01", recruitment_end_at="2026-09-30"),
+    )
 
     row = conn.execute(
         """
@@ -269,9 +280,51 @@ async def test_the_six_collected_columns_are_untouched_by_the_classification(
     assert row["title"] == "공고 1"
     assert row["body"] == BODY
     assert row["company_name"] == "한화솔루션"
+    assert row["recruitment_end_at"] == "2026-09-30 23:59:59"
+    assert row["recruitment_start_at"] == "2026-09-01 00:00:00"
+    assert row["source_url"] == "https://x/1"
+
+
+async def test_dates_are_what_the_ai_decides_even_when_the_site_read_them(
+    conn: sqlite3.Connection,
+) -> None:
+    """사이트가 읽은 모집 기간도 AI 에게 보여 주고, AI 가 고른 값을 무조건 쓴다 (2026-10-08)."""
+    _set_raw(
+        conn,
+        body=BODY + "\n◆ 접수 마감\n2026-10-15 18:00 까지\n",
+        company_name="한화솔루션",
+        recruitment_end_at="2026-09-30",
+        recruitment_start_at="2026-09-01",
+    )
+    client = FakeClient(GOOD, _basics(recruitment_end_at="2026-10-15 18:00"))
+
+    await classify_pending(conn, ClassifyProgress(), client=client, settings=settings_with_key())
+
+    row = conn.execute(
+        "SELECT recruitment_end_at, recruitment_start_at FROM normalized_jobs WHERE raw_job_id = 1"
+    ).fetchone()
+    # AI 가 본문에서 고른 마감이다. 사이트 값(9/30)은 쓰지 않는다
+    assert row["recruitment_end_at"] == "2026-10-15 18:00:00"
+    # AI 가 시작을 못 찾았다고 했다. 사이트 값(9/1)으로 되살리지 않고 수집한 날로 둔다
+    assert row["recruitment_start_at"] != "2026-09-01 00:00:00"
+    # 사이트가 읽은 값을 AI 에게 함께 보여 줬다
+    assert "[사이트 칸] 모집 마감: 2026-09-30" in client.calls[1]["contents"]
+    assert conn.execute("SELECT dates_by_ai FROM job_classifications").fetchone()[0] == 1
+
+
+async def test_dates_stay_from_the_site_when_the_ai_could_not_be_asked(
+    conn: sqlite3.Connection,
+) -> None:
+    """회사·모집 기간 호출이 실패하면 AI 가 정한 것이 아니므로 사이트 값이 남는다."""
+    _set_raw(conn, recruitment_end_at="2026-09-30", recruitment_start_at="2026-09-01")
+
+    await run(conn, GOOD, "깨진 응답")
+
+    row = conn.execute(
+        "SELECT recruitment_end_at, recruitment_start_at FROM normalized_jobs WHERE raw_job_id = 1"
+    ).fetchone()
     assert row["recruitment_end_at"] == "2026-09-30"
     assert row["recruitment_start_at"] == "2026-09-01"
-    assert row["source_url"] == "https://x/1"
 
 
 async def test_every_call_is_recorded_with_its_tokens(conn: sqlite3.Connection) -> None:

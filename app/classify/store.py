@@ -28,7 +28,12 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from app.classify.pieces import from_ranges, to_ranges
-from app.classify.schema import COLLECTED_REVIEW_FIELDS, POSTING_TITLE, STORED_CLASSIFY_FIELDS
+from app.classify.schema import (
+    COLLECTED_REVIEW_FIELDS,
+    DATES_BY_AI,
+    POSTING_TITLE,
+    STORED_CLASSIFY_FIELDS,
+)
 
 # `raw_jobs.raw_data_json` 에서 원문·본문·제목을 꺼내는 자리. JSON 함수는 SQLite 3.38+ 에 있다
 _BODY = "json_extract(r.raw_data_json, '$.body')"
@@ -335,12 +340,16 @@ def read_classification(conn: sqlite3.Connection, raw_job_id: int, part: int = 1
     """
     names = (*STORED_CLASSIFY_FIELDS, POSTING_TITLE)
     row = conn.execute(
-        f"SELECT {', '.join(names)} FROM job_classifications WHERE raw_job_id = ? AND part = ?",
+        f"SELECT {', '.join(names)}, {DATES_BY_AI} FROM job_classifications"
+        " WHERE raw_job_id = ? AND part = ?",
         (raw_job_id, part),
     ).fetchone()
     if row is None:
         return {}
-    return {name: str(row[name] or "") for name in names}
+    values = {name: str(row[name] or "") for name in names}
+    # 모집 시작·마감을 AI 가 정했으면 정규화가 사이트 값보다 그 값을 먼저 쓴다 (0052)
+    values[DATES_BY_AI] = "1" if row[DATES_BY_AI] else ""
+    return values
 
 
 def read_evidence(conn: sqlite3.Connection, raw_job_id: int, part: int = 1) -> dict[str, str]:
@@ -370,8 +379,13 @@ def save_classification(
     part_role: str | None = None,
     part_lines: Sequence[int] = (),
     rules_version: int | None = None,
+    dates_by_ai: bool = False,
 ) -> None:
     """분류 결과를 넣거나 덮는다. 빈 값은 NULL 로 들어간다.
+
+    `dates_by_ai` 는 모집 시작·마감을 AI 에게 물어 정했는지다. 참이면 두 칸이 비었어도 "AI 가 없다고
+    했다" 는 뜻이라 정규화가 사이트 값으로 채우지 않는다
+    (`migrations/0052_classify_dates_by_ai.sql`).
 
     `rules_version` 은 이 결과를 만든 AI 규칙의 판이다. 0 은 코드의 기본 규칙이다
     (`migrations/0032_classify_rule_versions.sql`).
@@ -396,6 +410,7 @@ def save_classification(
         "part_role",
         "part_lines",
         "rules_version",
+        DATES_BY_AI,
     )
     values: list[str | int | None] = [
         fields.get(name, "").strip() or None for name in (*STORED_CLASSIFY_FIELDS, POSTING_TITLE)
@@ -406,6 +421,7 @@ def save_classification(
     values.append(part_role)
     values.append(json.dumps(to_ranges(part_lines)) if part_lines else None)
     values.append(rules_version)
+    values.append(int(dates_by_ai))
     assignments = ", ".join(f"{name} = excluded.{name}" for name in columns)
     conn.execute(
         f"""

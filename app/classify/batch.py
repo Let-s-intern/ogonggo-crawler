@@ -30,7 +30,7 @@ from app import custom_fields, industries, taxonomy
 from app.classify import prompt_rules
 from app.classify.basics import find_basics
 from app.classify.classifier import ClassifyError, chosen, classify_body
-from app.classify.schema import FALLBACK_FIELDS, build_classification_model
+from app.classify.schema import DATE_FIELDS, FALLBACK_FIELDS, build_classification_model
 from app.classify.store import (
     added_by_hand,
     pending_count,
@@ -287,22 +287,30 @@ async def classify_ids(
             notify(raw_job_id, JOB_FAILED)
             continue
 
-        # 사이트에서 못 읽은 회사 이름·모집 기간은 따로 짚어 온다. 공고 한 건 전체의 값이라 나눈
-        # 공고마다 같다. 실패해도 분류는 저장한다 — 세 칸이 빌 뿐이다 (`app/classify/basics.py`)
-        needed = [name for name in FALLBACK_FIELDS if not current_values.get(name, "").strip()]
+        # 회사 이름은 사이트에서 못 읽었을 때만, 모집 시작·마감은 늘 따로 짚어 온다 (2026-10-08
+        # 결정). 날짜는 사이트가 읽은 값을 함께 보여 주고 AI 가 고른 값을 무조건 쓴다. 공고 한 건
+        # 전체의 값이라 나눈 공고마다 같다. 실패해도 분류는 저장한다 — 날짜는 사이트 값으로 남는다
+        # (`app/classify/basics.py`)
+        needed = [
+            name
+            for name in FALLBACK_FIELDS
+            if name in DATE_FIELDS or not current_values.get(name, "").strip()
+        ]
         basics: dict[str, str] = {}
-        if needed:
-            try:
-                basics = await find_basics(
-                    source,
-                    title,
-                    needed,
-                    settings=resolved,
-                    client=resolved_client,
-                    on_call=counted,
-                )
-            except ClassifyError as exc:
-                progress.note(f"raw_jobs {raw_job_id}: 회사·모집 기간을 짚지 못했다: {exc}")
+        dates_by_ai = False
+        try:
+            basics = await find_basics(
+                source,
+                title,
+                needed,
+                settings=resolved,
+                client=resolved_client,
+                on_call=counted,
+                site_values={name: current_values.get(name, "") for name in DATE_FIELDS},
+            )
+            dates_by_ai = bool(basics)
+        except ClassifyError as exc:
+            progress.note(f"raw_jobs {raw_job_id}: 회사·모집 기간을 짚지 못했다: {exc}")
 
         # 직무마다 나뉘었으면 번호마다 한 행이다. 나누지 않은 공고는 1번 하나이고 직무 이름을
         # 따로 남기지 않는다 — 그 직무는 제목에서 온 `position_name` 그대로다
@@ -323,6 +331,7 @@ async def classify_ids(
                 part_role=(role or None) if split else None,
                 part_lines=posting.sent_lines,
                 rules_version=prompt_version.number,
+                dates_by_ai=dates_by_ai,
             )
             progress.dropped += len(posting.dropped)
             # 같은 호출의 다른 갈래다. 값이 있는 칸에 원문이 다른 값을 낸 것은 여기로 간다 —
