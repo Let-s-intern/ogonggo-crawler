@@ -28,6 +28,7 @@ from app.job_analysis import settings as analysis_settings
 from app.job_analysis.analyzer import JOB_ANALYSIS, AnalysisError, analyze
 from app.job_analysis.posting import Posting
 from app.job_analysis.schema import EMPLOYMENT_KEYS, SUBMISSION_KEYS
+from app.letscareer_tags import runner as letscareer_tags
 from app.llm.pricing import cost_usd
 from app.scheduler import get_scheduler
 
@@ -181,6 +182,8 @@ def _start(settings: Settings) -> None:
     async def run() -> None:
         background = db.connect()
         try:
+            # 렛츠커리어 콘텐츠 태그도 매일 잡과 같이 먼저 돈다 (LC-3448)
+            await letscareer_tags.run_once(background, settings=settings)
             await runner.run_once(background, trigger=runner.MANUAL, settings=settings)
         finally:
             background.close()
