@@ -19,6 +19,7 @@ from app import db
 from app.config import get_settings
 from app.job_analysis import settings as analysis_settings
 from app.job_analysis.runner import SCHEDULE, run_once
+from app.letscareer_tags import runner as letscareer_tags
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,12 @@ async def _execute() -> None:
     conn = db.connect()
     try:
         config = analysis_settings.read_config(conn)
-        await run_once(conn, trigger=SCHEDULE, stop_at=stop_at(config.stop_time))
+        until = stop_at(config.stop_time)
+        # 렛츠커리어 콘텐츠 태그는 같은 서버·같은 AI 를 쓰므로 같은 잡에서 돈다 (LC-3448).
+        # 처음 한 번만 수백 건이고 그 뒤로는 하루 몇 건이라, 공고 분석이 멈춤 시각까지 쓰더라도
+        # 밀리지 않게 먼저 돈다
+        await letscareer_tags.run_once(conn, stop_at=until)
+        await run_once(conn, trigger=SCHEDULE, stop_at=until)
     finally:
         conn.close()
 
