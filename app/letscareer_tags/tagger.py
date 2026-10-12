@@ -3,22 +3,22 @@
 제공자와 모델은 공고 분석과 같이 설정 > AI 의 '공고 분류' 가 고른 것을 쓰고, 비용 기록은
 `letscareer_tags` 로 따로 남긴다.
 
-직군·직무 이름은 오공고 enum 그대로다(`seeds/job-roles-ogonggo-*.json`). 준비 단계는 오공고
-`LetsCareerContentTopic` 과 같아야 한다 — 다르면 오공고가 400 으로 거절한다. 모델이 목록 밖 이름을
-내면 그 이름만 버린다.
+직군은 다섯 묶음(IT·개발, 마케팅·광고, 영업, HR·총무, 기획·전략)으로만 붙이고 직무는 붙이지
+않는다(2026-10-12 결정). 묶음 밖 직군은 오공고 `LetsCareerContentFieldGroup` 과 같이 가까운
+묶음으로 옮긴다.
+준비 단계는 오공고 `LetsCareerContentTopic` 과 같아야 한다 — 다르면 오공고가 400 으로 거절한다.
+모델이 목록 밖 이름을 내면 그 이름만 버린다.
 """
 
 from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from functools import cache
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
 from app.config import Settings
-from app.job_roles import _seed as job_role_seed
 from app.letscareer_tags.ogonggo import Target
 from app.llm import settings as llm_settings
 from app.llm.base import LlmCallError, Usage
@@ -29,6 +29,25 @@ from app.llm.providers import for_feature
 LETSCAREER_TAGS = "letscareer_tags"
 MAX_ATTEMPTS = 2
 MAX_TOPICS = 3
+
+# 콘텐츠에 붙이는 직군 다섯 묶음. 괄호 안은 그 묶음에 함께 드는 오공고 직군이다
+FIELDS: dict[str, str] = {
+    "IT_DEVELOPMENT": "IT·개발 (AI·데이터 포함)",
+    "MARKETING_ADVERTISING": "마케팅·광고 (미디어·엔터 포함)",
+    "SALES": "영업",
+    "HR_GENERAL_AFFAIRS": "HR·총무, 경영관리 (회계·세무·재무, 고객상담·TM 포함)",
+    "PLANNING_STRATEGY": "기획·전략 (상품기획·MD, 디자인 포함)",
+}
+
+# 모델이 묶음 밖 직군을 내면 옮길 곳. 오공고 `LetsCareerContentFieldGroup` 과 같다
+MERGED_FIELDS: dict[str, str] = {
+    "AI_DATA": "IT_DEVELOPMENT",
+    "MERCHANDISING": "PLANNING_STRATEGY",
+    "DESIGN": "PLANNING_STRATEGY",
+    "ACCOUNTING_TAX_FINANCE": "HR_GENERAL_AFFAIRS",
+    "CUSTOMER_SERVICE_TM": "HR_GENERAL_AFFAIRS",
+    "MEDIA_ENTERTAINMENT": "MARKETING_ADVERTISING",
+}
 
 # 오공고 `LetsCareerContentTopic` 과 같은 순서·이름
 TOPICS: dict[str, str] = {
@@ -68,13 +87,12 @@ _SKELETON = """# 할 일
 
 - job_fields: 특정 직군 지원자를 위한 콘텐츠일 때만 그 직군 이름을 쓴다. 자기소개서 작성법,
   면접 일반, 취업 일정처럼 직군과 상관없이 쓰는 콘텐츠는 빈 배열이다. 여러 직군에 맞으면 모두
-  쓴다(최대 5개).
-- job_roles: 직군 안에서도 특정 직무만을 위한 것일 때만 쓴다. 직군 전체에 맞으면 빈 배열이다.
+  쓴다. 직군은 아래 다섯 가지뿐이다.
 - topics: 콘텐츠가 다루는 취업 준비 단계. 1개 이상 {max_topics}개 이하.
 - 이름은 아래 목록의 영문 이름을 그대로 쓴다. 목록에 없는 이름은 쓰지 않는다.
 
-# 직군과 직무 (영문 이름: 한글 이름)
-{taxonomy}
+# 직군 (영문 이름: 한글 이름)
+{fields}
 # 준비 단계
 {topics}
 # 콘텐츠
@@ -85,7 +103,6 @@ _SKELETON = """# 할 일
 
 class TagAnswer(BaseModel):
     job_fields: list[str]
-    job_roles: list[str]
     topics: list[str]
 
 
@@ -103,27 +120,6 @@ class TagError(RuntimeError):
         self.reason = reason
 
 
-@cache
-def _taxonomy() -> tuple[dict[str, str], dict[str, str]]:
-    """(직군 이름 → 한글, 직무 이름 → 한글)."""
-    fields: dict[str, str] = {}
-    roles: dict[str, str] = {}
-    for item in job_role_seed():
-        fields[str(item["name"])] = str(item["label"])
-        for role in item["roles"]:
-            roles[str(role["name"])] = str(role["label"])
-    return fields, roles
-
-
-@cache
-def _taxonomy_text() -> str:
-    lines: list[str] = []
-    for item in job_role_seed():
-        roles = ", ".join(f"{role['name']}: {role['label']}" for role in item["roles"])
-        lines.append(f"\n## {item['name']}: {item['label']}\n\n{roles}\n")
-    return "".join(lines)
-
-
 def build_prompt(target: Target) -> str:
     content = [
         f"- 종류: {KIND_LABELS.get(target.kind, target.kind)}",
@@ -134,7 +130,7 @@ def build_prompt(target: Target) -> str:
     ]
     return _SKELETON.format(
         max_topics=MAX_TOPICS,
-        taxonomy=_taxonomy_text(),
+        fields="".join(f"\n- {name}: {label}" for name, label in FIELDS.items()) + "\n",
         topics="".join(f"\n- {name}: {label}" for name, label in TOPICS.items()) + "\n",
         content="\n".join(content),
     )
@@ -142,22 +138,24 @@ def build_prompt(target: Target) -> str:
 
 def settle(answer: TagAnswer) -> tuple[dict[str, list[str]], tuple[str, ...]]:
     """목록 밖 이름을 버리고 오공고가 받는 모양으로 만든다. 버린 이름도 돌려준다."""
-    fields, roles = _taxonomy()
     dropped: list[str] = []
 
     def keep(names: list[str], allowed: dict[str, str], limit: int) -> list[str]:
         kept: list[str] = []
         for name in names:
             cleaned = name.strip()
-            if cleaned in allowed and cleaned not in kept:
+            if cleaned in kept:
+                continue
+            if cleaned in allowed:
                 kept.append(cleaned)
             elif cleaned:
                 dropped.append(cleaned)
         return kept[:limit]
 
+    fields = [MERGED_FIELDS.get(name.strip(), name.strip()) for name in answer.job_fields]
     tags = {
-        "jobFields": keep(answer.job_fields, fields, 5),
-        "jobRoles": keep(answer.job_roles, roles, 20),
+        "jobFields": keep(fields, FIELDS, len(FIELDS)),
+        "jobRoles": [],
         "topics": keep(answer.topics, TOPICS, MAX_TOPICS),
     }
     return tags, tuple(dropped)
