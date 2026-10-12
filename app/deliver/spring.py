@@ -256,12 +256,16 @@ def auto_missing(job: Mapping[str, Any] | sqlite3.Row) -> list[str]:
 
 
 # 임시로 보내는 직군 (2026-10-06 결정). 한글 이름은 `app/job_roles.py` 씨앗 파일의 직군 이름이다.
-# 인사는 HR·총무, 개발은 IT·개발과 AI·데이터, 상품기획·MD 는 마케팅 쪽으로 넣는다
+# 2026-10-12 오공고가 직군을 다섯으로 합쳐(`job_roles.MERGED_FIELDS`) 합쳐진 직군도 모두 보낸다
 TARGET_FIELDS: tuple[str, ...] = (
     "마케팅·광고",
-    "상품기획·MD",
+    "미디어·엔터",
     "HR·총무",
+    "회계·세무·재무",
+    "고객상담·TM",
     "기획·전략",
+    "상품기획·MD",
+    "디자인",
     "영업",
     "IT·개발",
     "AI·데이터",

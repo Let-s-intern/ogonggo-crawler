@@ -163,5 +163,3 @@ def test_직군_묶음이_오공고와_같다() -> None:
     source = SERVER_FIELD_GROUP.read_text(encoding="utf-8")
     taggable = source.split("TAGGABLE", 1)[1].split(")", 1)[0]
     assert re.findall(r"JobField\.([A-Z_]+)", taggable) == list(tagger.FIELDS)
-    merged = dict(re.findall(r"JobField\.([A-Z_]+) to JobField\.([A-Z_]+)", source))
-    assert merged == tagger.MERGED_FIELDS

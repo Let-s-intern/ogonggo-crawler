@@ -4,8 +4,8 @@
 `letscareer_tags` 로 따로 남긴다.
 
 직군은 다섯 묶음(IT·개발, 마케팅·광고, 영업, HR·총무, 기획·전략)으로만 붙이고 직무는 붙이지
-않는다(2026-10-12 결정). 묶음 밖 직군은 오공고 `LetsCareerContentFieldGroup` 과 같이 가까운
-묶음으로 옮긴다.
+않는다(2026-10-12 결정). 모델이 없어진 직군(AI_DATA 등)을 내면
+`job_roles.MERGED_FIELDS` 로 합쳐진 직군으로 옮긴다.
 준비 단계는 오공고 `LetsCareerContentTopic` 과 같아야 한다 — 다르면 오공고가 400 으로 거절한다.
 모델이 목록 밖 이름을 내면 그 이름만 버린다.
 """
@@ -19,6 +19,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from app.config import Settings
+from app.job_roles import MERGED_FIELDS
 from app.letscareer_tags.ogonggo import Target
 from app.llm import settings as llm_settings
 from app.llm.base import LlmCallError, Usage
@@ -39,15 +40,6 @@ FIELDS: dict[str, str] = {
     "PLANNING_STRATEGY": "기획·전략 (상품기획·MD, 디자인 포함)",
 }
 
-# 모델이 묶음 밖 직군을 내면 옮길 곳. 오공고 `LetsCareerContentFieldGroup` 과 같다
-MERGED_FIELDS: dict[str, str] = {
-    "AI_DATA": "IT_DEVELOPMENT",
-    "MERCHANDISING": "PLANNING_STRATEGY",
-    "DESIGN": "PLANNING_STRATEGY",
-    "ACCOUNTING_TAX_FINANCE": "HR_GENERAL_AFFAIRS",
-    "CUSTOMER_SERVICE_TM": "HR_GENERAL_AFFAIRS",
-    "MEDIA_ENTERTAINMENT": "MARKETING_ADVERTISING",
-}
 
 # 오공고 `LetsCareerContentTopic` 과 같은 순서·이름
 TOPICS: dict[str, str] = {
