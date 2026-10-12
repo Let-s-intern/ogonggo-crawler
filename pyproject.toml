@@ -11,6 +11,9 @@ dependencies = [
     "python-multipart",
     "httpx",
     "beautifulsoup4",
+    # 3.0 부터 `:has(a.title p)` 처럼 :has 안에 결합자를 쓰면 문법 오류다. 모델이 낸 셀렉터와
+    # 항목 좁히기(app/selector/narrow.py)가 그 문법을 쓴다 (2026-10-12)
+    "soupsieve<3",
     "apscheduler>=3.10,<4",
     "google-genai",
     # Qwen 도 이걸로 부른다. OpenAI 호환 엔드포인트라 base_url 만 다르다

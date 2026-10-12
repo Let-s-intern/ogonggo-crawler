@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 
 SCHEDULE = "schedule"
 MANUAL = "manual"
-# 한 번에 분석하는 공고 수의 상한 (2026-10-08 결정). 처음 적용할 때 쌓인 공고는 며칠에 걸쳐 나눠
-# 돈다
-MAX_PER_RUN = 200
+# 한 번에 분석하는 공고 수의 상한 (2026-10-08 결정, 2026-10-12 에 200 → 500). 처음 적용할 때
+# 쌓인 공고는 며칠에 걸쳐 나눠 돈다
+MAX_PER_RUN = 500
 MAX_FAILURES_IN_ROW = 5
 
 
