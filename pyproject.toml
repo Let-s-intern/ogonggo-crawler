@@ -11,6 +11,9 @@ dependencies = [
     "python-multipart",
     "httpx",
     "beautifulsoup4",
+    # 3.0(2026-10-12)부터 `:has()` 안의 여러 단계 셀렉터(`li:has(a.title p)`)를 문법 오류로 거절한다.
+    # 셀렉터 좁히기와 저장된 셀렉터가 이 모양을 쓰므로 2.x 에 묶는다 (app/selector/narrow.py)
+    "soupsieve<3",
     "apscheduler>=3.10,<4",
     "google-genai",
     # Qwen 도 이걸로 부른다. OpenAI 호환 엔드포인트라 base_url 만 다르다
