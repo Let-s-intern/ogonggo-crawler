@@ -11,6 +11,8 @@
 | 필수 칸이 빈 공고와 마감이 지난 공고는 보내지 않는다 | 끝난 공고가 검수 목록에 쌓인다 |
 | 꺼져 있거나 주소·키가 없으면 보내지 않고, 지금 보내기는 꺼져 있어도 보낸다 | 설정 전에 보낸다 |
 | 분류 배치가 끝나면 보낸다 | 켜 두어도 아무것도 가지 않는다 |
+| 원문을 함께 보내고, 원문이 없으면 본문을 보낸다 | 오공고 공고 상세에 원문이 비어 있다 |
+| 이미 보낸 공고에 원문만 채운다 | 원문 저장 전에 보낸 공고는 원문이 영영 비어 있다 |
 """
 
 from __future__ import annotations
@@ -424,3 +426,78 @@ async def test_분류_배치가_끝나면_보낸다(
     body = json.loads(seen[0].content)
     assert (body["companyName"], body["recruitmentType"]) == ("테스트회사", "ALWAYS_OPEN")
     assert delivery(conn, body["sourceUrl"])["spring_job_id"] == 9
+
+
+def set_raw(conn: sqlite3.Connection, seq: int, **values: str) -> None:
+    conn.execute("UPDATE raw_jobs SET raw_data_json = ? WHERE id = ?", (json.dumps(values), seq))
+
+
+async def test_원문을_함께_보내고_원문이_없으면_본문을_보낸다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    add_job(conn, 1)
+    set_raw(conn, 1, body="본문", source_text="원문 전체\n주요 업무")
+    add_job(conn, 2)
+    set_raw(conn, 2, body="본문만 있다")
+    add_job(conn, 3)
+    seen = mock(lambda request: created(40 + len(seen)), monkeypatch)
+
+    await spring.deliver_pending(conn, settings=SETTINGS)
+
+    texts = [json.loads(request.content)["sourceText"] for request in seen]
+    assert texts == ["원문 전체\n주요 업무", "본문만 있다", None]
+
+
+async def test_골라_보내기로_교체할_때도_원문을_보낸다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source_url = add_job(conn, 1)
+    set_raw(conn, 1, source_text="원문")
+    conn.execute(
+        "INSERT INTO spring_deliveries (source_url, spring_job_id, status) VALUES (?, 9, 'sent')",
+        (source_url,),
+    )
+    seen = mock(
+        lambda request: httpx.Response(200, json={"status": 200, "data": None}), monkeypatch
+    )
+
+    result = await spring.deliver_ids(conn, [1], settings=SETTINGS)
+
+    assert result.replaced == 1
+    assert seen[0].method == "PUT"
+    assert json.loads(seen[0].content)["sourceText"] == "원문"
+
+
+async def test_이미_보낸_공고에_원문만_채운다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for seq, job_id in ((1, 11), (2, 12), (3, 13), (4, 14)):
+        source_url = add_job(conn, seq)
+        conn.execute(
+            "INSERT INTO spring_deliveries (source_url, spring_job_id, status)"
+            " VALUES (?, ?, 'sent')",
+            (source_url, job_id),
+        )
+    set_raw(conn, 1, source_text="원문 하나")
+    set_raw(conn, 2, body="본문 둘")
+    set_raw(conn, 4, source_text="지워진 공고")
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/14/source-text"):
+            return httpx.Response(404, json={"status": 404, "code": "C", "message": "없다"})
+        return httpx.Response(200, json={"status": 200, "data": None})
+
+    seen = mock(handle, monkeypatch)
+
+    result = await spring.backfill_source_texts(conn, settings=SETTINGS)
+
+    assert (result.sent, result.empty, result.missing, result.failed) == (2, 1, 1, 0)
+    assert [request.method for request in seen] == ["PUT", "PUT", "PUT"]
+    assert seen[0].url.path == "/api/v1/internal/jobs/11/source-text"
+    assert [json.loads(request.content)["sourceText"] for request in seen[:2]] == [
+        "원문 하나",
+        "본문 둘",
+    ]
+
+    again = await spring.backfill_source_texts(conn, settings=SETTINGS, after_job_id=12)
+    assert (again.sent, again.missing) == (0, 1)
