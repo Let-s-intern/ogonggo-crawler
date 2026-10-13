@@ -1,0 +1,109 @@
+{# 렛커 콘텐츠 화면 조각 (`app/api/ui_letscareer_contents.py`). 위에서부터 숫자, 거르기·지금 태그, 콘텐츠 목록이다.
+   거르기는 이 조각을 다시 받는다 #}
+{% from "macros.html" import blank, empty_row, failure, notice_box, state, wait %}
+{% set query = "kind=" ~ filters.kind ~ "&field=" ~ filters.field ~ "&status=" ~ filters.status %}
+{% if running %}
+{# 태그를 붙이는 동안 몇 초마다 이 조각을 다시 받는다. 끝나면 이 줄이 빠져 멈춘다 #}
+<div hx-get="/ui/letscareer-contents?{{ query }}" hx-trigger="every 5s"
+     hx-target="#letscareer-contents-panel" hx-swap="innerHTML"></div>
+{% endif %}
+{% if error %}
+{{ failure("", error, title="오공고에서 받지 못했어요") }}
+{% endif %}
+{% if message %}
+{{ notice_box(message) }}
+{% endif %}
+
+<div class="grid gap-3 sm:grid-cols-3">
+  <div class="card px-4 py-3">
+    <div class="text-xs font-medium text-slate-500">전체 콘텐츠</div>
+    <div class="mt-1 text-2xl font-bold text-slate-900">{{ total }}<span class="ml-1 text-sm font-medium text-slate-500">건</span></div>
+    <div class="text-xs text-slate-500">오공고가 매시 10분에 렛츠커리어에서 받아요</div>
+  </div>
+  <div class="card px-4 py-3">
+    <div class="text-xs font-medium text-slate-500">태그 붙음</div>
+    <div class="mt-1 text-2xl font-bold text-emerald-700">{{ counts.tagged or 0 }}<span class="ml-1 text-sm font-medium text-slate-500">건</span></div>
+    <div class="text-xs text-slate-500">추천에 쓰여요</div>
+  </div>
+  <div class="card px-4 py-3">
+    <div class="text-xs font-medium text-slate-500">태그 없음</div>
+    <div class="mt-1 text-2xl font-bold {% if counts.untagged %}text-amber-700{% else %}text-slate-400{% endif %}">{{ counts.untagged or 0 }}<span class="ml-1 text-sm font-medium text-slate-500">건</span></div>
+    <div class="text-xs text-slate-500">새로 들어왔거나 내용이 바뀌었어요. 매일 공고 분석 때 붙어요</div>
+  </div>
+</div>
+
+<form class="mt-4 flex flex-wrap items-end gap-3" hx-get="/ui/letscareer-contents"
+      hx-target="#letscareer-contents-panel" hx-swap="innerHTML" hx-trigger="change">
+  <p class="!my-0">
+    <label for="lc-kind" class="block">종류</label>
+    <select id="lc-kind" name="kind">
+      <option value="">전체</option>
+      {% for value, label in kinds.items() %}
+      <option value="{{ value }}" {% if filters.kind == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </p>
+  <p class="!my-0">
+    <label for="lc-field" class="block">직군</label>
+    <select id="lc-field" name="field">
+      <option value="">전체</option>
+      {% for value, label in fields.items() %}
+      <option value="{{ value }}" {% if filters.field == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </p>
+  <p class="!my-0">
+    <label for="lc-status" class="block">태그</label>
+    <select id="lc-status" name="status">
+      <option value="">전체</option>
+      <option value="tagged" {% if filters.status == "tagged" %}selected{% endif %}>붙음</option>
+      <option value="untagged" {% if filters.status == "untagged" %}selected{% endif %}>없음</option>
+    </select>
+  </p>
+  <p class="!my-0 ml-auto flex items-center gap-2">
+    <button type="button" hx-post="/ui/letscareer-contents/tag" hx-target="#letscareer-contents-panel"
+            hx-swap="innerHTML" hx-disabled-elt="this" {% if running %}disabled{% endif %}>
+      {{ "태그 붙이는 중" if running else "지금 태그 붙이기" }}
+    </button>
+    {{ wait("시작하는 중") }}
+  </p>
+</form>
+
+<div class="card mt-3 overflow-x-auto">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th scope="col">종류</th>
+        <th scope="col">제목</th>
+        <th scope="col">직군</th>
+        <th scope="col">준비 단계</th>
+        <th scope="col">태그</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td class="whitespace-nowrap">{{ kinds.get(item.kind, item.kind) }}</td>
+        <td class="cell-text">
+          <a href="{{ web }}{{ item.path }}" target="_blank" rel="noopener" class="underline">{{ item.title }}</a>
+          {% if item.recruitmentEndAt %}<span class="block text-xs text-slate-500">모집 ~ {{ item.recruitmentEndAt[:10] }}</span>{% endif %}
+        </td>
+        <td class="whitespace-nowrap">
+          {% if not item.tagged %}{{ blank("-") }}
+          {% elif item.jobFields %}{% for value in item.jobFields %}<span class="block">{{ fields.get(value, value) }}</span>{% endfor %}
+          {% else %}{{ blank("공통") }}{% endif %}
+        </td>
+        <td>
+          {% if item.tagged %}{% for value in item.topics %}{{ topics.get(value, value) }}{% if not loop.last %}, {% endif %}{% else %}{{ blank("") }}{% endfor %}{% else %}{{ blank("-") }}{% endif %}
+        </td>
+        <td class="whitespace-nowrap">
+          {% if item.tagged %}{{ state("붙음", "ok") }}{% if item.taggedAt %}<span class="block text-xs text-slate-500">{{ item.taggedAt[:16] | replace("T", " ") }}</span>{% endif %}
+          {% else %}{{ state("없음", "warn") }}{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      {{ empty_row(5, "조건에 맞는 콘텐츠가 없어요" if total else "아직 받은 콘텐츠가 없어요") }}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

@@ -1,0 +1,17 @@
+{# 렛커 콘텐츠 화면 (2026-10-13 결정, LC-3457). 오공고 공고 상세에 추천하는 렛츠커리어 콘텐츠와 붙은 태그를 본다.
+   조각 하나(`fragments/letscareer_contents_panel.html`)로 돈다 #}
+{% extends "base.html" %}
+{% from "macros.html" import empty %}
+{% block title %}렛커 콘텐츠{% endblock %}
+{% block heading %}렛커 콘텐츠{% endblock %}
+{% block content %}
+<section>
+  <p class="text-sm text-slate-600">
+    오공고 공고 상세에 추천하는 렛츠커리어 프로그램·무료 자료집·블로그예요. AI 가 붙인 직군·준비 단계 태그로
+    공고마다 3개를 골라요. 태그가 없는 콘텐츠는 맞는 콘텐츠가 모자랄 때만 나와요.
+  </p>
+  <div id="letscareer-contents-panel" class="mt-3" hx-get="/ui/letscareer-contents" hx-trigger="load" hx-swap="innerHTML">
+    {{ empty("오공고에서 콘텐츠를 불러오는 중") }}
+  </div>
+</section>
+{% endblock %}

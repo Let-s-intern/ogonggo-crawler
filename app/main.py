@@ -30,6 +30,7 @@ from app.api import (
     ui_industries,
     ui_job_analyses,
     ui_job_analysis,
+    ui_letscareer_contents,
     ui_llm,
     ui_notify,
     ui_posting_add,
@@ -160,6 +161,7 @@ app.include_router(side.router)
 # 화면. API 라우터 뒤에 붙인다 — `/api/...` 가 먼저 잡힌다
 app.include_router(ui.router)
 app.include_router(ui_cost.router)
+app.include_router(ui_letscareer_contents.router)
 app.include_router(ui_fields.router)
 app.include_router(ui_crawlers.router)
 app.include_router(ui_tests.router)
