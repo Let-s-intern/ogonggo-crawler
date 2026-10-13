@@ -5,6 +5,15 @@
 
 ## 계약
 
+`GET /api/v1/internal/lets-career-contents`
+
+렛츠커리어 목록에 있는 콘텐츠 전부와 지금 붙은 태그. 화면 `렛커 콘텐츠` 가 쓴다 (2026-10-13).
+
+```json
+{"contentId": 3, "kind": "MATERIAL", "title": "…", "path": "/library/57/…", "tagged": true,
+ "jobFields": ["MARKETING_ADVERTISING"], "topics": ["CAREER_START"], "taggedAt": "…"}
+```
+
 `GET /api/v1/internal/lets-career-contents/tag-targets?size=N`
 
 ```json
@@ -50,6 +59,20 @@ class Target:
     description: str
     content_hash: str
     labels: tuple[str, ...] = field(default=())
+
+
+async def contents(client: httpx.AsyncClient) -> list[dict[str, Any]]:
+    """렛츠커리어 콘텐츠 전부와 지금 태그. 화면이 그대로 그린다."""
+    try:
+        response = await client.get(CONTENTS_PATH)
+    except httpx.HTTPError as exc:
+        raise OgonggoUnavailable(f"렛츠커리어 콘텐츠를 받지 못했다: {exc}") from exc
+    if response.status_code != 200:
+        raise OgonggoUnavailable(f"렛츠커리어 콘텐츠를 받지 못했다({response.status_code})")
+    data = response.json().get("data") or []
+    return (
+        [dict(item) for item in data if isinstance(item, Mapping)] if isinstance(data, list) else []
+    )
 
 
 async def targets(client: httpx.AsyncClient, size: int) -> list[Target]:

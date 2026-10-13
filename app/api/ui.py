@@ -109,6 +109,8 @@ NAV: tuple[tuple[str, str], ...] = (
     ("/work-experiences", "미래내일 일경험"),
     # 오공고 공고 분석 (2026-10-08 결정, LC-3446). 무엇을 분석해 보냈는지 본다
     ("/job-analyses", "공고 분석"),
+    # 렛츠커리어 콘텐츠 태그 (2026-10-13, LC-3457). 공고 상세 추천에 쓰는 태그를 본다
+    ("/letscareer-contents", "렛커 콘텐츠"),
     ("/cost", "비용"),
     ("/settings", "설정"),
 )
@@ -543,6 +545,12 @@ def prompt_rules_page(request: Request) -> HTMLResponse:
 def job_analyses_page(request: Request) -> HTMLResponse:
     """어떤 공고를 AI 로 분석했고 오공고로 어디까지 보냈는지 보는 화면."""
     return render_page(request, "pages/job_analyses.html")
+
+
+@router.get("/letscareer-contents", response_class=HTMLResponse)
+def letscareer_contents_page(request: Request) -> HTMLResponse:
+    """오공고 공고 상세 추천에 쓰는 렛츠커리어 콘텐츠와 붙은 태그를 보는 화면."""
+    return render_page(request, "pages/letscareer_contents.html")
 
 
 @router.get("/job-analysis", response_class=HTMLResponse)
