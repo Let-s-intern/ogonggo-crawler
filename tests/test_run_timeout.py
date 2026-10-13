@@ -48,14 +48,33 @@ SELECTORS: dict[str, Any] = {
 }
 
 
-def slow_fetcher(detail_delay: float) -> Fetcher:
-    """상세 응답만 늦추는 스텁. 목록까지는 정상적으로 지나간다."""
+def slow_fetcher(
+    detail_delay: float,
+    *,
+    served: int | None = None,
+    detail_started: asyncio.Event | None = None,
+) -> Fetcher:
+    """상세 응답만 늦추는 스텁. 목록까지는 정상적으로 지나간다.
+
+    `served` 를 주면 상세 응답을 그만큼만 바로 주고 그 뒤로는 끝없이 기다린다. 몇 건을 넣은 뒤에
+    시간 제한에 걸리는지를 시간(CI 속도)이 아니라 건수로 정하기 위해서다. `detail_started` 는 상세
+    요청이 처음 들어왔을 때 켜진다.
+    """
+    answered = 0
 
     async def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal answered
         if request.url.path == "/robots.txt":
             return httpx.Response(200, text=ROBOTS)
         if request.url.path == "/jobs/":
             return httpx.Response(200, text=LIST_HTML)
+        if detail_started is not None:
+            detail_started.set()
+        if served is not None:
+            if answered >= served:
+                await asyncio.Event().wait()
+            answered += 1
+            return httpx.Response(200, text=DETAIL_HTML)
         await asyncio.sleep(detail_delay)
         return httpx.Response(200, text=DETAIL_HTML)
 
@@ -123,14 +142,19 @@ async def test_제한_안에_끝나면_평소대로_success_다(conn: sqlite3.Co
 
 
 async def test_제한에_걸려도_그때까지_적재한_것은_남는다(conn: sqlite3.Connection) -> None:
-    """`raw_jobs` 는 append-only 다. 끊긴 실행이 이미 넣은 행을 되돌리지 않는다."""
+    """`raw_jobs` 는 append-only 다. 끊긴 실행이 이미 넣은 행을 되돌리지 않는다.
+
+    상세 셋만 답하고 넷째부터 멈춘다. 그래서 몇 건을 넣었는지는 CI 속도와 상관없이 셋이고, 제한은
+    반드시 걸린다. 제한은 셋을 넣기에 넉넉하게 둔다 — 0.35 초로 두었을 때 느린 CI 에서는 목록만
+    읽다가 끊겨 0건이었다.
+    """
     result = await run_workflow(
-        conn, 1, fetcher=slow_fetcher(detail_delay=0.1), timeout_seconds=0.35
+        conn, 1, fetcher=slow_fetcher(detail_delay=0.0, served=3), timeout_seconds=2.0
     )
 
     assert result.status == "timeout"
     stored = conn.execute("SELECT count(*) AS n FROM raw_jobs").fetchone()["n"]
-    assert 0 < stored < 25
+    assert stored == 3
     assert run_row(conn)["new_count"] == stored
 
 
@@ -154,10 +178,19 @@ async def test_시간_제한이_없으면_끝까지_돈다(conn: sqlite3.Connect
 
 async def test_밖에서_온_취소도_행을_남기고_올라간다(conn: sqlite3.Connection) -> None:
     """시간 제한이 아니라 프로세스가 내린 취소다. 상태는 timeout 이 아니라 failed 다."""
+    started = asyncio.Event()
     task = asyncio.create_task(
-        run_workflow(conn, 1, fetcher=slow_fetcher(detail_delay=5.0), timeout_seconds=30.0)
+        run_workflow(
+            conn,
+            1,
+            fetcher=slow_fetcher(detail_delay=5.0, detail_started=started),
+            timeout_seconds=30.0,
+        )
     )
-    await asyncio.sleep(0.1)
+    # 실행 행이 생기고 상세를 받는 중에 취소한다.
+    # 정해진 시간만 자면 느린 CI 에서는 행이 생기기 전에 취소된다
+    async with asyncio.timeout(10.0):
+        await started.wait()
     task.cancel()
 
     with pytest.raises(asyncio.CancelledError):
