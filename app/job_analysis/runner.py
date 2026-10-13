@@ -6,9 +6,13 @@
    한다**
 4. 멈춤 시각이 지나면 새 공고를 부르지 않는다. 남은 공고는 다음 실행이 이어서 한다
 5. AI 가 연달아 `MAX_FAILURES_IN_ROW` 번 실패하면 멈춘다 — 제공자가 죽은 날 공고마다 실패를 쌓지
-   않는다
+   않는다. 본문이 빈 공고는 AI 를 부르지 않으니 여기에 세지 않는다 — 서버가 최근 공고부터 내주므로
+   빈 공고가 위에 몰리면 실행마다 같은 자리에서 멈춘다 (2026-10-13)
+6. 같은 본문으로 `MAX_FAILURES_PER_JOB` 번 실패한 공고는 건너뛴다. 본문이 바뀌면 다시 센다.
+   상세 패널의 다시 분석은 그대로 된다 (2026-10-13)
 
-실패한 공고는 서버가 다음 실행에도 대상으로 내주므로 따로 다시 부를 목록을 두지 않는다.
+실패한 공고는 서버가 다음 실행에도 대상으로 내주므로 따로 다시 부를 목록을 두지 않는다. 건너뛴
+공고도 서버는 계속 내준다 — 그래서 크롤러가 센다.
 """
 
 from __future__ import annotations
@@ -34,6 +38,10 @@ MANUAL = "manual"
 # 쌓인 공고는 며칠에 걸쳐 나눠 돈다
 MAX_PER_RUN = 500
 MAX_FAILURES_IN_ROW = 5
+# AI 를 부르기 전에 난 실패. 연달아 실패한 수에 세지 않는다
+NOT_AI_FAILURE = "empty_body"
+# 같은 본문으로 이만큼 실패한 공고는 실행마다 다시 하지 않는다
+MAX_FAILURES_PER_JOB = 3
 
 
 @dataclass
@@ -44,6 +52,7 @@ class RunSummary:
     analyzed: int = 0
     sent: int = 0
     failed: int = 0
+    skipped: int = 0
     left: int = 0
     notes: list[str] = field(default_factory=list)
 
@@ -72,6 +81,10 @@ async def run_once(
             found = await ogonggo.targets(client, max_per_run)
             summary.targets = len(found)
             await _work(conn, client, found, version, summary, settings, stop_at, llm_client)
+        if summary.skipped:
+            summary.notes.append(
+                f"{MAX_FAILURES_PER_JOB}번 실패한 공고 {summary.skipped}건은 건너뛰었다"
+            )
     except (ogonggo.OgonggoUnavailable, guides.GuideError) as exc:
         summary.status = "failed"
         summary.notes.append(str(exc))
@@ -99,12 +112,13 @@ async def run_once(
             ),
         )
     logger.info(
-        "공고 분석 %s: 대상 %s, 분석 %s, 보냄 %s, 실패 %s, 남음 %s",
+        "공고 분석 %s: 대상 %s, 분석 %s, 보냄 %s, 실패 %s, 건너뜀 %s, 남음 %s",
         summary.status,
         summary.targets,
         summary.analyzed,
         summary.sent,
         summary.failed,
+        summary.skipped,
         summary.left,
     )
     return summary
@@ -135,7 +149,11 @@ async def _work(
                 f"AI 가 {MAX_FAILURES_IN_ROW}번 연달아 실패해 멈췄다. 설정 > AI 를 확인한다"
             )
             return
-        reuse = _reusable(store.get(conn, target.job_id), target, version.number)
+        row = store.get(conn, target.job_id)
+        if _given_up(row, target):
+            summary.skipped += 1
+            continue
+        reuse = _reusable(row, target, version.number)
         store.save_target(conn, target.job_id, target.source, target.job, target.content_hash)
         if reuse is None:
             try:
@@ -152,7 +170,8 @@ async def _work(
                     conn, target.job_id, store.FAILED, str(exc), run_id=summary.run_id, counted=True
                 )
                 summary.failed += 1
-                failures_in_row += 1
+                if exc.reason != NOT_AI_FAILURE:
+                    failures_in_row += 1
                 continue
             failures_in_row = 0
             reuse = store.Analyzed(
@@ -218,6 +237,16 @@ def _reusable(
     if row["content_hash"] != target.content_hash or row["guide_version"] != version:
         return None
     return analyzed_of(row)
+
+
+def _given_up(row: sqlite3.Row | None, target: ogonggo.Target) -> bool:
+    """같은 본문으로 `MAX_FAILURES_PER_JOB` 번 실패한 공고인가."""
+    return (
+        row is not None
+        and row["status"] == store.FAILED
+        and row["content_hash"] == target.content_hash
+        and int(row["attempts"]) >= MAX_FAILURES_PER_JOB
+    )
 
 
 def close_orphan_runs(conn: sqlite3.Connection) -> int:

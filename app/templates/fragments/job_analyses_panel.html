@@ -30,7 +30,7 @@
   <div class="card px-4 py-3">
     <div class="text-xs font-medium text-slate-500">확인 필요</div>
     <div class="mt-1 text-2xl font-bold {% if counts.failed or counts.unsent %}text-red-700{% else %}text-slate-400{% endif %}">{{ counts.failed + counts.unsent }}<span class="ml-1 text-sm font-medium text-slate-500">건</span></div>
-    <div class="text-xs text-slate-500">분석 실패 {{ counts.failed }} · 못 보냄 {{ counts.unsent }} · 다음 실행에 다시 해요</div>
+    <div class="text-xs text-slate-500">분석 실패 {{ counts.failed }} · 못 보냄 {{ counts.unsent }} · 다음 실행에 다시 해요. 같은 공고가 {{ max_failures_per_job }}번 실패하면 건너뛰어요</div>
   </div>
   <div class="card px-4 py-3">
     <div class="text-xs font-medium text-slate-500">오늘 비용</div>

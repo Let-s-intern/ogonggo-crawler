@@ -57,7 +57,10 @@ def save_target(
     job: dict[str, Any],
     content_hash: str,
 ) -> None:
-    """서버가 준 공고를 행에 적는다. 이미 있으면 공고 글과 해시만 바꾼다."""
+    """서버가 준 공고를 행에 적는다. 이미 있으면 공고 글과 해시만 바꾼다.
+
+    해시가 바뀌면 시도 수를 0 으로 돌린다 — 새 본문은 처음부터 다시 센다.
+    """
     conn.execute(
         """
         INSERT INTO job_analysis_records
@@ -67,6 +70,7 @@ def save_target(
         ON CONFLICT (ogonggo_job_id) DO UPDATE SET
                source = excluded.source, company = excluded.company, title = excluded.title,
                source_url = excluded.source_url, posting_json = excluded.posting_json,
+               attempts = CASE WHEN content_hash = excluded.content_hash THEN attempts ELSE 0 END,
                content_hash = excluded.content_hash, updated_at = datetime('now')
         """,
         (
