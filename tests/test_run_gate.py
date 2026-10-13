@@ -10,6 +10,7 @@ import asyncio
 import logging
 import pathlib
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 import pytest
@@ -33,13 +34,26 @@ class Tracker:
         self.peak = 0
         self.done = 0
 
-    async def work(self, gate: RunGate, seconds: float = 0.05) -> None:
+    async def work(
+        self, gate: RunGate, seconds: float = 0.05, hold: asyncio.Event | None = None
+    ) -> None:
+        """`hold` 를 주면 그 신호가 올 때까지 안에 머문다. 시간이 아니라 신호로 나가게 한다."""
         async with gate.slot():
             self.inside += 1
             self.peak = max(self.peak, self.inside)
-            await asyncio.sleep(seconds)
+            if hold is None:
+                await asyncio.sleep(seconds)
+            else:
+                await hold.wait()
             self.inside -= 1
             self.done += 1
+
+
+async def until(condition: Callable[[], bool], timeout: float = 5.0) -> None:
+    """조건이 설 때까지 기다린다. 정해진 시간만 자고 단정하면 느린 CI 에서 깨진다."""
+    async with asyncio.timeout(timeout):
+        while not condition():
+            await asyncio.sleep(0.01)
 
 
 async def test_상한만큼만_동시에_들어간다() -> None:
@@ -84,17 +98,19 @@ async def test_상한을_내려도_진행_중인_실행은_끊기지_않는다()
     gate = RunGate(lambda: limit)
     tracker = Tracker()
 
-    running = [asyncio.create_task(tracker.work(gate, seconds=0.2)) for _ in range(3)]
-    await asyncio.sleep(0.05)
-    assert tracker.inside == 3
+    release = asyncio.Event()
+    running = [asyncio.create_task(tracker.work(gate, hold=release)) for _ in range(3)]
+    await until(lambda: tracker.inside == 3)
 
     limit = 1
-    # 상한 아래로 내려갈 때까지 새 실행은 들어가지 못한다
+    # 상한 아래로 내려갈 때까지 새 실행은 들어가지 못한다. 진행 중인 셋은 신호를 줄 때까지 안에 있다
     waiting = asyncio.create_task(tracker.work(gate, seconds=0.01))
-    await asyncio.sleep(0.05)
+    for _ in range(10):
+        await asyncio.sleep(0)
     assert tracker.inside == 3
     assert not waiting.done()
 
+    release.set()
     await asyncio.gather(*running, waiting)
     assert tracker.done == 4
     assert gate.active == 0
