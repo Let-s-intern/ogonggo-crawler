@@ -37,7 +37,7 @@ def test_씨앗의_enum_이름은_대문자_모양이고_겹치지_않는다() -
         ("영업", "B2C영업", ("SALES", "SALES_B2C")),
         ("IT·개발", "VR·AR·3D", ("IT_DEVELOPMENT", "IT_XR_3D")),
         ("게임", "게임3D모델링", ("GAME", "GAME_MODELING_3D")),
-        ("디자인", "3D·VFX", ("DESIGN", "DESIGN_VFX_3D")),
+        ("디자인", "3D·VFX", ("PLANNING_STRATEGY", "DESIGN_VFX_3D")),
     ],
 )
 def test_숫자가_든_이름도_통째로_옮긴다(field: str, role: str, expected: tuple[str, str]) -> None:
@@ -47,3 +47,19 @@ def test_숫자가_든_이름도_통째로_옮긴다(field: str, role: str, expe
 
 def test_직군을_모르면_직무도_보내지_않는다() -> None:
     assert job_roles.enum_names("없는 직군", "B2B영업") == (None, None)
+
+
+@pytest.mark.parametrize(
+    ("field", "role", "expected"),
+    [
+        ("AI·데이터", "데이터분석가", ("IT_DEVELOPMENT", "AI_DATA_ANALYST")),
+        ("미디어·엔터", None, ("MARKETING_ADVERTISING", None)),
+        ("회계·세무·재무", None, ("HR_GENERAL_AFFAIRS", None)),
+        ("게임", None, ("GAME", None)),
+    ],
+)
+def test_오공고에서_합친_직군은_합쳐진_직군으로_보낸다(
+    field: str, role: str | None, expected: tuple[str, str | None]
+) -> None:
+    """2026-10-12 오공고가 직군 여섯 개를 다섯 직군으로 합쳤다. 직무 이름은 그대로다."""
+    assert job_roles.enum_names(field, role) == expected

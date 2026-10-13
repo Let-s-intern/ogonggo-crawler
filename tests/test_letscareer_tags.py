@@ -7,6 +7,7 @@ AI 와 오공고 서버를 부르지 않는다. 제공자는 가짜로, 서버�
 | 받은 콘텐츠에 태그를 붙여 해시와 함께 보낸다 | 오공고가 추천할 콘텐츠가 없다 |
 | 목록 밖 이름은 버리고 나머지를 보낸다 | 오공고가 400 으로 통째로 거절한다 |
 | 준비 단계 목록이 오공고 enum 과 같다 | 오공고가 400 으로 거절한다 |
+| 직군은 다섯 묶음으로만 보내고 묶음 밖 직군은 옮기거나 버린다 | 오공고 추천과 묶음이 어긋난다 |
 | AI 가 연달아 실패하면 멈춘다 | 제공자가 죽은 날 콘텐츠마다 실패가 쌓인다 |
 """
 
@@ -30,9 +31,11 @@ from app.letscareer_tags import runner, tagger
 from app.llm.base import LlmCallError
 from tests.test_job_analysis import FakeProvider
 
-SERVER_TOPICS = pathlib.Path(__file__).resolve().parents[2] / (
-    "ogonggo-server/ogonggo-core/src/main/kotlin/com/ogonggo/core/letscareercontent/domain/LetsCareerContentTopic.kt"
+SERVER_DOMAIN = pathlib.Path(__file__).resolve().parents[2] / (
+    "ogonggo-server/ogonggo-core/src/main/kotlin/com/ogonggo/core/letscareercontent/domain"
 )
+SERVER_TOPICS = SERVER_DOMAIN / "LetsCareerContentTopic.kt"
+SERVER_FIELD_GROUP = SERVER_DOMAIN / "LetsCareerContentFieldGroup.kt"
 
 
 def target(content_id: int, content_hash: str = "h") -> dict[str, Any]:
@@ -136,3 +139,27 @@ def test_준비_단계_목록이_오공고_enum_과_같다() -> None:
     source = SERVER_TOPICS.read_text(encoding="utf-8")
     names = re.findall(r"^\s+([A-Z_]+)\(\d+,", source, flags=re.MULTILINE)
     assert names == list(tagger.TOPICS)
+
+
+def test_직군은_다섯_묶음으로만_보내고_묶음_밖_직군은_옮기거나_버린다() -> None:
+    answer = tagger.TagAnswer(
+        job_fields=["AI_DATA", "IT_DEVELOPMENT", "MEDIA_ENTERTAINMENT", "GAME"],
+        topics=["PORTFOLIO"],
+    )
+
+    tags, dropped = tagger.settle(answer)
+
+    assert tags == {
+        "jobFields": ["IT_DEVELOPMENT", "MARKETING_ADVERTISING"],
+        "jobRoles": [],
+        "topics": ["PORTFOLIO"],
+    }
+    assert dropped == ("GAME",)
+
+
+def test_직군_묶음이_오공고와_같다() -> None:
+    if not SERVER_FIELD_GROUP.exists():
+        pytest.skip("오공고 서버 저장소가 옆에 없거나 묶음이 아직 없다")
+    source = SERVER_FIELD_GROUP.read_text(encoding="utf-8")
+    taggable = source.split("TAGGABLE", 1)[1].split(")", 1)[0]
+    assert re.findall(r"JobField\.([A-Z_]+)", taggable) == list(tagger.FIELDS)

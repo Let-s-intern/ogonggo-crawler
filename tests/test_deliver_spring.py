@@ -175,7 +175,8 @@ def test_직군_직무는_오공고_enum_이름으로_보낸다() -> None:
 
     # 직군에 속하지 않는 직무나 목록 밖 직군은 보내지 않는다. 오공고가 400 으로 거절한다
     body = spring.payload(job_row(job_field="디자인", job_role="서버·백엔드"))
-    assert (body["jobField"], body["jobRole"]) == ("DESIGN", None)
+    # 2026-10-12 오공고가 디자인 직군을 기획·전략으로 합쳤다
+    assert (body["jobField"], body["jobRole"]) == ("PLANNING_STRATEGY", None)
     body = spring.payload(job_row(job_field="옛 직군", job_role="서버·백엔드"))
     assert (body["jobField"], body["jobRole"]) == (None, None)
 
@@ -324,21 +325,29 @@ async def test_지금_보내기는_필수_칸만_본다(
 async def test_임시로_정한_직군과_인턴부터_3년차까지만_보낸다(
     conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """2026-10-06 결정. 연수는 원문에 있을 때만 차므로 비면 보낸다. 지금 보내기도 같다."""
+    """2026-10-06 결정. 연수는 원문에 있을 때만 차므로 비면 보낸다. 지금 보내기도 같다.
+
+    2026-10-12 오공고가 직군을 다섯으로 합쳐 디자인처럼 합쳐진 직군도 보낸다.
+    """
     marketing = add_job(conn, 1, job_field="마케팅·광고", job_role="퍼포먼스마케팅")
     md = add_job(conn, 2, job_field="상품기획·MD", job_role="온라인MD", experience_min_years="3")
-    add_job(conn, 3, job_field="디자인", job_role="웹디자인")
+    design = add_job(conn, 3, job_field="디자인", job_role="웹디자인")
     add_job(conn, 4, job_field="영업", job_role="B2B영업", experience_min_years="5")
     data = add_job(conn, 5, job_field="AI·데이터", job_role="데이터엔지니어")
     seen = mock(lambda request: created(1), monkeypatch)
 
-    assert spring.pending_count(conn, "2026-09-01 00:00:00") == 3
+    assert spring.pending_count(conn, "2026-09-01 00:00:00") == 4
     automatic = await spring.deliver_pending(conn, settings=SETTINGS)
     add_job(conn, 6, job_field="교육", job_role="입시학원강사", industry=None)
     forced = await spring.deliver_pending(conn, settings=SETTINGS, force=True)
 
-    assert (automatic.sent, forced.sent) == (3, 0)
-    assert [json.loads(request.content)["sourceUrl"] for request in seen] == [marketing, md, data]
+    assert (automatic.sent, forced.sent) == (4, 0)
+    assert [json.loads(request.content)["sourceUrl"] for request in seen] == [
+        marketing,
+        md,
+        design,
+        data,
+    ]
 
 
 async def test_골라_보내기는_직군과_연차를_보지_않는다(
