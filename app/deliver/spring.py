@@ -32,7 +32,14 @@
   공고에 그대로 돈다. 골라 보내기는 사람이 고른 것이라 좁히지 않는다. 풀 때는 `TARGET_SQL` 을
   지운다
 
-공고 본문과 판정 근거는 보내지 않는다 — 오공고에 받는 칸이 없다.
+## 원문도 보낸다 (2026-10-12, LC-3456)
+
+원문 페이지에서 읽은 글(`raw_jobs.raw_data_json` 의 `source_text`)을 `sourceText` 로 함께 보낸다.
+오공고가 저장해 공고 상세에 내준다. 원문이 없으면 본문으로 대신한다 — 분류에 보내는 글과 같다
+(`app/classify/store.py`). 직무별로 나뉜 공고는 같은 원문을 받는다. 판정 근거는 보내지 않는다.
+
+원문을 저장하기 전에 보낸 공고는 `python -m app.cli spring backfill-source-text` 로 원문만 채운다
+(`backfill_source_texts`). 교체(PUT)는 운영자가 고친 칸까지 덮으므로 원문만 바꾸는 API 를 쓴다.
 
 ## 시각
 
@@ -62,6 +69,7 @@ from app.deliver import settings as store
 logger = logging.getLogger(__name__)
 
 JOBS_PATH = "/api/v1/internal/jobs"
+SOURCE_TEXT_PATH = JOBS_PATH + "/{job_id}/source-text"
 API_KEY_HEADER = "X-Internal-Api-Key"
 TIMEOUT_SECONDS = 20.0
 # 이만큼 실패한 공고는 더 보내지 않는다. 같은 거절을 분류 때마다 되풀이하지 않는다
@@ -92,6 +100,11 @@ _CONTENT_FIELDS: tuple[tuple[str, str], ...] = (
     ("hiringProcess", "hiring_process"),
     ("recruitmentNotice", "recruitment_notice"),
 )
+
+# 오공고로 보내는 원문. 원문이 없으면 본문이다. 정규화 행 `n` 의 `raw_job_id` 로 원본 행을 찾는다
+SOURCE_TEXT_SQL = """(SELECT coalesce(nullif(json_extract(r.raw_data_json, '$.source_text'), ''),
+                             json_extract(r.raw_data_json, '$.body'))
+                     FROM raw_jobs r WHERE r.id = n.raw_job_id)"""
 
 _DATETIME = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
 _INTEGER = re.compile(r"\d{1,9}")
@@ -172,6 +185,8 @@ def payload(job: Mapping[str, Any] | sqlite3.Row) -> dict[str, Any]:
         "applyEmail": _text(job["application_email"]),
         "inquiryEmail": _text(job["inquiry_email"]),
         "sourceUrl": _text(job["source_url"]),
+        # 정규화 행만 넘긴 호출(화면·테스트)에는 원문 칸이 없다
+        "sourceText": _text(job["source_text"]) if "source_text" in job.keys() else None,
     }
     if body["recruitmentType"] == "ALWAYS_OPEN":
         # 오공고는 상시 채용에 종료 일시가 있으면 받지 않는다
@@ -289,7 +304,7 @@ def pending(
     """
     return conn.execute(
         f"""
-        SELECT n.* FROM normalized_jobs n
+        SELECT n.*, {SOURCE_TEXT_SQL} AS source_text FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
          WHERE {_UNSENT} AND {_OPEN} AND {TARGET_SQL}
            AND {COMPLETE_SQL if complete else _READY}
@@ -396,7 +411,7 @@ async def deliver_ids(
         marks = ",".join("?" for _ in wanted)
         rows = conn.execute(
             f"""
-            SELECT n.*,
+            SELECT n.*, {SOURCE_TEXT_SQL} AS source_text,
                    (SELECT d.spring_job_id FROM spring_deliveries d
                      WHERE d.source_url = n.source_url AND d.status = 'sent') AS sent_job_id
               FROM normalized_jobs n
@@ -424,6 +439,89 @@ async def deliver_ids(
         return result
     finally:
         _running.release()
+
+
+@dataclass
+class BackfillResult:
+    """원문 채우기 한 번의 결과. `missing` 은 오공고에서 지워져 404 가 온 공고다."""
+
+    sent: int = 0
+    empty: int = 0
+    missing: int = 0
+    failed: int = 0
+    reason: str = ""
+    errors: list[str] = field(default_factory=list)
+
+
+async def backfill_source_texts(
+    conn: sqlite3.Connection,
+    *,
+    settings: Settings | None = None,
+    after_job_id: int = 0,
+) -> BackfillResult:
+    """이미 보낸 공고에 원문만 채운다 (LC-3456). 원문 저장 전에 보낸 공고에 한 번 돌린다.
+
+    `spring_deliveries` 에 오공고 id 가 있는 공고를 id 순으로 돈다. 같은 원문을 다시 보내도 결과가
+    같아 중간에 끊겨도 처음부터 다시 돌리면 된다. `after_job_id` 를 주면 그 id 다음부터 돈다.
+    원문도 본문도 없는 공고는 건너뛴다. 켜기·끄기는 보지 않는다 — 사람이 직접 돌리는 명령이다.
+    """
+    resolved = settings or get_settings()
+    config = store.read_config(conn)
+    key = resolved.ogonggo_internal_api_key.strip()
+    if not config.configured:
+        return BackfillResult(reason="오공고 주소가 비어 있다. 설정 > 오공고 전송에서 넣는다")
+    if not key:
+        return BackfillResult(reason="OGONGGO_INTERNAL_API_KEY 가 비어 있다. 크롤러 .env 에 넣는다")
+    rows = conn.execute(
+        f"""
+        SELECT d.spring_job_id, n.source_url, {SOURCE_TEXT_SQL} AS source_text
+          FROM spring_deliveries d
+          JOIN normalized_jobs n ON n.source_url = d.source_url
+         WHERE d.status = 'sent' AND d.spring_job_id > ?
+         ORDER BY d.spring_job_id
+        """,
+        (after_job_id,),
+    ).fetchall()
+    result = BackfillResult()
+    async with httpx.AsyncClient(
+        base_url=config.url.strip().rstrip("/"),
+        headers={API_KEY_HEADER: key},
+        timeout=TIMEOUT_SECONDS,
+        transport=transport,
+    ) as client:
+        for row in rows:
+            job_id = int(row["spring_job_id"])
+            text = _text(row["source_text"])
+            if text is None:
+                result.empty += 1
+                continue
+            try:
+                response = await client.put(
+                    SOURCE_TEXT_PATH.format(job_id=job_id), json={"sourceText": text}
+                )
+            except httpx.HTTPError as exc:
+                error = f"{type(exc).__name__}: {exc}"
+            else:
+                if response.status_code == 200:
+                    result.sent += 1
+                    continue
+                if response.status_code == 404:
+                    result.missing += 1
+                    continue
+                error = f"{response.status_code} {_message(response)}"
+            logger.warning(
+                "오공고 공고 %s 에 원문을 채우지 못했다 %s: %s", job_id, row["source_url"], error
+            )
+            result.failed += 1
+            result.errors.append(f"{job_id} {row['source_url']}: {error}")
+    logger.info(
+        "오공고 원문 채우기: 보냄 %s건, 원문 없음 %s건, 오공고에 없음 %s건, 실패 %s건",
+        result.sent,
+        result.empty,
+        result.missing,
+        result.failed,
+    )
+    return result
 
 
 async def deliver_after_classify(conn: sqlite3.Connection, settings: Settings | None) -> None:
