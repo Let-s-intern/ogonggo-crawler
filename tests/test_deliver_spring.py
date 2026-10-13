@@ -501,3 +501,17 @@ async def test_이미_보낸_공고에_원문만_채운다(
 
     again = await spring.backfill_source_texts(conn, settings=SETTINGS, after_job_id=12)
     assert (again.sent, again.missing) == (0, 1)
+
+
+def test_원문은_줄마다_공백을_줄이고_빈_줄은_한_줄만_남긴다() -> None:
+    raw = (
+        "\n\n   동원은 뭐하니?\n          \n\n\n\n동원산업  바다로,\t세계로"
+        "\n\n\n   매출액\n[단위:억원]\n\n"
+    )
+
+    assert (
+        spring.clean_source_text(raw)
+        == "동원은 뭐하니?\n\n동원산업 바다로, 세계로\n\n매출액\n[단위:억원]"
+    )
+    assert spring.clean_source_text(" \n\t\n") is None
+    assert spring.clean_source_text(None) is None

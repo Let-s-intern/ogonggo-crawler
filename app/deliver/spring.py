@@ -38,6 +38,10 @@
 오공고가 저장해 공고 상세에 내준다. 원문이 없으면 본문으로 대신한다 — 분류에 보내는 글과 같다
 (`app/classify/store.py`). 직무별로 나뉜 공고는 같은 원문을 받는다. 판정 근거는 보내지 않는다.
 
+원문은 페이지 마크업의 들여쓰기와 빈 줄이 그대로 남아 글보다 공백이 많다. 보낼 때 줄마다 공백을
+한 칸으로 줄이고 빈 줄은 한 줄만 남긴다 (`clean_source_text`). 크롤러 DB 의 원문은 그대로 둔다 —
+분류 결과가 원문의 글자 위치를 가리킨다.
+
 원문을 저장하기 전에 보낸 공고는 `python -m app.cli spring backfill-source-text` 로 원문만 채운다
 (`backfill_source_texts`). 교체(PUT)는 운영자가 고친 칸까지 덮으므로 원문만 바꾸는 API 를 쓴다.
 
@@ -105,6 +109,8 @@ _CONTENT_FIELDS: tuple[tuple[str, str], ...] = (
 SOURCE_TEXT_SQL = """(SELECT coalesce(nullif(json_extract(r.raw_data_json, '$.source_text'), ''),
                              json_extract(r.raw_data_json, '$.body'))
                      FROM raw_jobs r WHERE r.id = n.raw_job_id)"""
+
+_SPACES = re.compile(r"[ \t\u00a0\u3000\u200b]+")
 
 _DATETIME = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
 _INTEGER = re.compile(r"\d{1,9}")
@@ -186,12 +192,32 @@ def payload(job: Mapping[str, Any] | sqlite3.Row) -> dict[str, Any]:
         "inquiryEmail": _text(job["inquiry_email"]),
         "sourceUrl": _text(job["source_url"]),
         # 정규화 행만 넘긴 호출(화면·테스트)에는 원문 칸이 없다
-        "sourceText": _text(job["source_text"]) if "source_text" in job.keys() else None,
+        "sourceText": clean_source_text(job["source_text"])
+        if "source_text" in job.keys()
+        else None,
     }
     if body["recruitmentType"] == "ALWAYS_OPEN":
         # 오공고는 상시 채용에 종료 일시가 있으면 받지 않는다
         body["recruitmentEndAt"] = None
     return body
+
+
+def clean_source_text(value: Any) -> str | None:
+    """원문의 공백을 줄인다. 줄 안 공백은 한 칸, 이어진 빈 줄은 한 줄로. 글이 없으면 null."""
+    if value is None:
+        return None
+    lines: list[str] = []
+    blank = False
+    for line in str(value).splitlines():
+        line = _SPACES.sub(" ", line).strip()
+        if not line:
+            blank = bool(lines)
+            continue
+        if blank:
+            lines.append("")
+            blank = False
+        lines.append(line)
+    return "\n".join(lines) or None
 
 
 def missing(body: Mapping[str, Any]) -> list[str]:
@@ -495,7 +521,7 @@ async def backfill_source_texts(
     ) as client:
         for row in rows:
             job_id = int(row["spring_job_id"])
-            text = _text(row["source_text"])
+            text = clean_source_text(row["source_text"])
             if text is None:
                 result.empty += 1
                 continue
