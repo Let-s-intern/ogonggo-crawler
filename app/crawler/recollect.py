@@ -360,7 +360,14 @@ async def _fetch(
     fresh_body = detail.fields.get("body", "") or (listed.extra.get("body", "") if listed else "")
     if not fresh_body.strip():
         raise DetailEmptyError("상세를 열었지만 본문이 비었다. 지금 저장된 값을 둔다")
-    record = _record(item, detail.fields, detail.source_text, detail.cover_image, detail.site_icon)
+    record = _record(
+        item,
+        detail.fields,
+        detail.source_text,
+        detail.cover_image,
+        detail.site_icon,
+        detail.body_html,
+    )
     return record, tuple(detail.notes)
 
 

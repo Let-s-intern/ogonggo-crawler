@@ -20,6 +20,7 @@ from bs4 import BeautifulSoup
 
 from app.crawler.api_source import build_detail
 from app.crawler.parser import parse_detail, source_text, structured_text
+from app.deliver.source_html import clean_html
 from app.selector.api_schema import validate_api_config
 from app.selector.schema import DetailSelectors, validate_selectors
 
@@ -296,3 +297,14 @@ def test_every_samsung_track_keeps_its_own_requirement() -> None:
     text = api_source_text("삼성")
 
     assert text.count("2년 이상 유관경력 보유하신 분") == 13
+
+
+@pytest.mark.parametrize("site", sorted(HTML_DETAIL))
+def test_every_html_detail_keeps_the_body_html_for_ogonggo(site: str) -> None:
+    """본문 영역 HTML 을 그대로 남긴다. 오공고 공고 상세가 원래 공고처럼 그린다 (LC-3456)."""
+    result = parsed(site)
+
+    assert TAG.search(result.body_html), site
+    cleaned = clean_html(result.body_html, "https://example.com/jobs/1")
+    assert cleaned is not None
+    assert "<script" not in cleaned and "style=" not in cleaned and "class=" not in cleaned

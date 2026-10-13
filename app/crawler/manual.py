@@ -210,6 +210,7 @@ def _detail(html: str, *, drop_popups: bool) -> DetailParseResult:
         fields=fields,
         missing=[],
         source_text=f"{text}\n{structured}" if structured else text,
+        body_html=str(container),
         images=images,
         cover_image=cover,
         site_icon=icon,

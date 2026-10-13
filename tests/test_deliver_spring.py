@@ -11,7 +11,7 @@
 | 필수 칸이 빈 공고와 마감이 지난 공고는 보내지 않는다 | 끝난 공고가 검수 목록에 쌓인다 |
 | 꺼져 있거나 주소·키가 없으면 보내지 않고, 지금 보내기는 꺼져 있어도 보낸다 | 설정 전에 보낸다 |
 | 분류 배치가 끝나면 보낸다 | 켜 두어도 아무것도 가지 않는다 |
-| 원문을 함께 보내고, 원문이 없으면 본문을 보낸다 | 오공고 공고 상세에 원문이 비어 있다 |
+| 본문 HTML 을 정리해 보내고, 없으면 본문 글자를 문단으로 보낸다 | 원문에 다른 공고가 섞인다 |
 | 이미 보낸 공고에 원문만 채운다 | 원문 저장 전에 보낸 공고는 원문이 영영 비어 있다 |
 """
 
@@ -432,27 +432,38 @@ def set_raw(conn: sqlite3.Connection, seq: int, **values: str) -> None:
     conn.execute("UPDATE raw_jobs SET raw_data_json = ? WHERE id = ?", (json.dumps(values), seq))
 
 
-async def test_원문을_함께_보내고_원문이_없으면_본문을_보낸다(
+async def test_본문_HTML을_정리해_보내고_없으면_본문_글자를_문단으로_보낸다(
     conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     add_job(conn, 1)
-    set_raw(conn, 1, body="본문", source_text="원문 전체\n주요 업무")
+    set_raw(
+        conn,
+        1,
+        body="주요 업무",
+        source_text="다른 공고 목록까지 섞인 원문",
+        body_html='<div class="x"><h3 style="color:red">주요 업무</h3><script>x()</script></div>',
+    )
     add_job(conn, 2)
-    set_raw(conn, 2, body="본문만 있다")
+    set_raw(conn, 2, body="첫 줄\n둘째 줄\n\n\n<다음 문단>")
     add_job(conn, 3)
     seen = mock(lambda request: created(40 + len(seen)), monkeypatch)
 
     await spring.deliver_pending(conn, settings=SETTINGS)
 
-    texts = [json.loads(request.content)["sourceText"] for request in seen]
-    assert texts == ["원문 전체\n주요 업무", "본문만 있다", None]
+    sent = [json.loads(request.content)["sourceHtml"] for request in seen]
+    assert sent == [
+        "<div><h3>주요 업무</h3></div>",
+        "<p>첫 줄<br>둘째 줄</p><p>&lt;다음 문단&gt;</p>",
+        None,
+    ]
+    assert "sourceText" not in json.loads(seen[0].content)
 
 
 async def test_골라_보내기로_교체할_때도_원문을_보낸다(
     conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     source_url = add_job(conn, 1)
-    set_raw(conn, 1, source_text="원문")
+    set_raw(conn, 1, body_html="<p>원문</p>")
     conn.execute(
         "INSERT INTO spring_deliveries (source_url, spring_job_id, status) VALUES (?, 9, 'sent')",
         (source_url,),
@@ -465,7 +476,7 @@ async def test_골라_보내기로_교체할_때도_원문을_보낸다(
 
     assert result.replaced == 1
     assert seen[0].method == "PUT"
-    assert json.loads(seen[0].content)["sourceText"] == "원문"
+    assert json.loads(seen[0].content)["sourceHtml"] == "<p>원문</p>"
 
 
 async def test_이미_보낸_공고에_원문만_채운다(
@@ -478,40 +489,26 @@ async def test_이미_보낸_공고에_원문만_채운다(
             " VALUES (?, ?, 'sent')",
             (source_url, job_id),
         )
-    set_raw(conn, 1, source_text="원문 하나")
+    set_raw(conn, 1, body_html="<p>원문 하나</p>")
     set_raw(conn, 2, body="본문 둘")
-    set_raw(conn, 4, source_text="지워진 공고")
+    set_raw(conn, 4, body_html="<p>지워진 공고</p>")
 
     def handle(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/14/source-text"):
+        if request.url.path.endswith("/14/source-html"):
             return httpx.Response(404, json={"status": 404, "code": "C", "message": "없다"})
         return httpx.Response(200, json={"status": 200, "data": None})
 
     seen = mock(handle, monkeypatch)
 
-    result = await spring.backfill_source_texts(conn, settings=SETTINGS)
+    result = await spring.backfill_source_html(conn, settings=SETTINGS)
 
     assert (result.sent, result.empty, result.missing, result.failed) == (2, 1, 1, 0)
     assert [request.method for request in seen] == ["PUT", "PUT", "PUT"]
-    assert seen[0].url.path == "/api/v1/internal/jobs/11/source-text"
-    assert [json.loads(request.content)["sourceText"] for request in seen[:2]] == [
-        "원문 하나",
-        "본문 둘",
+    assert seen[0].url.path == "/api/v1/internal/jobs/11/source-html"
+    assert [json.loads(request.content)["sourceHtml"] for request in seen[:2]] == [
+        "<p>원문 하나</p>",
+        "<p>본문 둘</p>",
     ]
 
-    again = await spring.backfill_source_texts(conn, settings=SETTINGS, after_job_id=12)
+    again = await spring.backfill_source_html(conn, settings=SETTINGS, after_job_id=12)
     assert (again.sent, again.missing) == (0, 1)
-
-
-def test_원문은_줄마다_공백을_줄이고_빈_줄은_한_줄만_남긴다() -> None:
-    raw = (
-        "\n\n   동원은 뭐하니?\n          \n\n\n\n동원산업  바다로,\t세계로"
-        "\n\n\n   매출액\n[단위:억원]\n\n"
-    )
-
-    assert (
-        spring.clean_source_text(raw)
-        == "동원은 뭐하니?\n\n동원산업 바다로, 세계로\n\n매출액\n[단위:억원]"
-    )
-    assert spring.clean_source_text(" \n\t\n") is None
-    assert spring.clean_source_text(None) is None

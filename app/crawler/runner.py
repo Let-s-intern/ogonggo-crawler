@@ -537,7 +537,14 @@ async def _collect(
         return ItemResult(source_url=item.link, state=KNOWN, fields={})
 
     detail = await collectors.detail.collect(item)
-    record = _record(item, detail.fields, detail.source_text, detail.cover_image, detail.site_icon)
+    record = _record(
+        item,
+        detail.fields,
+        detail.source_text,
+        detail.cover_image,
+        detail.site_icon,
+        detail.body_html,
+    )
     if not record["body"].strip():
         # 상세는 열렸는데 본문이 없다. 나머지 필드가 채워져 있어도 적재하지 않는다.
         if detail.images:
@@ -626,6 +633,7 @@ def _record(
     source_text: str = "",
     cover_image: str = "",
     site_icon: str = "",
+    body_html: str = "",
 ) -> dict[str, str]:
     """`raw_jobs.raw_data_json` 에 그대로 들어가는 값. 정제하지 않는다.
 
@@ -673,6 +681,10 @@ def _record(
     }
     if source_text.strip():
         record["source_text"] = source_text
+    if body_html.strip():
+        # 본문 영역 HTML 그대로. 오공고에 원문으로 보낼 때 정리한다 (`app/deliver/source_html.py`).
+        # `source_text` 처럼 있을 때만 넣고 해시에 들어가지 않는다
+        record["body_html"] = body_html
     for key, value in (("og_image_url", cover_image), ("site_icon_url", site_icon)):
         if value.strip():
             absolute = urljoin(item.link, value.strip())
@@ -687,7 +699,14 @@ def raw_record(item: ListItem, detail: DetailParseResult) -> dict[str, str]:
     주소로 직접 넣은 공고가 쓴다 (`app/crawler/manual.py`). 모양이 갈리면 정규화와 분류가 두 모양을
     알아야 한다.
     """
-    return _record(item, detail.fields, detail.source_text, detail.cover_image, detail.site_icon)
+    return _record(
+        item,
+        detail.fields,
+        detail.source_text,
+        detail.cover_image,
+        detail.site_icon,
+        detail.body_html,
+    )
 
 
 def _is_known(conn: sqlite3.Connection, workflow_id: int | None, column: str, value: str) -> bool:

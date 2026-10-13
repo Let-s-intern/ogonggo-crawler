@@ -3,7 +3,7 @@
 python -m app.cli migrate up
 python -m app.cli migrate down --steps 1
 python -m app.cli migrate status
-python -m app.cli spring backfill-source-text [--after-job-id 0]
+python -m app.cli spring backfill-source-html [--after-job-id 0]
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     spring_parser = sub.add_parser("spring", help="오공고 전송")
     spring_sub = spring_parser.add_subparsers(dest="action", required=True)
     backfill = spring_sub.add_parser(
-        "backfill-source-text", help="이미 보낸 공고에 원문만 채운다 (LC-3456)"
+        "backfill-source-html", help="이미 보낸 공고에 원문만 채운다 (LC-3456)"
     )
     backfill.add_argument("--after-job-id", type=int, default=0, help="이 오공고 id 다음부터")
     parser.add_argument("--database", default=None, help="기본값은 DATABASE_PATH")
@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _backfill(conn: sqlite3.Connection, after_job_id: int) -> int:
-    result = asyncio.run(spring.backfill_source_texts(conn, after_job_id=after_job_id))
+    result = asyncio.run(spring.backfill_source_html(conn, after_job_id=after_job_id))
     if result.reason:
         print(result.reason)
         return 1
