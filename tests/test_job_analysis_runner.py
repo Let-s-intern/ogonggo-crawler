@@ -9,6 +9,8 @@ AI 와 오공고 서버를 부르지 않는다. 제공자는 가짜로, 서버�
 | 분석해 두고 못 보낸 공고는 AI 없이 다시 보낸다 | 전송만 실패한 공고에 토큰을 다시 쓴다 |
 | 멈춤 시각이 지나면 남은 공고를 넘긴다 | 크롤러 서버가 꺼지는 시각까지 붙잡는다 |
 | AI 가 연달아 실패하면 멈춘다 | 제공자가 죽은 날 공고마다 실패가 쌓인다 |
+| 본문이 빈 공고는 연달아 있어도 건너뛰고 간다 | 실행마다 같은 자리에서 멈춘다 |
+| 같은 본문으로 세 번 실패하면 건너뛰고, 본문이 바뀌면 다시 한다 | 안 될 공고에 매일 돈을 쓴다 |
 | 오공고 주소가 없으면 실행을 실패로 닫는다 | 실행 기록이 도는 중으로 남는다 |
 """
 
@@ -166,6 +168,54 @@ async def test_AI_가_연달아_실패하면_멈춘다(
     assert summary.status == "failed"
     assert (summary.failed, summary.left) == (runner.MAX_FAILURES_IN_ROW, 2)
     assert store.counts(conn)["failed"] == runner.MAX_FAILURES_IN_ROW
+
+
+async def test_본문이_빈_공고는_연달아_있어도_건너뛰고_간다(
+    conn: sqlite3.Connection, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    empty = [{**target(n), "qualifications": ""} for n in range(runner.MAX_FAILURES_IN_ROW + 2)]
+    server = FakeOgonggo([*empty, target(100)])
+    serve(monkeypatch, server)
+    use(monkeypatch, FakeProvider(answer()))
+
+    summary = await runner.run_once(conn, settings=settings)
+
+    assert summary.status == "success"
+    assert (summary.failed, summary.sent, summary.left) == (len(empty), 1, 0)
+    assert [job_id for job_id, _ in server.puts] == [100]
+
+
+async def test_같은_본문으로_세_번_실패한_공고는_건너뛴다(
+    conn: sqlite3.Connection, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    serve(monkeypatch, FakeOgonggo([target(1)]))
+    provider = FakeProvider(*[LlmCallError("api_error", "503")] * runner.MAX_FAILURES_PER_JOB)
+    use(monkeypatch, provider)
+    for _ in range(runner.MAX_FAILURES_PER_JOB):
+        await runner.run_once(conn, settings=settings)
+
+    summary = await runner.run_once(conn, settings=settings)
+
+    assert (summary.failed, summary.skipped) == (0, 1)
+    assert len(provider.prompts) == runner.MAX_FAILURES_PER_JOB
+    assert "건너뛰었다" in summary.notes[0]
+
+
+async def test_건너뛴_공고도_본문이_바뀌면_다시_분석한다(
+    conn: sqlite3.Connection, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    serve(monkeypatch, FakeOgonggo([target(1)]))
+    use(
+        monkeypatch, FakeProvider(*[LlmCallError("api_error", "503")] * runner.MAX_FAILURES_PER_JOB)
+    )
+    for _ in range(runner.MAX_FAILURES_PER_JOB):
+        await runner.run_once(conn, settings=settings)
+    serve(monkeypatch, FakeOgonggo([target(1, content_hash="new")]))
+    use(monkeypatch, FakeProvider(answer()))
+
+    summary = await runner.run_once(conn, settings=settings)
+
+    assert (summary.skipped, summary.sent) == (0, 1)
 
 
 async def test_오공고_주소가_없으면_실행을_실패로_닫는다(

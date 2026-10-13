@@ -105,6 +105,7 @@ def _panel(
         version=version,
         running=_busy(conn),
         max_per_run=runner.MAX_PER_RUN,
+        max_failures_per_job=runner.MAX_FAILURES_PER_JOB,
         message=message,
         error=error,
     )
