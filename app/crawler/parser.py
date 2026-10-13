@@ -121,6 +121,9 @@ class DetailParseResult:
     fields: dict[str, str]
     missing: list[str]
     source_text: str = ""
+    # 본문 셀렉터가 잡은 영역의 HTML 그대로. 오공고 공고 상세에 원문으로 보여 준다 (LC-3456,
+    # `app/deliver/source_html.py`). 상세가 API 인 사이트는 비어 있다
+    body_html: str = ""
     # 원문 영역 안의 이미지 주소. 적힌 그대로라 상대 주소일 수 있다 (`app/crawler/images.py`)
     images: tuple[str, ...] = ()
     # 페이지의 대표 이미지(`og:image`). 적힌 그대로라 상대 주소일 수 있다 (`app/crawler/runner.py`)
@@ -264,6 +267,9 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
     if unreadable:
         raise FieldParseError(f"상세에서 필수 필드를 읽지 못했다: {', '.join(unreadable)}")
 
+    body_nodes = (
+        [fallback] if fallback is not None else select_nodes(soup, selectors.body, "detail.body")
+    )
     container = block_text(fallback) if fallback is not None else source_text(soup, selectors.body)
     structured = structured_text(soup, container) if container.strip() else ""
     source = f"{container}\n{structured}" if structured else container
@@ -275,6 +281,7 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
         fields=fields,
         missing=missing,
         source_text=source,
+        body_html="".join(str(node) for node in body_nodes),
         images=images,
         cover_image=og_image(soup),
         site_icon=site_icon(soup),

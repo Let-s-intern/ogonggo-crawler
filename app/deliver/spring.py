@@ -32,18 +32,19 @@
   공고에 그대로 돈다. 골라 보내기는 사람이 고른 것이라 좁히지 않는다. 풀 때는 `TARGET_SQL` 을
   지운다
 
-## 원문도 보낸다 (2026-10-12, LC-3456)
+## 원문 HTML 도 보낸다 (2026-10-13, LC-3456)
 
-원문 페이지에서 읽은 글(`raw_jobs.raw_data_json` 의 `source_text`)을 `sourceText` 로 함께 보낸다.
-오공고가 저장해 공고 상세에 내준다. 원문이 없으면 본문으로 대신한다 — 분류에 보내는 글과 같다
-(`app/classify/store.py`). 직무별로 나뉜 공고는 같은 원문을 받는다. 판정 근거는 보내지 않는다.
+본문 영역 HTML(`raw_jobs.raw_data_json` 의 `body_html`)을 정리해 `sourceHtml` 로 함께 보낸다.
+오공고가 공고 상세에 원래 공고처럼 그린다. 정리 규칙은 `app/deliver/source_html.py` 에 있다.
+HTML 이 없으면(이 결정 전에 모은 공고, 상세가 API 인 사이트) 본문 글자를 문단으로 감싸 보낸다.
+직무별로 나뉜 공고는 같은 원문을 받는다. 판정 근거는 보내지 않는다.
 
-원문은 페이지 마크업의 들여쓰기와 빈 줄이 그대로 남아 글보다 공백이 많다. 보낼 때 줄마다 공백을
-한 칸으로 줄이고 빈 줄은 한 줄만 남긴다 (`clean_source_text`). 크롤러 DB 의 원문은 그대로 둔다 —
-분류 결과가 원문의 글자 위치를 가리킨다.
+처음에는 AI 가 읽는 원문 글자(`source_text`)를 보냈다(2026-10-12). 본문의 부모 영역까지 편 글자라
+옆에 붙은 다른 공고 목록이 섞이고 제목·목록·표가 사라져, 사용자에게 보여 줄 수 없었다.
 
-원문을 저장하기 전에 보낸 공고는 `python -m app.cli spring backfill-source-text` 로 원문만 채운다
-(`backfill_source_texts`). 교체(PUT)는 운영자가 고친 칸까지 덮으므로 원문만 바꾸는 API 를 쓴다.
+이미 보낸 공고는 `python -m app.cli spring backfill-source-html` 로 원문만 채운다
+(`backfill_source_html`). 교체(PUT)는 운영자가 고친 칸까지 덮으므로 원문만 바꾸는 API 를 쓴다.
+HTML 이 없는 공고는 원문 다시 수집으로 HTML 을 담은 뒤 다시 돌리면 HTML 로 바뀐다.
 
 ## 시각
 
@@ -69,11 +70,12 @@ from app import job_roles, regions
 from app.classify.schema import VALUE_LABELS
 from app.config import Settings, get_settings
 from app.deliver import settings as store
+from app.deliver.source_html import clean_html, text_html
 
 logger = logging.getLogger(__name__)
 
 JOBS_PATH = "/api/v1/internal/jobs"
-SOURCE_TEXT_PATH = JOBS_PATH + "/{job_id}/source-text"
+SOURCE_HTML_PATH = JOBS_PATH + "/{job_id}/source-html"
 API_KEY_HEADER = "X-Internal-Api-Key"
 TIMEOUT_SECONDS = 20.0
 # 이만큼 실패한 공고는 더 보내지 않는다. 같은 거절을 분류 때마다 되풀이하지 않는다
@@ -105,12 +107,11 @@ _CONTENT_FIELDS: tuple[tuple[str, str], ...] = (
     ("recruitmentNotice", "recruitment_notice"),
 )
 
-# 오공고로 보내는 원문. 원문이 없으면 본문이다. 정규화 행 `n` 의 `raw_job_id` 로 원본 행을 찾는다
-SOURCE_TEXT_SQL = """(SELECT coalesce(nullif(json_extract(r.raw_data_json, '$.source_text'), ''),
-                             json_extract(r.raw_data_json, '$.body'))
-                     FROM raw_jobs r WHERE r.id = n.raw_job_id)"""
-
-_SPACES = re.compile(r"[ \t\u00a0\u3000\u200b]+")
+# 원문 HTML 을 만드는 데 쓰는 원본 값 두 칸. 정규화 행 `n` 의 `raw_job_id` 로 원본 행을 찾는다
+SOURCE_SQL = """(SELECT json_extract(r.raw_data_json, '$.body_html')
+                  FROM raw_jobs r WHERE r.id = n.raw_job_id) AS body_html,
+               (SELECT json_extract(r.raw_data_json, '$.body')
+                  FROM raw_jobs r WHERE r.id = n.raw_job_id) AS raw_body"""
 
 _DATETIME = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
 _INTEGER = re.compile(r"\d{1,9}")
@@ -191,10 +192,7 @@ def payload(job: Mapping[str, Any] | sqlite3.Row) -> dict[str, Any]:
         "applyEmail": _text(job["application_email"]),
         "inquiryEmail": _text(job["inquiry_email"]),
         "sourceUrl": _text(job["source_url"]),
-        # 정규화 행만 넘긴 호출(화면·테스트)에는 원문 칸이 없다
-        "sourceText": clean_source_text(job["source_text"])
-        if "source_text" in job.keys()
-        else None,
+        "sourceHtml": source_html(job),
     }
     if body["recruitmentType"] == "ALWAYS_OPEN":
         # 오공고는 상시 채용에 종료 일시가 있으면 받지 않는다
@@ -202,22 +200,20 @@ def payload(job: Mapping[str, Any] | sqlite3.Row) -> dict[str, Any]:
     return body
 
 
-def clean_source_text(value: Any) -> str | None:
-    """원문의 공백을 줄인다. 줄 안 공백은 한 칸, 이어진 빈 줄은 한 줄로. 글이 없으면 null."""
-    if value is None:
+def source_html(job: Mapping[str, Any] | sqlite3.Row) -> str | None:
+    """오공고에 보낼 원문 HTML. 본문 HTML 을 정리하고, 없으면 본문 글자를 문단으로 감싼다.
+
+    정규화 행만 넘긴 호출(화면·테스트)에는 원본 칸이 없어 null 이다. 직무별로 나뉜 공고 주소의
+    `#번호` 는 상대 주소를 풀 때 무시된다.
+    """
+    keys = job.keys()
+    if "body_html" not in keys:
         return None
-    lines: list[str] = []
-    blank = False
-    for line in str(value).splitlines():
-        line = _SPACES.sub(" ", line).strip()
-        if not line:
-            blank = bool(lines)
-            continue
-        if blank:
-            lines.append("")
-            blank = False
-        lines.append(line)
-    return "\n".join(lines) or None
+    page_url = str(job["source_url"] or "")
+    cleaned = clean_html(job["body_html"], page_url)
+    if cleaned is None and "raw_body" in keys:
+        cleaned = text_html(job["raw_body"])
+    return cleaned
 
 
 def missing(body: Mapping[str, Any]) -> list[str]:
@@ -334,7 +330,7 @@ def pending(
     """
     return conn.execute(
         f"""
-        SELECT n.*, {SOURCE_TEXT_SQL} AS source_text FROM normalized_jobs n
+        SELECT n.*, {SOURCE_SQL} FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
          WHERE {_UNSENT} AND {_OPEN} AND {TARGET_SQL}
            AND {COMPLETE_SQL if complete else _READY}
@@ -441,7 +437,7 @@ async def deliver_ids(
         marks = ",".join("?" for _ in wanted)
         rows = conn.execute(
             f"""
-            SELECT n.*, {SOURCE_TEXT_SQL} AS source_text,
+            SELECT n.*, {SOURCE_SQL},
                    (SELECT d.spring_job_id FROM spring_deliveries d
                      WHERE d.source_url = n.source_url AND d.status = 'sent') AS sent_job_id
               FROM normalized_jobs n
@@ -483,7 +479,7 @@ class BackfillResult:
     errors: list[str] = field(default_factory=list)
 
 
-async def backfill_source_texts(
+async def backfill_source_html(
     conn: sqlite3.Connection,
     *,
     settings: Settings | None = None,
@@ -504,7 +500,7 @@ async def backfill_source_texts(
         return BackfillResult(reason="OGONGGO_INTERNAL_API_KEY 가 비어 있다. 크롤러 .env 에 넣는다")
     rows = conn.execute(
         f"""
-        SELECT d.spring_job_id, n.source_url, {SOURCE_TEXT_SQL} AS source_text
+        SELECT d.spring_job_id, n.source_url, {SOURCE_SQL}
           FROM spring_deliveries d
           JOIN normalized_jobs n ON n.source_url = d.source_url
          WHERE d.status = 'sent' AND d.spring_job_id > ?
@@ -521,13 +517,13 @@ async def backfill_source_texts(
     ) as client:
         for row in rows:
             job_id = int(row["spring_job_id"])
-            text = clean_source_text(row["source_text"])
+            text = source_html(row)
             if text is None:
                 result.empty += 1
                 continue
             try:
                 response = await client.put(
-                    SOURCE_TEXT_PATH.format(job_id=job_id), json={"sourceText": text}
+                    SOURCE_HTML_PATH.format(job_id=job_id), json={"sourceHtml": text}
                 )
             except httpx.HTTPError as exc:
                 error = f"{type(exc).__name__}: {exc}"
