@@ -429,3 +429,74 @@ def test_본문_밖_마감일은_AI_가_읽는_원문에_한_줄로_붙인다() 
     parsed = parse_detail(GS_SIDE_BOX, selectors)
 
     assert parsed.source_text.rstrip().endswith("마감일: 2026.10.15 오후 11:59")
+
+
+# 본문 밖 정보 상자 (2026-10-14, SK쉴더스 그리팅) ------------------------------
+GREETING_INFO_BOX = (
+    "<html><body><div class='page'>"
+    "<div class='info'>"
+    "<div class='item'><div><span>마감기한</span></div><span>2026년 10월 27일, 23:59</span></div>"
+    "<div class='item'><div><span>직군</span></div><span>정보보안</span></div>"
+    "<div class='item'><div><span>경력사항</span></div><span>경력 무관</span></div>"
+    "<div class='item'><div><span>근무지</span></div>"
+    "<div><span>SK쉴더스</span><span>경기도 성남시 분당구 판교로 227번길 23</span></div></div>"
+    "</div>"
+    "<div class='detail'><h1>AI 보안 연구원</h1>"
+    "<div class='ql-container'><div class='ql-editor'>"
+    "<p>정보보안 관련 실무 경력 보유자</p></div></div>"
+    "</div></div></body></html>"
+)
+GREETING_SELECTORS = DetailSelectors(
+    title="h1", body=".detail .ql-editor", qualifications="", recruitment_end_at="", department=""
+)
+
+
+def test_본문_밖_정보_상자는_원문에_라벨과_값으로_붙인다() -> None:
+    """SK쉴더스: 원문이 본문의 부모까지라 직군·경력사항·근무지·마감기한이 빠졌다."""
+    parsed = parse_detail(GREETING_INFO_BOX, GREETING_SELECTORS)
+
+    assert parsed.source_text.rstrip().endswith(
+        "직군: 정보보안\n"
+        "경력사항: 경력 무관\n"
+        "근무지: SK쉴더스 경기도 성남시 분당구 판교로 227번길 23\n"
+        "마감일: 2026년 10월 27일"
+    )
+    assert parsed.fields["recruitment_end_at"] == "2026년 10월 27일"
+
+
+def test_본문_밖_정보_상자는_원문_HTML_앞에_붙인다() -> None:
+    """오공고 원문 화면은 본문 HTML 을 그린다. 본문 노드만 담아 정보 상자가 빠졌다."""
+    parsed = parse_detail(GREETING_INFO_BOX, GREETING_SELECTORS)
+
+    assert parsed.body_html.startswith(
+        "<dl><dt>직군</dt><dd>정보보안</dd><dt>경력사항</dt><dd>경력 무관</dd>"
+        "<dt>근무지</dt><dd>SK쉴더스 경기도 성남시 분당구 판교로 227번길 23</dd>"
+        '<dt>마감일</dt><dd>2026년 10월 27일</dd></dl><div class="ql-editor">'
+    )
+
+
+def test_원문에_이미_있는_정보_칸은_다시_붙이지_않는다() -> None:
+    """본문의 부모가 정보 상자를 담으면 원문에 이미 있다."""
+    selectors = GREETING_SELECTORS.model_copy(update={"body": "div.detail"})
+
+    parsed = parse_detail(GREETING_INFO_BOX, selectors)
+
+    assert "직군\n정보보안" in parsed.source_text
+    assert "직군: 정보보안" not in parsed.source_text
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        "<footer><span>근무지</span><span>서울</span></footer>",
+        "<p>근무지 서울 본사</p>",
+        "<div><span>근무지</span></div>",
+    ],
+    ids=["꼬리말", "본문 문장", "값 없음"],
+)
+def test_정보_상자가_아니면_붙이지_않는다(html: str) -> None:
+    from bs4 import BeautifulSoup
+
+    from app.crawler.parser import labeled_info
+
+    assert labeled_info(BeautifulSoup(f"<html><body>{html}</body></html>", "html.parser"), "") == []

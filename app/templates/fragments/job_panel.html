@@ -177,9 +177,9 @@
     {% if not editing %}
     <section class="m-0 rounded-none border-0 border-b border-slate-100 bg-transparent px-6 py-4 shadow-none">
       <details class="m-0 border-0 p-0">
-        <summary class="text-xs font-semibold text-slate-400">원문 본문 전체 보기 · 사이트에서 가져온 그대로 · {{ (job.body or "") | length }}자</summary>
-        {% if job.body %}
-        <p class="mt-2 whitespace-pre-line rounded-md bg-slate-50 p-3 text-sm text-slate-600">{{ job.body | tidy_text }}</p>
+        <summary class="text-xs font-semibold text-slate-400">원문 본문 전체 보기 · 사이트에서 가져온 그대로 · {{ source_text | length }}자</summary>
+        {% if source_text %}
+        <p class="mt-2 whitespace-pre-line rounded-md bg-slate-50 p-3 text-sm text-slate-600">{{ source_text | tidy_text }}</p>
         {% else %}
         <p class="mt-2 text-sm text-amber-600">본문이 비어 있다</p>
         {% endif %}

@@ -29,6 +29,7 @@ import json
 import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
+from html import escape
 from typing import Any
 from urllib.parse import urljoin
 
@@ -273,15 +274,19 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
     container = block_text(fallback) if fallback is not None else source_text(soup, selectors.body)
     structured = structured_text(soup, container) if container.strip() else ""
     source = f"{container}\n{structured}" if structured else container
+    info = labeled_info(soup, source)
+    if info:
+        source = "\n".join([source, *(f"{label}: {value}" for label, value in info)])
     if labeled and labeled not in " ".join(source.split()):
         # 마감일이 본문 밖 상자에 있으면 AI 가 읽는 원문에 없다. 한 줄로 붙여 AI 도 마감일을 짚게
         # 한다 — GS리테일은 "마감일까지 접수" 문장만 짚었다 (2026-10-02)
         source = f"{source}\n마감일: {labeled}"
+    body_html = "".join(str(node) for node in body_nodes)
     return DetailParseResult(
         fields=fields,
         missing=missing,
         source_text=source,
-        body_html="".join(str(node) for node in body_nodes),
+        body_html=_with_info_html(soup, body_nodes, body_html, labeled),
         images=images,
         cover_image=og_image(soup),
         site_icon=site_icon(soup),
@@ -468,6 +473,104 @@ def labeled_deadline(soup: BeautifulSoup) -> str:
     return ""
 
 
+# 공고 정보 상자의 라벨. 칸 글자가 이 라벨과 똑같아야 한다 — 본문 문장은 걸리지 않는다. 마감일은
+# `labeled_deadline` 이 따로 읽는다
+_INFO_LABELS = frozenset(
+    {
+        "직군",
+        "직무",
+        "직종",
+        "모집분야",
+        "모집부문",
+        "모집직무",
+        "경력",
+        "경력사항",
+        "경력구분",
+        "신입/경력",
+        "학력",
+        "학력사항",
+        "근무지",
+        "근무지역",
+        "근무장소",
+        "근무위치",
+        "고용형태",
+        "근무형태",
+        "채용형태",
+        "고용구분",
+        "모집인원",
+        "채용인원",
+    }
+)
+# 라벨 옆 값이 이보다 길면 정보 칸이 아니라 본문 덩어리다
+_INFO_VALUE_MAX = 200
+_NO_SPACE = re.compile(r"[\s\u200b]+")
+
+
+def labeled_info(soup: BeautifulSoup, known: str) -> list[tuple[str, str]]:
+    """본문 밖 정보 상자의 `(라벨, 값)`. 글(`known`)에 이미 있는 칸은 뺀다.
+
+    그리팅 상세는 직군·경력사항·근무지를 본문 옆 상자에 `<span>직군</span><div>정보보안</div>`
+    로 적는다. 원문은 본문 셀렉터의 부모까지라 이 상자가 빠졌다 — SK쉴더스 실측(2026-10-14).
+    마감일과 같은 방식으로 라벨 다음 형제 칸을 값으로 읽는다. 머리말·꼬리말·옆 목록은 보지 않는다.
+
+    이미 있는지는 라벨과 값을 이어 공백 없이 본다. 값만 보면 `정보보안` 이 본문의 `정보보안 관련
+    실무 경력` 에 걸려 직군이 빠진다.
+    """
+    furniture = {id(node) for node in soup.select(PAGE_FURNITURE)}
+    seen = _NO_SPACE.sub("", known)
+    lines: dict[str, str] = {}
+    for text_node in soup.find_all(string=True):
+        label = " ".join(text_node.split()).strip(_LABEL_TRIM)
+        parent = text_node.parent
+        if label not in _INFO_LABELS or label in lines or parent is None:
+            continue
+        if parent.get_text(" ", strip=True).strip(_LABEL_TRIM) != label:
+            continue
+        if any(id(up) in furniture for up in parent.parents):
+            continue
+        sibling = _value_cell(parent, label)
+        value = sibling.get_text(" ", strip=True) if sibling is not None else ""
+        value = " ".join(value.split())
+        if not value or len(value) > _INFO_VALUE_MAX or _NO_SPACE.sub("", label + value) in seen:
+            continue
+        lines[label] = value
+    return list(lines.items())
+
+
+def _with_info_html(
+    soup: BeautifulSoup, body_nodes: list[Tag], body_html: str, deadline: str
+) -> str:
+    """본문 HTML 앞에 본문 밖 정보 상자를 `dl` 로 붙인다. 오공고 원문 화면이 이 HTML 을 그린다.
+
+    본문 HTML 은 본문 셀렉터가 잡은 노드뿐이라 원문 글자보다 좁다. 본문에 이미 있는 칸은 뺀다.
+    """
+    if not body_html:
+        return body_html
+    known = "\n".join(block_text(node) for node in body_nodes)
+    pairs = labeled_info(soup, known)
+    if deadline and _NO_SPACE.sub("", deadline) not in _NO_SPACE.sub("", known):
+        pairs.append(("마감일", deadline))
+    if not pairs:
+        return body_html
+    items = "".join(f"<dt>{escape(label)}</dt><dd>{escape(value)}</dd>" for label, value in pairs)
+    return f"<dl>{items}</dl>{body_html}"
+
+
+def _value_cell(node: Tag, label: str) -> Tag | None:
+    """라벨 칸 옆의 값 칸. 라벨만 담은 조상까지 올라가 그 다음 형제를 본다.
+
+    그리팅은 라벨을 한 겹 더 싼다 — `<div><span>마감기한</span></div><span>2026년…</span>`. 라벨
+    `span` 에는 형제가 없어 값을 못 읽었다 (SK쉴더스 실측, 2026-10-14).
+    """
+    cell = node
+    while cell.find_next_sibling() is None:
+        up = cell.parent
+        if up is None or up.get_text(" ", strip=True).strip(_LABEL_TRIM) != label:
+            return None
+        cell = up
+    return cell.find_next_sibling()
+
+
 def _labeled_value(node: Tag, label: str, pattern: re.Pattern[str]) -> str:
     """이 칸이 라벨이면 그 값. 라벨이 아니거나 값에 날짜가 없으면 빈 문자열이다."""
     head = pattern.match(label.strip(_LABEL_TRIM))
@@ -475,7 +578,7 @@ def _labeled_value(node: Tag, label: str, pattern: re.Pattern[str]) -> str:
         return ""
     rest = label.strip(_LABEL_TRIM)[head.end() :].strip(_LABEL_TRIM)
     if not rest:
-        sibling = node.find_next_sibling()
+        sibling = _value_cell(node, label)
         rest = block_text(sibling).strip() if sibling is not None else ""
     # 값은 날짜로 시작해야 한다. `마감 후 2026.10.20 발표` 같은 본문 문장은 라벨이 아니다. 날짜와
     # 시각, 기간이면 끝 날짜까지만 쓴다 — 라벨과 값이 한 칸이면 뒤 글(`접수방법 : ...`)이 딸려 온다
