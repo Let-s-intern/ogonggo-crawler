@@ -340,6 +340,8 @@ def render_panel(
         list_choices=job_detail.list_choices(conn) if editing else None,
         message=message,
         custom_values=custom_fields.values_for(conn, int(row["raw_job_id"]), int(row["part"])),
+        # 사이트에서 가져온 원문. 본문 셀렉터 밖의 정보 상자까지 담는다. 원문이 없는 공고는 본문
+        source_text=str(raw.get("source_text") or "").strip() or (row["body"] or ""),
     )
 
 
