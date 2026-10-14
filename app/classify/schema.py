@@ -339,8 +339,9 @@ EXTRACT_FIELDS: tuple[str, ...] = (
 # 수집이 사이트에서 읽는 칸인데, 못 읽었으면 AI 가 줄 번호로 짚은 부분으로 채운다
 # (2026-09-17 결정). 사이트마다 셀렉터로 회사·모집 기간을 잡는 것은 키워드 찾기라 자주 빈다 —
 # 공고를 읽는 AI 가 뜻으로 찾는다. 긴 분류 응답 안에서 물으면 DeepSeek 가 거의 짚지 않아 세 칸만
-# 따로 묻는다 (`app/classify/basics.py`). 회사 이름은 사이트에서 읽은 값이 있으면 그 값이 먼저다
-# (`app/normalize/engine.py` 의 `fill_fallbacks`). 날짜 두 칸은 원문 글자라 정규화가 날짜로 읽는다
+# 따로 묻는다 (`app/classify/basics.py`). 회사 이름도 AI 가 짚은 값이 사이트 값보다 먼저다 — AI 가
+# 못 짚었을 때만 사이트 값이다 (2026-10-14 결정, `app/normalize/engine.py` 의 `fill_fallbacks`).
+# 날짜 두 칸은 원문 글자라 정규화가 날짜로 읽는다
 FALLBACK_FIELDS: tuple[str, ...] = ("company_name", "recruitment_start_at", "recruitment_end_at")
 
 # 모집 시작·마감은 사이트에서 읽었더라도 AI 에게 사이트 값과 원문을 함께 보여 주고 AI 가 고른 값을
