@@ -61,6 +61,18 @@ def test_페이지_부속은_뺀다() -> None:
     assert clean_html(raw, PAGE) == "<div><p>공고</p></div>"
 
 
+def test_줄바꿈을_그리는_스타일_안의_줄바꿈은_br_로_남긴다() -> None:
+    """스마일게이트: `white-space: pre-line` 섹션이 `- 항목 - 항목` 한 줄로 붙었다."""
+    raw = (
+        '<div style="white-space: pre-line;">\n- 첫 항목\n- 둘째 항목\n\n\n- 셋째 항목\n</div>'
+        "<p>보통\n문단</p>"
+    )
+
+    assert clean_html(raw, PAGE) == (
+        "<div>- 첫 항목<br>- 둘째 항목<br><br>- 셋째 항목</div><p>보통 문단</p>"
+    )
+
+
 def test_HTML이_없으면_본문_글자를_문단으로_감싼다() -> None:
     assert text_html("  첫 줄 \n\t둘째  줄\n\n\n\n<셋째> & 끝\n") == (
         "<p>첫 줄<br>둘째 줄</p><p>&lt;셋째&gt; &amp; 끝</p>"
