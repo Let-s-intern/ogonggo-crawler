@@ -229,11 +229,13 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
             fields[name] = ""
             continue
 
-        value = (
-            _date_text(soup, selector, f"detail.{name}")
-            if name in DATE_FIELDS
-            else field_text(soup, selector, f"detail.{name}")
-        )
+        if name in DATE_FIELDS:
+            value = _date_text(soup, selector, f"detail.{name}")
+        elif name == "body":
+            # 본문 셀렉터는 섹션마다 하나씩 잡기도 한다. 첫 노드만 읽으면 첫 섹션만 본문이 된다
+            value = "\n".join(block_text(node) for node in body_nodes(soup, selector))
+        else:
+            value = field_text(soup, selector, f"detail.{name}")
         fields[name] = value
         if not value:
             missing.append(name)
@@ -268,9 +270,10 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
     if unreadable:
         raise FieldParseError(f"상세에서 필수 필드를 읽지 못했다: {', '.join(unreadable)}")
 
-    body_nodes = (
-        [fallback] if fallback is not None else select_nodes(soup, selectors.body, "detail.body")
-    )
+    matched = [fallback] if fallback is not None else body_nodes(soup, selectors.body)
+    if len(matched) > 1:
+        # 섹션마다 잡힌 본문은 섹션 제목(`담당업무`)이 노드 밖에 있다. 원문 HTML 도 원문 영역이다
+        matched = [_shared_container(soup, matched)]
     container = block_text(fallback) if fallback is not None else source_text(soup, selectors.body)
     structured = structured_text(soup, container) if container.strip() else ""
     source = f"{container}\n{structured}" if structured else container
@@ -281,12 +284,12 @@ def parse_detail(html: str, selectors: DetailSelectors) -> DetailParseResult:
         # 마감일이 본문 밖 상자에 있으면 AI 가 읽는 원문에 없다. 한 줄로 붙여 AI 도 마감일을 짚게
         # 한다 — GS리테일은 "마감일까지 접수" 문장만 짚었다 (2026-10-02)
         source = f"{source}\n마감일: {labeled}"
-    body_html = "".join(str(node) for node in body_nodes)
+    body_html = "".join(str(node) for node in matched)
     return DetailParseResult(
         fields=fields,
         missing=missing,
         source_text=source,
-        body_html=_with_info_html(soup, body_nodes, body_html, labeled),
+        body_html=_with_info_html(soup, matched, body_html, labeled),
         images=images,
         cover_image=og_image(soup),
         site_icon=site_icon(soup),
@@ -537,16 +540,14 @@ def labeled_info(soup: BeautifulSoup, known: str) -> list[tuple[str, str]]:
     return list(lines.items())
 
 
-def _with_info_html(
-    soup: BeautifulSoup, body_nodes: list[Tag], body_html: str, deadline: str
-) -> str:
+def _with_info_html(soup: BeautifulSoup, nodes: list[Tag], body_html: str, deadline: str) -> str:
     """본문 HTML 앞에 본문 밖 정보 상자를 `dl` 로 붙인다. 오공고 원문 화면이 이 HTML 을 그린다.
 
     본문 HTML 은 본문 셀렉터가 잡은 노드뿐이라 원문 글자보다 좁다. 본문에 이미 있는 칸은 뺀다.
     """
     if not body_html:
         return body_html
-    known = "\n".join(block_text(node) for node in body_nodes)
+    known = "\n".join(block_text(node) for node in nodes)
     pairs = labeled_info(soup, known)
     if deadline and _NO_SPACE.sub("", deadline) not in _NO_SPACE.sub("", known):
         pairs.append(("마감일", deadline))
@@ -706,9 +707,11 @@ def _source_container(soup: BeautifulSoup, body_selector: str) -> Tag | None:
     if not body_selector.strip():
         return None
 
-    nodes = select_nodes(soup, body_selector, "detail.body")
+    nodes = body_nodes(soup, body_selector)
     if not nodes:
         return None
+    if len(nodes) > 1:
+        return _shared_container(soup, nodes)
 
     body = nodes[0]
     parent = body.parent
@@ -719,6 +722,36 @@ def _source_container(soup: BeautifulSoup, body_selector: str) -> Tag | None:
     for tag in container.select(PAGE_FURNITURE):
         tag.decompose()
     return container
+
+
+def body_nodes(soup: BeautifulSoup, body_selector: str) -> list[Tag]:
+    """본문 셀렉터가 잡은 노드. 다른 매칭 노드 안에 든 것은 빼서 같은 글을 두 번 담지 않는다."""
+    nodes = select_nodes(soup, body_selector, "detail.body")
+    matched = {id(node) for node in nodes}
+    return [node for node in nodes if not any(id(up) in matched for up in node.parents)]
+
+
+def _shared_container(soup: BeautifulSoup, nodes: list[Tag]) -> Tag:
+    """본문 노드가 여럿일 때의 원문 영역. 노드들을 모두 담는 가장 가까운 조상에서 부속을 뺀 사본.
+
+    스마일게이트 실측(2026-10-14): 담당업무·자격요건·우대사항이 섹션마다 `div.editor_con` 이라 본문
+    셀렉터가 아홉 개를 잡았고, 첫 노드의 부모만 원문이 되어 담당업무만 남았다. 공통 조상이 `body`
+    까지 올라가면 메뉴와 푸터가 섞이므로 노드들만 이어 담는다.
+    """
+    first = nodes[0]
+    shared = next(
+        (up for up in first.parents if all(any(a is up for a in n.parents) for n in nodes[1:])),
+        None,
+    )
+    if shared is not None and shared.name not in ("body", "html", "[document]"):
+        container = copy.copy(shared)
+        for tag in container.select(PAGE_FURNITURE):
+            tag.decompose()
+        return container
+    joined = soup.new_tag("div")
+    for node in nodes:
+        joined.append(copy.copy(node))
+    return joined
 
 
 def _link(node: Tag, selectors: ListSelectors, index: int) -> LinkResult:
