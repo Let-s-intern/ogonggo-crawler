@@ -8,7 +8,9 @@ APR 처럼 셀렉터가 제목·본문만 잡는 사이트는 세 칸이 늘 비
 | AI 는 세 칸을 줄 번호로 짚고 글자는 원문에서 온다 | AI 가 지어낸 회사·날짜가 들어간다 |
 | 사이트에서 다 읽었으면 묻지 않는다 | 필요 없는 호출이 나간다 |
 | 근거 문장 칸을 덧붙인 응답은 거절하지 않는다 | DeepSeek 분류가 자주 실패한다 |
-| 사이트 값이 있으면 그 값이 먼저다 | 셀렉터로 잘 읽던 값이 AI 값으로 바뀐다 |
+| 날짜는 AI 가 정하지 않았으면 사이트 값이 먼저다 | 셀렉터로 잘 읽던 날짜가 바뀐다 |
+| 회사는 AI 가 짚은 값이 먼저고, 못 짚었으면 사이트 값이다 | SK 회사에 지원 기간이 들어간다 |
+| 마감 글자가 기간이면 뒤쪽, 영어 월 이름도 읽는다 | 시작일이 마감으로 나가거나 마감이 빈다 |
 | 값이 없으면 AI 가 짚은 글자로 채우고 날짜로 읽는다 | 마감이 비어 상시 채용이 된다 |
 | 연도 없는 날짜는 수집한 해, 반년 넘게 앞이면 다음 해다 | 지난해로 읽혀 마감으로 걸러진다 |
 | 날짜를 못 찾으면 빈 값이고 실패하지 않는다 | 공고 하나가 통째로 정규화되지 않는다 |
@@ -97,6 +99,7 @@ def test_근거_문장_칸을_덧붙인_응답은_거절하지_않는다() -> No
         ("10월 5일(월)", "2026-10-05 00:00:00"),
         ("1/10(금)", "2027-01-10 00:00:00"),
         ("9/1(월) ~ 9/20(일)", "2026-09-01 00:00:00"),
+        ("October 07, 2026(Wed)~December 31, 2026(Thu)", "2026-10-07 00:00:00"),
         ("채용 시 마감", None),
         ("13/45", None),
         ("26.10.31(금)", "2026-10-31 00:00:00"),
@@ -120,6 +123,11 @@ def test_짚은_글자에서_날짜를_읽는다(text: str, expected: str | None
         ("마감 D - 3", "2026-09-20 23:59:59"),
         ("D-day", "2026-09-17 23:59:59"),
         ("내일 마감", "2026-09-18 23:59:59"),
+        # 기간이면 마감은 뒤쪽이다. 앞쪽을 읽으면 시작일이 마감일로 나간다
+        ("9/1(월) ~ 9/20(일)", "2026-09-20 23:59:59"),
+        # SK 는 영어로 적는다 (2026-10-14)
+        ("October 07, 2026(Wed)~December 31, 2026(Thu)", "2026-12-31 23:59:59"),
+        ("Dec 31, 2026 18:00", "2026-12-31 18:00:00"),
     ],
 )
 def test_시각_없는_마감은_그날_끝이다(text: str, expected: str) -> None:
@@ -147,22 +155,33 @@ def classified(**values: str) -> dict[str, str]:
     return {name: "" for name in STORED_CLASSIFY_FIELDS} | values
 
 
-def test_사이트_값이_있으면_그_값이_먼저다() -> None:
+def test_날짜는_AI_가_정하지_않았으면_사이트_값이_먼저고_회사는_AI_가_먼저다() -> None:
+    """SK 실측(2026-10-14): 회사 칸 셀렉터가 지원 기간 상자를 읽었다. 회사는 AI 가 고른다."""
     fields: dict[str, str | None] = {
-        "company_name": "에이피알",
+        "company_name": "October 07, 2026(Wed)~December 31, 2026(Thu)",
         "recruitment_start_at": "2026-09-01 00:00:00",
         "recruitment_end_at": "2026-09-30 00:00:00",
     }
-    ai = classified(company_name="다른회사", recruitment_start_at="9/2", recruitment_end_at="9/20")
+    ai = classified(
+        company_name="티맵모빌리티", recruitment_start_at="9/2", recruitment_end_at="9/20"
+    )
 
     apply_classification(fields, ai)
     fill_fallbacks(fields, ai, COLLECTED)
 
     assert fields == {
-        "company_name": "에이피알",
+        "company_name": "티맵모빌리티",
         "recruitment_start_at": "2026-09-01 00:00:00",
         "recruitment_end_at": "2026-09-30 00:00:00",
     } | {k: v for k, v in fields.items() if k not in FALLBACK_FIELDS}
+
+
+def test_AI_가_회사를_못_짚었으면_사이트_값을_둔다() -> None:
+    fields: dict[str, str | None] = {"company_name": "에이피알"}
+
+    fill_fallbacks(fields, classified(), COLLECTED)
+
+    assert fields["company_name"] == "에이피알"
 
 
 def test_사이트_값이_없으면_AI_가_짚은_글자로_채운다() -> None:
@@ -215,4 +234,5 @@ def test_사이트_칸_줄을_골라도_이름표는_떼고_값만_남긴다() -
 
     assert _without_site_label("[사이트 칸] 모집 마감: 2026-11-15") == "2026-11-15"
     assert _without_site_label("모집 시작: 2026-10-02") == "2026-10-02"
+    assert _without_site_label("[사이트 칸] 회사: Tmap Mobility") == "Tmap Mobility"
     assert _without_site_label("2026.10.31(금) 18:00") == "2026.10.31(금) 18:00"

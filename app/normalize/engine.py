@@ -344,7 +344,9 @@ def fill_fallbacks(
 
     2026-09-17 결정.
 
-    회사 이름은 사이트에서 읽은 값이 있으면 건드리지 않는다. **모집 시작·마감은 AI 가 정했으면
+    **회사 이름은 AI 가 짚었으면 사이트 값이 있어도 AI 값이다** (2026-10-14 결정). SK 는 회사 칸
+    셀렉터가 지원 기간 상자를 읽었다. AI 가 못 짚었으면 사이트 값을 둔다 — 비면 자동 전송이 막힌다.
+    **모집 시작·마감은 AI 가 정했으면
     (`dates_by_ai`) 사이트 값이 있어도 AI 값이다** (2026-10-08 결정). AI 에게 사이트 값을 함께
     보여 주고 고르게 했으므로, AI 가 못 찾았다고 한 칸은 사이트 값으로 되살리지 않고 비운다. AI 에게
     묻지 못한 분류(이 결정 전 분류, 호출 실패)는 예전처럼 사이트 값이 먼저다.
@@ -355,7 +357,7 @@ def fill_fallbacks(
     """
     classified = classification or {}
     company = classified.get("company_name", "").strip()
-    if not fields.get("company_name") and company:
+    if company:
         fields["company_name"] = company
     by_ai = bool(classified.get(DATES_BY_AI))
     for name in (START, END):

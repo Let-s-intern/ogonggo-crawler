@@ -200,16 +200,23 @@ def ai_filled_fields(
 ) -> frozenset[str]:
     """회사·모집 시작·모집 마감 중 AI 가 정한 칸.
 
-    사이트에서 못 읽었는데 값이 있는 칸과, AI 가 모집 기간을 정한 분류(`dates_by_ai`)의 날짜 두
-    칸이다
+    사이트에서 못 읽었는데 값이 있는 칸, AI 가 모집 기간을 정한 분류(`dates_by_ai`)의 날짜 두
+    칸, AI 가 짚은 회사다
     (2026-10-08). 모집 시작은 AI 도 못 찾으면 수집한 날로 채워지지만 따로 가르지 않는다 — AI 로
     보인다.
     """
     by_ai = bool((classified or {}).get(DATES_BY_AI))
+    # 회사는 AI 가 짚었으면 사이트 값보다 먼저다 (2026-10-14, `fill_fallbacks`)
+    company_by_ai = bool(str((classified or {}).get("company_name") or "").strip())
     return frozenset(
         name
         for name in FALLBACK_FIELDS
-        if job[name] and (not str(raw.get(name) or "").strip() or (by_ai and name in DATE_FIELDS))
+        if job[name]
+        and (
+            not str(raw.get(name) or "").strip()
+            or (by_ai and name in DATE_FIELDS)
+            or (company_by_ai and name == "company_name")
+        )
     )
 
 

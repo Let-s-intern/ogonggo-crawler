@@ -17,6 +17,10 @@
 `date_parse` 는 `D-32` 를 읽지 못해 그 공고의 정규화가 통째로 멈추므로, 규칙을 태우기 전에 날짜로
 바꾼다. 날짜가 함께 적혀 있으면(`2026.10.31 (D-32)`) 남은 날 글자만 뗀다.
 
+영어 월 이름(`October 07, 2026`, `Dec 31, 2026`)도 읽는다 — SK 는 영어로 적는다 (2026-10-14).
+마감일 글자가 기간(`October 07, 2026(Wed)~December 31, 2026(Thu)`)이면 `~` 뒤쪽을 읽는다. 앞쪽을
+읽으면 시작일이 마감일로 나간다.
+
 마감일에 시각이 없으면 그날 23:59:59 다 — 시작일은 00:00 이다. 사이트 규칙과 같은 기준이다
 (`app/normalize/engine.py` 의 `_DAY_BOUNDARY`). `18시`, `오후 6시` 도 시각으로 읽는다.
 """
@@ -35,6 +39,15 @@ _SHORT_YEAR = re.compile(
     r"(?<![\d.])(?P<year>\d{2})\s*[.\-/]\s*(?P<month>\d{1,2})\s*[.\-/]\s*(?P<day>\d{1,2})(?!\d)"
 )
 _WITHOUT_YEAR = re.compile(r"(?<![\d.])(?P<month>\d{1,2})\s*(?:[./]|월)\s*(?P<day>\d{1,2})(?![\d])")
+_MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+_ENGLISH = re.compile(
+    r"(?<![A-Za-z])(?P<month>"
+    + "|".join(_MONTHS)
+    + r")[a-z]*\.?\s+(?P<day>\d{1,2})(?:st|nd|rd|th)?"
+    r"\s*,?\s*(?P<year>(?:19|20)\d{2})",
+    re.IGNORECASE,
+)
+_RANGE = re.compile(r"[~〜]")
 _D_DAY = re.compile(r"(?<![A-Za-z])D\s*-\s*(?:(?P<days>\d{1,3})(?!\d)|day)", re.IGNORECASE)
 _TODAY = re.compile(r"(?P<word>오늘|금일|내일)\s*마감")
 _TIME = re.compile(
@@ -54,8 +67,12 @@ _END_OF_DAY = time(23, 59, 59)
 def read(text: str, collected_on: date, *, end: bool = False) -> str | None:
     """글자에서 처음 나오는 날짜(와 그 뒤 시각)를 일시로. 못 읽으면 None.
 
-    `end` 가 참이면 마감일이다. 시각이 없을 때 그날 끝(23:59:59)으로 둔다.
+    `end` 가 참이면 마감일이다. 시각이 없을 때 그날 끝(23:59:59)으로 둔다. 기간이면 뒤쪽을 읽는다.
     """
+    if end:
+        _, *tail = _RANGE.split(text, maxsplit=1)
+        if tail and _date(tail[0], collected_on) is not None:
+            text = tail[0]
     found = _date(text, collected_on)
     if found is None:
         # 남은 날 수는 마감에만 쓴다. 시작일 자리의 `D-32` 는 시작일이 아니다
@@ -86,6 +103,13 @@ def settle_counted(text: str, collected_on: date) -> str:
 
 def _date(text: str, collected_on: date) -> tuple[date, int] | None:
     """적힌 날짜와 그 날짜가 끝나는 자리. 날짜가 없으면 None."""
+    found = _ENGLISH.search(text)
+    if found is not None:
+        month = _MONTHS.index(found["month"][:3].lower()) + 1
+        try:
+            return date(int(found["year"]), month, int(found["day"])), found.end()
+        except ValueError:
+            pass
     for pattern in (_WITH_YEAR, _SHORT_YEAR):
         found = pattern.search(text)
         if found is None:
