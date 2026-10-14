@@ -184,6 +184,27 @@ def test_확인_필요는_넷_중_하나에_걸린_보내지_않은_마감_전_�
     }
 
 
+def test_보낼_준비_됨은_확인_필요도_보낸_것도_마감도_아닌_공고다(client: TestClient) -> None:
+    assert titles(client, ready="yes") == {"정상 대기"}
+
+
+def test_오늘_들어옴에서_확인_필요를_빼고_고른다(
+    client: TestClient, seeded: sqlite3.Connection
+) -> None:
+    add_job(seeded, 10, "어제 들어온 정상 대기", crawled_at="datetime('now', '-3 days')")
+    seeded.commit()
+
+    assert titles(client, ready="yes") == {"정상 대기", "어제 들어온 정상 대기"}
+    assert titles(client, view="today", ready="yes") == {"정상 대기"}
+
+
+def test_보내기와_지우기도_보낼_준비_조건을_읽는다() -> None:
+    from app.api.review_filter import form_filter
+
+    assert form_filter({"view": "today", "ready": "yes"}).ready == "yes"
+    assert form_filter({"ready": "nope"}).ready == ""
+
+
 def test_보냄은_보낸_공고_전부다(client: TestClient) -> None:
     assert titles(client, view="sent") == {"보낸 공고", "예전에 보낸 공고"}
 

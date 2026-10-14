@@ -97,11 +97,24 @@ DEADLINE_DIFF_SQL = (
     " AND o.part = n.part AND o.field_name = 'recruitment_end_at'))"
 )
 
-# 마감 전 조건(`OPEN_SQL`)에 바인딩 하나가 든다 — 표시 시간대의 지금이다
-_CHECK_SQL = (
-    f"(NOT {{sent}} AND {OPEN_SQL} AND ({FAILED_SQL} OR {UNREADY_SQL}"
-    f" OR {UNCLASSIFIED_SQL} OR {SHORT_BODY_SQL} OR {DEADLINE_DIFF_SQL}))"
+# 손이 가야 하는 까닭 다섯 중 하나라도 걸렸다
+_TROUBLE_SQL = (
+    f"({FAILED_SQL} OR {UNREADY_SQL}"
+    f" OR {UNCLASSIFIED_SQL} OR {SHORT_BODY_SQL} OR {DEADLINE_DIFF_SQL})"
 )
+
+# 마감 전 조건(`OPEN_SQL`)에 바인딩 하나가 든다 — 표시 시간대의 지금이다
+_CHECK_SQL = f"(NOT {{sent}} AND {OPEN_SQL} AND {_TROUBLE_SQL})"
+
+# 보낼 준비가 된 공고. 아직 안 보냈고 마감 전인데 확인 필요에는 안 걸렸다 — 확인 필요의
+# 짝이다. `오늘 들어옴` 과 겹쳐 오늘 들어온 것 중 손볼 것 없는 것만 한꺼번에 보낸다
+# (2026-10-14). 보낸 공고를 빼는 이유는 다시 보내면 관리자 콘솔에서 고친 값을 덮어써서다
+_READY_TO_SEND_SQL = f"(NOT {{sent}} AND {OPEN_SQL} AND NOT {_TROUBLE_SQL})"
+
+# 보낼 준비 여부. 비어 있으면 가르지 않는다
+READY_STATES: dict[str, str] = {
+    "yes": "보낼 준비 됨",
+}
 
 # 같은 공고가 두 번 들어왔는지 보는 기준. 무엇을 중복으로 볼지가 상황마다 달라 고르게 둔다.
 # 자동으로 지우지 않는다 — 삼성전자 DX부문과 삼성SDI가 각각 올린 `R&D분야 외국인 경력사원
@@ -211,6 +224,11 @@ def check_sql() -> str:
     return _CHECK_SQL.format(sent=SENT_SQL)
 
 
+def ready_sql() -> str:
+    """보낼 준비 됨 조건. 확인 필요처럼 바인딩 하나(`now_local()`)를 받는다."""
+    return _READY_TO_SEND_SQL.format(sent=SENT_SQL)
+
+
 def _filled(expression: str) -> str:
     """그 식이 비어 있지 않다는 SQL 조각. 공백만 있는 값도 빈 것으로 본다."""
     return f"TRIM(COALESCE({expression}, ''), {_BLANK_CHARS}) <> ''"
@@ -225,6 +243,7 @@ class JobFilter:
     query: str = ""
     status: str = ""
     delivered: str = ""
+    ready: str = ""
     # 직군. 목록에 없는 이름이 와도 그대로 받는다 — 꺼진 직군으로 이미 분류된 공고를 조회할
     # 방법이 없어지면 안 된다
     job_field: str = ""
@@ -238,6 +257,7 @@ class JobFilter:
             "q": self.query,
             "status": self.status,
             "delivered": self.delivered,
+            "ready": self.ready,
             "job_field": self.job_field,
             "dup": self.dup,
         }
@@ -249,6 +269,7 @@ def read_filter(
     q: str = "",
     status: str = "",
     delivered: str = "",
+    ready: str = "",
     job_field: str = "",
     dup: str = "",
 ) -> JobFilter:
@@ -263,6 +284,7 @@ def read_filter(
         query=q.strip(),
         status=status if status in DEADLINE_STATES else "",
         delivered=delivered if delivered in DELIVERY_STATES else "",
+        ready=ready if ready in READY_STATES else "",
         job_field=job_field.strip(),
         dup=dup if dup in DUP_CRITERIA else "",
     )
@@ -325,6 +347,10 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
         clauses.append(SENT_SQL)
     elif picked.delivered == "no":
         clauses.append(f"NOT {SENT_SQL}")
+
+    if picked.ready == "yes":
+        clauses.append(ready_sql())
+        params.append(now_local())
 
     # 중복은 나머지 조건 안에서 센다. `SK 안에서만 중복 찾기` 가 실제 쓰임이라, 전체에서 센
     # 묶음을 나중에 좁히면 짝을 잃은 한 건만 남아 중복이 아닌 것이 중복으로 보인다.
@@ -489,6 +515,7 @@ def _describe(conn: sqlite3.Connection, picked: JobFilter, scope: str) -> str:
             f"직군 {picked.job_field or '전체'}",
             f"모집 {DEADLINE_STATES.get(picked.status, '전체')}",
             f"오공고 {DELIVERY_STATES.get(picked.delivered, '전체')}",
+            f"준비 {READY_STATES.get(picked.ready, '전체')}",
             f"중복 {DUP_LABELS.get(picked.dup, '안 걸림')}",
             f"검색어 {picked.query or '없음'}",
         )
@@ -631,7 +658,16 @@ def form_filter(form: Any) -> JobFilter:
     return read_filter(
         **{
             name: str(form.get(name) or "")
-            for name in ("workflow_id", "view", "q", "status", "delivered", "job_field", "dup")
+            for name in (
+                "workflow_id",
+                "view",
+                "q",
+                "status",
+                "delivered",
+                "ready",
+                "job_field",
+                "dup",
+            )
         }
     )
 
