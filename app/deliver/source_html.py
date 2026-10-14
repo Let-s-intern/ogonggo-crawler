@@ -62,6 +62,8 @@ _BLOCKS: frozenset[str] = KEPT_TAGS - {"strong", "b", "em", "i", "u", "a", "img"
 # 안이 비어도 지우지 않는 태그
 _EMPTY_OK: frozenset[str] = frozenset({"br", "hr", "img", "td", "th"})
 _SPACES = re.compile(r"\s+")
+# 글자의 줄바꿈을 화면 줄바꿈으로 그리는 인라인 스타일. `normal`·`nowrap` 은 줄바꿈을 공백으로 본다
+_PRE_STYLE = re.compile(r"white-space\s*:\s*(?:pre|pre-line|pre-wrap|break-spaces)\b", re.I)
 _LINE_SPACES = re.compile(r"[ \t 　​]+")
 
 
@@ -74,6 +76,7 @@ def clean_html(raw: str | None, page_url: str) -> str | None:
         comment.extract()
     for node in soup.select(", ".join((*DROPPED_TAGS, PAGE_FURNITURE))):
         node.decompose()
+    _keep_line_breaks(soup)
     for tag in list(soup.find_all(True)):
         _reshape(tag, page_url)
     _drop_empty(soup)
@@ -99,6 +102,35 @@ def text_html(text: str | None) -> str | None:
             paragraphs.append([])
     blocks = [f"<p>{'<br>'.join(lines)}</p>" for lines in paragraphs if lines]
     return "".join(blocks) or None
+
+
+def _keep_line_breaks(soup: BeautifulSoup) -> None:
+    """`white-space: pre-line` 같은 스타일 안의 줄바꿈을 `<br>` 로 바꾼다.
+
+    스타일은 정리하며 지우고 공백도 한 칸으로 줄이므로, 그대로 두면 줄이 한 줄로 붙는다.
+    스마일게이트 실측(2026-10-14): 섹션마다 `<div style="white-space: pre-line">` 안에 줄바꿈으로
+    항목을 나눠 오공고 화면에 `- 항목 - 항목` 으로 나왔다. 글자 앞뒤 줄바꿈은 버리고 빈 줄은 하나만
+    남긴다.
+    """
+    for tag in soup.find_all(style=_PRE_STYLE):
+        for text in list(tag.find_all(string=True)):
+            if not isinstance(text, NavigableString) or "\n" not in text or not text.strip():
+                continue
+            lines = str(text).replace("\r\n", "\n").split("\n")
+            while not lines[0].strip():
+                lines.pop(0)
+            while not lines[-1].strip():
+                lines.pop()
+            kept: list[str] = []
+            for line in lines:
+                if line.strip() or kept[-1].strip():
+                    kept.append(line)
+            for index, line in enumerate(kept):
+                if index:
+                    text.insert_before(soup.new_tag("br"))
+                if line.strip():
+                    text.insert_before(NavigableString(line))
+            text.extract()
 
 
 def _reshape(tag: Tag, page_url: str) -> None:

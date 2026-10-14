@@ -500,3 +500,42 @@ def test_정보_상자가_아니면_붙이지_않는다(html: str) -> None:
     from app.crawler.parser import labeled_info
 
     assert labeled_info(BeautifulSoup(f"<html><body>{html}</body></html>", "html.parser"), "") == []
+
+
+# 섹션마다 잡힌 본문 (2026-10-14, 스마일게이트) ----------------------------------
+SECTIONED_BODY = (
+    "<html><body><nav>메뉴</nav><div id='apply'><h3>GM</h3><div class='width'>"
+    "<div><strong>담당업무</strong><div class='editor_con'>- 커뮤니티 관리</div></div>"
+    "<div><strong>자격요건</strong><div class='editor_con'>- 경력 2년 이상</div></div>"
+    "<div><strong>우대사항</strong><div class='editor_con'>- 방송 진행 경험</div></div>"
+    "</div></div><footer>회사 주소</footer></body></html>"
+)
+SECTIONED_SELECTORS = DetailSelectors(
+    title="h3", body="div.editor_con", qualifications="", recruitment_end_at="", department=""
+)
+
+
+def test_본문_셀렉터가_섹션마다_잡히면_모든_섹션을_본문과_원문에_담는다() -> None:
+    """스마일게이트: 첫 노드만 읽어 담당업무만 원문이 됐다."""
+    parsed = parse_detail(SECTIONED_BODY, SECTIONED_SELECTORS)
+
+    assert parsed.fields["body"] == "- 커뮤니티 관리\n- 경력 2년 이상\n- 방송 진행 경험"
+    for text in ("담당업무", "자격요건", "우대사항", "- 방송 진행 경험"):
+        assert text in parsed.source_text
+        assert text in parsed.body_html
+    assert "메뉴" not in parsed.source_text
+    assert "회사 주소" not in parsed.source_text
+
+
+def test_공통_조상이_body_면_본문_노드만_이어_담는다() -> None:
+    html = (
+        "<html><body><nav>메뉴</nav><p class='c'>첫 섹션</p><footer>회사 주소</footer>"
+        "<p class='c'>둘째 섹션</p></body></html>"
+    )
+    selectors = SECTIONED_SELECTORS.model_copy(update={"title": "nav", "body": "p.c"})
+
+    parsed = parse_detail(html, selectors)
+
+    assert "첫 섹션" in parsed.source_text and "둘째 섹션" in parsed.source_text
+    assert "메뉴" not in parsed.source_text
+    assert "회사 주소" not in parsed.source_text
