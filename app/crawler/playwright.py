@@ -59,6 +59,7 @@ from urllib.parse import urlsplit
 
 from app.config import Settings, get_settings
 from app.crawler.fetcher import (
+    LOCALE,
     FetchError,
     FetchPolicy,
     FetchResult,
@@ -457,7 +458,7 @@ class Renderer:
         browser = await self._browser_instance()
         timeout_ms = int(self._timeout * 1000)
         async with self._fetcher.guard(url):
-            context = await browser.new_context(user_agent=self._fetcher.user_agent)
+            context = await browser.new_context(user_agent=self._fetcher.user_agent, locale=LOCALE)
             log = RequestLog()
             try:
                 page = await context.new_page()
@@ -492,7 +493,9 @@ class Renderer:
         timeout_ms = int(self._timeout * 1000)
         try:
             async with asyncio.timeout(self._timeout):
-                context = await browser.new_context(user_agent=self._fetcher.user_agent)
+                context = await browser.new_context(
+                    user_agent=self._fetcher.user_agent, locale=LOCALE
+                )
                 try:
                     page = await context.new_page()
                     if log is not None:

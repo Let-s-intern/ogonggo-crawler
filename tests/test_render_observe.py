@@ -129,7 +129,7 @@ class StubBrowser:
         self._page = page
         self.closed = False
 
-    async def new_context(self, *, user_agent: str) -> StubContext:
+    async def new_context(self, *, user_agent: str, locale: str) -> StubContext:
         return StubContext(self._page)
 
     async def close(self) -> None:

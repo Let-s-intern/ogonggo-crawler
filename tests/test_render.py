@@ -94,12 +94,14 @@ class StubBrowser:
         self.hang = hang
         self.visited: list[tuple[float, str]] = []
         self.user_agents: list[str] = []
+        self.locales: list[str] = []
         self.contexts: list[StubContext] = []
         self.closed = False
         self.stopped = False
 
-    async def new_context(self, *, user_agent: str) -> StubContext:
+    async def new_context(self, *, user_agent: str, locale: str) -> StubContext:
         self.user_agents.append(user_agent)
+        self.locales.append(locale)
         context = StubContext(self, user_agent)
         self.contexts.append(context)
         return context
@@ -198,6 +200,8 @@ async def test_render_uses_the_configured_user_agent() -> None:
     await renderer.fetch(LIST_URL)
 
     assert browser.user_agents == [USER_AGENT]
+    # 렌더도 한국어 페이지를 먼저 달라고 한다 (SK, 2026-10-14)
+    assert browser.locales == ["ko-KR"]
     await renderer.aclose()
 
 

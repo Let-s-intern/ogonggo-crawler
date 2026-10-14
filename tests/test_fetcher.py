@@ -262,6 +262,18 @@ async def test_user_agent_is_the_configured_one() -> None:
     assert all(headers["user-agent"] == USER_AGENT for headers in site.headers)
 
 
+async def test_한국어_페이지를_먼저_달라고_한다() -> None:
+    """SK 는 언어를 말하지 않으면 영어판을 줬다 (2026-10-14)."""
+    clock = FakeClock()
+    site = StubSite(clock, robots_then(ROBOTS_ALLOW_ALL, ok_page))
+    fetcher = make_fetcher(site, clock)
+
+    await fetcher.fetch(LIST_URL)
+    await fetcher.aclose()
+
+    assert all(headers["accept-language"].startswith("ko-KR") for headers in site.headers)
+
+
 def _euc_kr_page(*, header_charset: bool) -> Callable[[httpx.Request], httpx.Response]:
     html = (
         '<html><head><meta http-equiv="Content-Type" content="text/html; charset=euc-kr" />'

@@ -3,6 +3,7 @@
 `.claude/rules/crawling.md` 가 정한 것을 그대로 담는다.
 
 - User-Agent 는 설정값 그대로 쓴다. 브라우저 위장은 하지 않는다
+- 한국어 페이지를 먼저 달라고 한다(`Accept-Language`). 오공고는 한국어 공고판이다
 - 같은 호스트로 가는 요청 사이에 최소 딜레이를 실제로 기다린다
 - 첫 요청 전에 robots.txt 를 확인하고, disallow 면 대상 요청을 보내지 않고 실패한다
 - transport 실패(타임아웃, 연결 끊김, 5xx)만 백오프 재시도한다. 4xx 는 재시도하지 않는다
@@ -35,6 +36,10 @@ _ROBOTS_PATH = "/robots.txt"
 
 # 연락처를 채우지 않았을 때 나가는 이름. 이 값이 보이면 `CRAWL_USER_AGENT` 가 비어 있다
 UNSET_USER_AGENT = "job-crawler-automation (contact: unset)"
+# 언어를 말하지 않으면 영어판을 주는 사이트가 있다. SK 는 회사·지원 기간을 `Tmap Mobility`·
+# `October 07, 2026` 로 줬다 (2026-10-14). 렌더 경로는 같은 값을 브라우저 locale 로 쓴다
+ACCEPT_LANGUAGE = "ko-KR,ko;q=0.9,en;q=0.5"
+LOCALE = "ko-KR"
 
 
 class FetchError(Exception):
@@ -133,7 +138,7 @@ class Fetcher:
         self._client = httpx.AsyncClient(
             transport=transport,
             timeout=httpx.Timeout(resolved.crawl_timeout_seconds),
-            headers={"User-Agent": self._user_agent},
+            headers={"User-Agent": self._user_agent, "Accept-Language": ACCEPT_LANGUAGE},
             follow_redirects=True,
         )
         self._last_request_at: dict[str, float] = {}
