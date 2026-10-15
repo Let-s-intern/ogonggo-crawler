@@ -411,3 +411,36 @@ def test_사람이_마감일을_고쳤으면_띄우지_않는다(
     )
 
     assert "마감일 다름" not in client.get("/ui/review?view=all").text
+
+
+def test_어느_보기에서나_고른_공고_다시_채우기_단추가_있다(client: TestClient) -> None:
+    for view in ("all", "sent", "today"):
+        html = client.get(f"/ui/review?view={view}").text
+        assert 'id="review-refill-open"' in html
+        assert "고른 공고 AI로 다시 채우기" in html
+
+
+def test_고른_공고만_다시_채운다(
+    client: TestClient, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    board = refill.RefillBoard()
+    monkeypatch.setattr(refill, "_board", board)
+    app.dependency_overrides[get_classify_run] = ClassifyRun
+    app.dependency_overrides[get_connect_factory] = lambda: lambda: db.connect(tmp_path / "jobs.db")
+    seen: list[list[int]] = []
+
+    async def fake_classify(
+        conn: sqlite3.Connection, ids: list[int], progress: Any, on_job: Any = None
+    ) -> Any:
+        seen.append(list(ids))
+        for raw_job_id in ids:
+            on_job(raw_job_id, "done")
+        return progress
+
+    monkeypatch.setattr(refill, "classify_ids", fake_classify)
+
+    response = client.post("/ui/review/reclassify", data={"raw_job_id": "2", "view": "all"})
+    assert board.wait(5)
+
+    assert "1건</span>을 AI로 다시 채우기 시작했다" in response.text
+    assert seen == [[2]]

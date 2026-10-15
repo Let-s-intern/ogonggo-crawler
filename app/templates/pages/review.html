@@ -72,6 +72,17 @@
           send.removeAttribute('hx-confirm');
         }
       }
+      // 다시 채우기도 같은 고르기를 받는다. 건마다 AI 비용이 들어 조건 전체는 건수를 묻는다
+      var refill = document.getElementById('review-refill-open');
+      if (refill) {
+        refill.disabled = whole ? total === '0' : picked === 0;
+        refill.textContent = whole ? '조건 전체 ' + total + '건 AI로 다시 채우기' : '고른 공고 AI로 다시 채우기';
+        if (whole) {
+          refill.setAttribute('hx-confirm', '조건에 걸린 ' + total + '건 전체를 AI로 다시 채울까요? 건마다 AI 호출 비용이 든다');
+        } else {
+          refill.removeAttribute('hx-confirm');
+        }
+      }
     }
 
     document.body.addEventListener('change', function (evt) {

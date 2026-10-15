@@ -307,12 +307,17 @@ TARGET_FIELDS: tuple[str, ...] = (
     "IT·개발",
     "AI·데이터",
 )
-# 인턴~3년차. 최소 경력 연수는 경력 공고에서 원문이 말할 때만 차므로, 비었으면 보낸다
+# 인턴~3년차. 최소 경력 연수는 경력 공고에서 원문이 말할 때만 차므로, 비었으면 보낸다. 신입·인턴은
+# 정규화가 0 으로 채운다. 공고 목록의 경력 조건 `3년 이하` 도 이 조건이다
+# (`app/api/review_filter.py`)
 TARGET_MAX_YEARS = 3
+TARGET_YEARS_SQL = (
+    "(trim(coalesce(n.experience_min_years, '')) = ''"
+    f" OR CAST(n.experience_min_years AS INTEGER) <= {TARGET_MAX_YEARS})"
+)
 TARGET_SQL = (
     "(n.job_field IN (" + ", ".join(f"'{name}'" for name in TARGET_FIELDS) + ")"
-    " AND (trim(coalesce(n.experience_min_years, '')) = ''"
-    f" OR CAST(n.experience_min_years AS INTEGER) <= {TARGET_MAX_YEARS}))"
+    f" AND {TARGET_YEARS_SQL})"
 )
 
 
