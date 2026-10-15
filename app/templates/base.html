@@ -326,9 +326,11 @@
         document.body.dispatchEvent(new CustomEvent('panel-closed'));
       });
 
-      // 지우고 나면 패널이 보던 공고는 없다
-      document.body.addEventListener('jobs-deleted', function () {
-        if (panel.open) { panel.close(); }
+      // 지우고 나면 패널이 보던 공고·사이트는 없다
+      ['jobs-deleted', 'site-deleted'].forEach(function (name) {
+        document.body.addEventListener(name, function () {
+          if (panel.open) { panel.close(); }
+        });
       });
 
       document.body.addEventListener('htmx:afterRequest', function (evt) {

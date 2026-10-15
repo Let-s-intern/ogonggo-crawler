@@ -1,6 +1,6 @@
 {# 사이트 하나의 오른쪽 패널 (`app/api/ui_sites.py` 의 `site_panel_fragment`).
 
-   위에서부터 문제(있을 때) → 주소 → 로고 → 조작과 설정(워크플로우 카드 그대로) → 고치기 → 최근 수집 순이다.
+   위에서부터 문제(있을 때) → 주소 → 로고 → 조작과 설정(워크플로우 카드 그대로) → 고치기 → 최근 수집 → 지우기 순이다.
    고치기는 시험 수집 → AI 로 고치기(단서) → 고친 셀렉터 저장 → 다시 실행이고, 그 조각은 시험 실행
    화면과 같다 (`fragments/test_result.html`, `fragments/test_repair.html`) #}
 {% from "macros.html" import notice_box, wait %}
@@ -157,6 +157,15 @@
       {% else %}
       <p class="text-sm text-slate-500">아직 수집한 적이 없습니다</p>
       {% endif %}
+    </div>
+
+    {# 지우기. 사이트 목록과 매일 수집에서 빠지고, 모은 공고는 공고 화면에 남는다 (`delete_site`) #}
+    <div class="rounded-md border border-red-200 p-3 text-sm">
+      <h4 class="mb-0 mt-0 text-sm font-semibold text-red-900">사이트 지우기</h4>
+      <p class="text-xs text-slate-500">사이트 목록과 매일 수집에서 빠집니다. 이 사이트에서 모은 공고와 이미 오공고로 보낸 공고는 그대로 남습니다</p>
+      <button type="button" class="btn-quiet mt-0 text-red-700" hx-post="/ui/sites/{{ item.id }}/delete"
+              hx-target="#app-panel-body" hx-swap="innerHTML" hx-disabled-elt="this"
+              hx-confirm="{{ item.name }} 사이트를 지울까요? 모은 공고는 남습니다">사이트 지우기</button>
     </div>
   </div>
 </div>

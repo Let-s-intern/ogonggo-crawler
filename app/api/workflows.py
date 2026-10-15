@@ -179,8 +179,11 @@ def list_workflows(
 
     주소로 직접 넣은 공고를 담는 워크플로우(`kind = 'manual'`)는 빼 둔다. 돌 목록이 없는 자리라
     사이트 목록에 섞이면 켜고 끌 수 있는 사이트로 보인다 (`migrations/0042_manual_workflow.sql`).
+    지운 사이트(`deleted_at`)도 뺀다.
     """
-    rows = conn.execute(_LIST_QUERY + " WHERE w.kind = 'crawl' ORDER BY w.id").fetchall()
+    rows = conn.execute(
+        _LIST_QUERY + " WHERE w.kind = 'crawl' AND w.deleted_at IS NULL ORDER BY w.id"
+    ).fetchall()
     return [_item(row) for row in rows]
 
 
@@ -217,3 +220,45 @@ def update_workflow(
 
     updated = conn.execute(_LIST_QUERY + " WHERE w.id = ?", (workflow_id,)).fetchone()
     return _item(updated)
+
+
+class DeleteOut(BaseModel):
+    id: int
+    name: str
+
+
+def delete_site(
+    conn: sqlite3.Connection, scheduler: WorkflowScheduler, workflow_id: int
+) -> str | None:
+    """사이트를 지우고 이름을 돌려준다. 없거나 이미 지웠으면 `None` 이다.
+
+    행은 남기고 지운 때만 적는다 (`migrations/0053_workflow_deleted_at.sql`). 그 사이트가 모은
+    공고는 공고 화면에 그대로 남는다. 멈춤으로도 바꿔 매일 수집과 스케줄러가 다시 깨우지 않게 한다.
+    """
+    row = conn.execute(
+        "SELECT name FROM workflows WHERE id = ? AND kind = 'crawl' AND deleted_at IS NULL",
+        (workflow_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    conn.execute(
+        "UPDATE workflows SET status = 'paused', deleted_at = datetime('now') WHERE id = ?",
+        (workflow_id,),
+    )
+    scheduler.sync(conn)
+    return str(row["name"])
+
+
+@router.delete("/{workflow_id}", response_model=DeleteOut)
+def delete_workflow(
+    workflow_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    scheduler: Annotated[WorkflowScheduler, Depends(get_workflow_scheduler)],
+) -> DeleteOut:
+    """사이트 목록에서 지운다. 모은 공고는 남는다 (`delete_site`)."""
+    name = delete_site(conn, scheduler, workflow_id)
+    if name is None:
+        raise HTTPException(
+            status_code=404, detail={"message": f"워크플로우 {workflow_id} 가 없다"}
+        )
+    return DeleteOut(id=workflow_id, name=name)

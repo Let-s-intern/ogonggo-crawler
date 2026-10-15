@@ -74,11 +74,15 @@ def progress() -> AllProgress:
 
 
 def _targets(conn: sqlite3.Connection) -> list[tuple[int, str]]:
-    """공고를 담은 사이트. 멈춘 사이트도 넣는다 — 이미 담은 공고의 값을 바로잡는 일이다."""
+    """공고를 담은 사이트. 멈춘 사이트도 넣는다 — 이미 담은 공고의 값을 바로잡는 일이다.
+
+    지운 사이트는 뺀다. 더 가져오지 않기로 한 사이트다.
+    """
     rows = conn.execute(
         """
         SELECT w.id, w.name FROM workflows w
          WHERE EXISTS (SELECT 1 FROM raw_jobs r WHERE r.workflow_id = w.id)
+           AND w.deleted_at IS NULL
          ORDER BY w.id
         """
     ).fetchall()
