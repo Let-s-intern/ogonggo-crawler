@@ -26,7 +26,7 @@ import logging
 import sqlite3
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from starlette.datastructures import FormData
 
@@ -44,6 +44,8 @@ from app.classify.batch import (
     classify_ids,
     get_classify_run,
 )
+from app.crawler.images import LlmImageReader
+from app.crawler.manual import ManualAddError, replace_source
 from app.deliver import spring
 from app.normalize.backfill import ConnectFactory, rewrite_one
 from app.normalize.engine import NormalizeError, load_rules
@@ -211,6 +213,55 @@ async def job_reclassify(
         else "AI로 다시 읽었지만 바뀐 칸은 없어요"
     )
     return render_panel(request, conn, normalized_id, message=message)
+
+
+@router.post("/ui/review/jobs/{normalized_id}/replace-source", response_class=HTMLResponse)
+async def job_replace_source(
+    request: Request,
+    normalized_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
+    text: Annotated[str, Form()] = "",
+    # 파일을 고르지 않으면 브라우저는 이름 없는 빈 칸을 보내고, 그것은 파일이 아니라 글자로 온다
+    images: Annotated[list[UploadFile | str] | None, File()] = None,
+) -> HTMLResponse:
+    """직접 넣은 공고의 원문을 새 이미지·글로 바꾸고 곧바로 AI 로 다시 채운다.
+
+    지금 원문은 이력에 남는다 (`app/crawler/manual.py` 의 `replace_source`). 다시 채우기는 패널의
+    `AI로 다시 채우기` 와 같아서, 사람이 고친 칸은 남고 다른 분류가 돌고 있으면 바꾸지 않는다.
+    """
+    job = _job(conn, normalized_id)
+    if job is None:
+        return render_panel(request, conn, normalized_id)
+    busy = side_runner.classify_running(conn) or (
+        "분류 실행이 아직 돌고 있다" if get_classify_run().progress().running else None
+    )
+    if busy:
+        return render_panel(request, conn, normalized_id, message=f"지금은 바꿀 수 없다: {busy}")
+    files = [image for image in images or [] if not isinstance(image, str)]
+    uploaded = [data for data in [await image.read() for image in files] if data]
+    raw_job_id = int(job["raw_job_id"])
+    try:
+        notes = await replace_source(
+            conn, raw_job_id, text=text, images=uploaded, reader=LlmImageReader(conn)
+        )
+    except ManualAddError as exc:
+        return render_panel(request, conn, normalized_id, message=f"원문을 바꾸지 못했어요: {exc}")
+    progress = await classify_ids(
+        conn, [raw_job_id], ClassifyProgress(), on_job=refill.get_refill_board().mark
+    )
+    # 나뉜 공고였다면 번호가 달라질 수 있다. 같은 수집 건의 첫 공고를 연다
+    first = conn.execute(
+        "SELECT id FROM normalized_jobs WHERE raw_job_id = ? ORDER BY part LIMIT 1", (raw_job_id,)
+    ).fetchone()
+    shown = int(first["id"]) if first is not None else normalized_id
+    if not progress.processed:
+        reason = "; ".join(progress.errors) or "사유 없음"
+        message = f"원문은 바꿨지만 AI로 다시 채우지 못했어요: {reason}"
+    else:
+        message = "원문을 바꾸고 AI로 다시 채웠어요"
+    if notes:
+        message = f"{message}. {' '.join(notes)}"
+    return render_panel(request, conn, shown, message=message)
 
 
 @router.post("/ui/review/send", response_class=HTMLResponse)

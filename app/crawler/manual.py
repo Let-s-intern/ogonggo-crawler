@@ -39,6 +39,13 @@
 주소는 그대로 받는다 — 원문 주소이고, 같은 공고를 두 번 넣지 않게 하는 열쇠이고, 오공고가 반드시
 받는 칸이다. 제목은 첫 줄을 대체값으로 두고 분류가 짓는 제목이 이긴다. 원문 HTML 은 없으므로
 오공고로 보낼 때 글자를 문단으로 감싼다 (`app/deliver/spring.py`).
+
+## 넣은 원문을 바꿀 수 있다 (2026-10-15)
+
+긴 캡처가 잘려 읽혔거나 이미지를 잘못 골랐으면, 공고 화면에서 이미지나 글을 다시 넣어 원문을
+바꾸고 곧바로 다시 분류한다(`replace_source`). 원문 다시 수집처럼 지금 값을 `raw_job_history` 에
+남기고 같은 행을 갈아 끼운다 — 공고 번호·사람 보정·전달 표시가 그 행에 붙어 있다. 직접 넣은
+공고만 된다. 사이트 공고는 원문 다시 수집이 다시 가져오면서 사람이 넣은 원문을 덮는다.
 """
 
 from __future__ import annotations
@@ -72,6 +79,7 @@ from app.crawler.parser import (
 )
 from app.crawler.runner import raw_record
 from app.llm.base import LlmCallError
+from app.normalize.backfill import rewrite_one
 from app.normalize.engine import NormalizeError, insert_normalized, load_rules
 from app.selector.schema import DETAIL_FIELDS
 
@@ -221,6 +229,67 @@ async def _fetched_detail(
     return detail, notes
 
 
+def is_manual(conn: sqlite3.Connection, raw_job_id: int) -> bool:
+    """직접 넣은 공고인가. 원문 바꾸기는 이 공고에만 된다."""
+    row = conn.execute(
+        "SELECT w.kind FROM raw_jobs r JOIN workflows w ON w.id = r.workflow_id WHERE r.id = ?",
+        (raw_job_id,),
+    ).fetchone()
+    return row is not None and row["kind"] == MANUAL_KIND
+
+
+async def replace_source(
+    conn: sqlite3.Connection,
+    raw_job_id: int,
+    *,
+    text: str = "",
+    images: Sequence[bytes] = (),
+    reader: ImageReader | None = None,
+) -> tuple[str, ...]:
+    """직접 넣은 공고의 원문을 새 글·이미지로 바꾸고 다시 정규화한다. 분류는 부르는 쪽이 한다.
+
+    지금 값은 `raw_job_history` 에 남긴다. 읽을 것이 없으면 아무것도 바꾸지 않고
+    `ManualAddError` 다."""
+    if not is_manual(conn, raw_job_id):
+        raise ManualAddError("직접 넣은 공고만 원문을 바꿀 수 있다")
+    if not text.strip() and not images:
+        raise ManualAddError("바꿀 글이나 이미지를 넣는다")
+    row = conn.execute(
+        "SELECT source_url, raw_data_json FROM raw_jobs WHERE id = ?", (raw_job_id,)
+    ).fetchone()
+    stored = json.loads(row["raw_data_json"] or "{}")
+    detail, notes = await _pasted(text, images, reader)
+    item = ListItem(
+        index=0,
+        title=detail.fields["title"],
+        link=str(row["source_url"]),
+        date="",
+        company_name=str(stored.get("company_name") or ""),
+    )
+    record = raw_record(item, detail)
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(
+            """
+            INSERT INTO raw_job_history
+                   (raw_job_id, run_id, raw_data_json, content_hash, crawled_at)
+            SELECT id, NULL, raw_data_json, content_hash, crawled_at FROM raw_jobs WHERE id = ?
+            """,
+            (raw_job_id,),
+        )
+        conn.execute(
+            "UPDATE raw_jobs SET raw_data_json = ?, content_hash = ? WHERE id = ?",
+            (json.dumps(record, ensure_ascii=False), content_hash(record), raw_job_id),
+        )
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    rewrite_one(conn, raw_job_id, load_rules(conn))
+    conn.commit()
+    return tuple(note for note in notes if not note.startswith("붙여 넣은 원문으로 저장했다"))
+
+
 async def _pasted(
     text: str, images: Sequence[bytes], reader: ImageReader | None
 ) -> tuple[DetailParseResult, tuple[str, ...]]:
@@ -231,7 +300,7 @@ async def _pasted(
         try:
             if reader is None:
                 raise ImageReadError("이미지 읽기를 쓸 수 없다")
-            read = await read_uploaded(images, reader)
+            read, skipped = await read_uploaded(images, reader)
         except (ImageReadError, LlmCallError) as exc:
             if not text.strip():
                 raise ManualAddError(f"올린 이미지를 읽지 못했다: {exc}") from exc
@@ -243,6 +312,10 @@ async def _pasted(
                 raise ManualAddError("올린 이미지에서 읽은 글이 없다")
             else:
                 notes.append("올린 이미지에서 읽은 글이 없다")
+            if skipped:
+                notes.append(
+                    f"이미지가 길어 아래쪽 {skipped}조각은 읽지 않았다. 빠진 곳은 글로 붙여 넣는다"
+                )
     joined = "\n\n".join(
         part for part in (text.strip(), f"{IMAGE_TEXT_MARK}\n{read}" if read else "") if part
     )

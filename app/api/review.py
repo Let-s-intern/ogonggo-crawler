@@ -63,6 +63,7 @@ from app.api.review_filter import (
 from app.api.ui import display_zone, render, render_page
 from app.classify import refill
 from app.classify.store import read_classification
+from app.crawler.images import MAX_IMAGES
 from app.normalize.engine import read_raw
 from app.taxonomy import list_majors
 
@@ -283,7 +284,7 @@ def review_filters_fragment(
 def _panel_row(conn: sqlite3.Connection, normalized_id: int) -> sqlite3.Row | None:
     return conn.execute(
         f"""
-        SELECT n.*, w.name AS workflow_name, r.crawled_at AS crawled_at,
+        SELECT n.*, w.name AS workflow_name, w.kind AS workflow_kind, r.crawled_at AS crawled_at,
                COALESCE(sub.logo_url, par.logo_url, n.logo_url) AS panel_logo_url,
                {SENT_SQL} AS sent,
                {FAILED_SQL} AS delivery_failed,
@@ -346,6 +347,7 @@ def render_panel(
         custom_values=custom_fields.values_for(conn, int(row["raw_job_id"]), int(row["part"])),
         # 사이트에서 가져온 원문. 본문 셀렉터 밖의 정보 상자까지 담는다. 원문이 없는 공고는 본문
         source_text=str(raw.get("source_text") or "").strip() or (row["body"] or ""),
+        max_images=MAX_IMAGES,
     )
 
 
