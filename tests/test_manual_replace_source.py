@@ -171,7 +171,8 @@ async def test_패널의_단추_하나로_원문을_바꾸고_다시_분류한�
     panel = client.get(f"/ui/review/jobs/{normalized_id}/panel").text
     assert "원문 다시 넣기" in panel
     assert f'hx-post="/ui/review/jobs/{normalized_id}/replace-source"' in panel
-    # 패널 전체가 고치기 폼이다. 폼 안의 폼은 브라우저가 버리므로 바꾸기 폼은 패널 폼이 닫힌 뒤에 있다
+    # 패널 전체가 고치기 폼이다. 폼 안의 폼은 브라우저가 버리므로 바꾸기 폼은 패널 폼이
+    # 닫힌 뒤에 있다
     assert panel.index('<form id="job-replace-form"') > panel.index("</form>")
     assert panel.count("<form") == 2
 
