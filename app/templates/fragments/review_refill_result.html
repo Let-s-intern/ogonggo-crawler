@@ -14,12 +14,11 @@
       <span class="chip chip-warn">AI 채우는 중</span> →
       <span class="chip chip-ok">AI 다시 채움</span> 으로 바뀐다.
     </p>
-    {% if picked > started %}
-    <p class="mt-2 text-sm text-amber-700">
-      한 번에 {{ limit }}건까지만 돈다. 남은 {{ picked - started }}건은 끝난 뒤 다시 누른다
+    <p class="mt-2 text-sm text-slate-700">
+      고른 것을 끝까지 돈다. 다시 누르지 않아도 된다. 진행과 실패 건수는 목록 위 막대에서 보고,
+      끝나면 마감일을 새로 찾은 공고와 그중 이미 오공고로 보낸 공고가 거기 나온다.
     </p>
-    {% endif %}
-    <p class="mt-2 text-xs text-slate-500">분류 뒤 전송이 켜져 있으면 필수 칸이 찬 공고는 오공고로 바로 간다</p>
+    <p class="mt-2 text-xs text-slate-500">아직 안 보낸 공고는 분류 뒤 전송이 켜져 있으면 필수 칸이 찬 것부터 오공고로 간다. 이미 보낸 공고는 저절로 가지 않아 목록 위 결과에서 값을 바꾼다</p>
     {% endif %}
   </div>
   <div class="modal-foot">

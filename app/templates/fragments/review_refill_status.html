@@ -1,0 +1,81 @@
+{# 한꺼번에 AI 다시 채우기의 진행과 결과 (`app/classify/refill.py`, `app/api/review_actions.py`).
+   공고 목록 위에 뜬다. 도는 동안 3초마다 스스로 다시 부르고, 끝나면 마감일이 달라진 공고를 센다.
+   이미 오공고로 보낸 공고는 다시 채워도 오공고에 저절로 가지 않아 따로 세고 바꾸는 단추를 단다 #}
+{% if run %}
+<section class="mb-4 rounded-lg border {% if run.running %}border-amber-200 bg-amber-50{% else %}border-slate-200 bg-white{% endif %} px-4 py-3 text-sm"
+         {% if run.running %}hx-get="/ui/review/refill-status?polling=1" hx-trigger="every 3s" hx-target="#review-refill-status" hx-swap="innerHTML"{% endif %}
+         aria-live="polite">
+  {% set finished = run.done + run.failed %}
+  <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+    <h2 class="m-0 text-sm font-semibold text-slate-900">
+      {% if run.running %}{% if run.stopping %}AI 다시 채우기 멈추는 중{% else %}AI 다시 채우는 중{% endif %}
+      {% elif run.stopped %}AI 다시 채우기 멈춤
+      {% else %}AI 다시 채우기 끝{% endif %}
+    </h2>
+    <span class="tabular-nums text-slate-700">
+      {{ run.total }}건 중 <span class="font-semibold">{{ finished }}건</span> 처리
+      {% if run.failed %}· <span class="text-red-700">실패 {{ run.failed }}건</span>{% endif %}
+      {% if not run.running and run.left %}· 손대지 않음 {{ run.left }}건{% endif %}
+    </span>
+    {% if run.running %}
+    <progress class="h-2 w-48" max="{{ run.total }}" value="{{ finished }}">{{ finished }} / {{ run.total }}</progress>
+    {% endif %}
+    <span class="ml-auto flex items-center gap-2">
+      {% if run.running and not run.stopping %}
+      <button type="button" class="mt-0" hx-post="/ui/review/refill-status/stop"
+              hx-target="#review-refill-status" hx-swap="innerHTML"
+              title="지금 묶음(최대 {{ chunk }}건)을 끝내고 멈춘다">멈추기</button>
+      {% elif not run.running %}
+      <button type="button" class="mt-0" hx-post="/ui/review/refill-status/dismiss"
+              hx-target="#review-refill-status" hx-swap="innerHTML">닫기</button>
+      {% endif %}
+    </span>
+  </div>
+  {% if run.running %}
+  <p class="mb-0 mt-1 text-xs text-slate-500">창을 닫거나 다른 화면으로 가도 계속 돈다. 끝나면 마감일을 새로 찾은 공고가 여기 나온다</p>
+  {% else %}
+  {% set sent = run.sent_changes() %}
+  <p class="mb-0 mt-2 text-slate-700">
+    마감일 새로 찾음 <span class="font-semibold">{{ run.found | length }}건</span>
+    · 다른 날로 바뀜 <span class="font-semibold">{{ run.changed | length }}건</span>
+    {% if sent %}· 그중 이미 오공고로 보낸 공고 <span class="font-semibold text-amber-800">{{ sent | length }}건</span>{% endif %}
+  </p>
+  {% if sent %}
+  <form class="mb-0 mt-2 flex flex-wrap items-center gap-2" hx-post="/ui/review/send"
+        hx-target="#app-modal-body" hx-swap="innerHTML"
+        hx-confirm="마감일이 달라진 공고 {{ sent | length }}건의 오공고 값을 지금 값으로 바꿀까요? 관리자 콘솔에서 고친 내용도 덮어씁니다">
+    {% for change in sent %}<input type="hidden" name="raw_job_id" value="{{ change.raw_job_id }}">{% endfor %}
+    <button type="submit" data-modal-open class="mt-0 border-slate-800 bg-slate-800 text-white hover:bg-slate-700">이 {{ sent | length }}건 오공고 값 바꾸기</button>
+    <span class="text-xs text-slate-500">다시 채워도 이미 보낸 공고는 오공고에 저절로 가지 않는다</span>
+  </form>
+  {% endif %}
+  {% if run.found or run.changed %}
+  <details class="mb-0 mt-2 border-0 p-0">
+    <summary class="text-slate-600">마감일이 달라진 공고 보기</summary>
+    <div class="table-scroll mt-2">
+      <table class="data-table">
+        <thead><tr><th scope="col">공고</th><th scope="col">전</th><th scope="col">후</th><th scope="col">오공고</th></tr></thead>
+        <tbody>
+          {% for change in run.found + run.changed %}
+          <tr>
+            <td class="cell-text">
+              <button type="button" data-panel-open class="m-0 border-0 bg-transparent p-0 text-left underline shadow-none"
+                      hx-get="/ui/review/jobs/{{ change.normalized_id }}/panel" hx-target="#app-panel-body"
+                      hx-swap="innerHTML">{{ change.title or "제목 없음" }}</button>
+            </td>
+            <td class="tabular-nums">{{ change.before or "비어 있음" }}</td>
+            <td class="tabular-nums font-medium">{{ change.after }}</td>
+            <td>{% if change.sent %}보냄 — 값 바꿔야 함{% else %}아직 안 보냄{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+  {% if run.errors %}
+  <p class="mb-0 mt-2 text-xs text-red-700">실패 사유: {{ run.errors | join(" / ") }}</p>
+  {% endif %}
+  {% endif %}
+</section>
+{% endif %}

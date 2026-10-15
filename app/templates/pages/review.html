@@ -7,6 +7,10 @@
   <p class="text-sm text-slate-500">숫자를 불러오는 중</p>
 </div>
 
+{# 한꺼번에 AI 다시 채우기의 진행과 결과. 도는 동안은 조각이 스스로 다시 부른다 #}
+<div id="review-refill-status" hx-get="/ui/review/refill-status" hx-trigger="load, jobs-deleted from:body"
+     hx-swap="innerHTML"></div>
+
 <div class="card px-4 py-3">
   <div id="review-filters" hx-get="/ui/review/filters" hx-trigger="load" hx-swap="innerHTML">
     <p class="text-sm text-slate-500">조회 조건을 불러오는 중</p>

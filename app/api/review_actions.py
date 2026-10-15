@@ -38,7 +38,6 @@ from app.api.rules import get_connect_factory
 from app.api.ui import render
 from app.classify import refill
 from app.classify.batch import (
-    MAX_LIMIT,
     ClassifyProgress,
     ClassifyRun,
     ClassifyRunningError,
@@ -256,13 +255,20 @@ async def jobs_reclassify(
 ) -> HTMLResponse:
     """고른 공고나 조건에 걸린 전부를 AI 로 다시 채운다. 백그라운드로 돌고 결과는 행마다 뜬다."""
     wanted = form_raw_ids(conn, await request.form())
+    board = refill.get_refill_board()
     busy = side_runner.classify_running(conn)
     started = 0
+    going = board.run()
     if not wanted:
         busy = "고른 공고가 없다"
+    elif going is not None and going.running:
+        busy = (
+            f"AI 다시 채우기가 이미 돌고 있다({going.total}건 중 "
+            f"{going.done + going.failed}건 처리). 목록 위에서 진행을 보고, 끝난 뒤 다시 건다"
+        )
     elif not busy:
         try:
-            started = refill.get_refill_board().start(connect, run, wanted)
+            started = board.start(connect, run, wanted)
         except ClassifyRunningError:
             busy = "분류 실행이 아직 돌고 있다"
     if started:
@@ -273,12 +279,48 @@ async def jobs_reclassify(
         picked=len(wanted),
         started=started,
         busy=busy,
-        limit=MAX_LIMIT,
     )
     if started:
         # 표가 다시 그려져야 행마다 `AI 대기` 가 붙는다
         response.headers["HX-Trigger"] = "jobs-deleted"
     return response
+
+
+@router.get("/ui/review/refill-status", response_class=HTMLResponse)
+def refill_status(request: Request, polling: str = "") -> HTMLResponse:
+    """목록 위 진행 막대와 결과 요약. 다시 채우기가 없었으면 빈 조각이다.
+
+    도는 동안 막대가 스스로 부를 때는 `polling` 이 붙는다. 그 응답에서 끝났으면 표와 숫자 카드를
+    다시 부르게 한다 — 행마다 붙은 표시가 제 폴링을 놓쳐 `AI 채우는 중` 에 남는 일이 있었다.
+    """
+    response = _refill_status(request)
+    run = refill.get_refill_board().run()
+    if polling and run is not None and not run.running:
+        response.headers["HX-Trigger"] = "jobs-deleted"
+    return response
+
+
+@router.post("/ui/review/refill-status/stop", response_class=HTMLResponse)
+def refill_stop(request: Request) -> HTMLResponse:
+    """지금 묶음을 끝내고 멈춘다. 이미 도는 공고 몇 건은 끝까지 간다."""
+    if refill.get_refill_board().stop():
+        logger.info("AI 다시 채우기 멈추기를 눌렀다")
+    return _refill_status(request)
+
+
+@router.post("/ui/review/refill-status/dismiss", response_class=HTMLResponse)
+def refill_dismiss(request: Request) -> HTMLResponse:
+    refill.get_refill_board().dismiss()
+    return _refill_status(request)
+
+
+def _refill_status(request: Request) -> HTMLResponse:
+    return render(
+        request,
+        "fragments/review_refill_status.html",
+        run=refill.get_refill_board().run(),
+        chunk=refill.CHUNK,
+    )
 
 
 @router.get("/ui/review/refill/{raw_job_id}", response_class=HTMLResponse)
