@@ -24,6 +24,7 @@ from app.classify.batch import ClassifyProgress
 from app.config import Settings
 from app.crawler import daily
 from app.crawler.fetcher import Fetcher, FetchResult
+from app.crawler.images import IMAGE_TEXT_MARK, ImageReadError
 from app.crawler.manual import MANUAL_NAME, ManualAddError, add_posting, page_detail
 from app.llm.base import ImageInput
 from app.main import app
@@ -437,3 +438,125 @@ def test_화면에서_원문을_붙여_넣어_저장하고_분류를_건다(
     for coroutine in launched:
         coroutine.close()
     assert conn.execute("SELECT count(*) FROM raw_jobs").fetchone()[0] == 1
+
+
+class FailingReader:
+    """이미지 읽기가 실패하는 대역. 키가 없거나 응답이 깨진 경우다."""
+
+    async def read(self, parts: Sequence[ImageInput]) -> str:
+        raise ImageReadError("이미지 읽기 응답을 읽을 수 없다")
+
+
+def _record(conn: sqlite3.Connection, raw_job_id: int) -> dict[str, Any]:
+    row = conn.execute("SELECT raw_data_json FROM raw_jobs WHERE id = ?", (raw_job_id,)).fetchone()
+    return dict(json.loads(row["raw_data_json"]))
+
+
+@pytest.mark.asyncio
+async def test_이미지만_올려도_읽은_글로_저장한다(conn: sqlite3.Connection) -> None:
+    fetcher = blocked()
+    reader = FakeReader()
+    try:
+        added = await add_posting(conn, URL, fetcher=fetcher, reader=reader, images=[_png()])
+    finally:
+        await fetcher.aclose()
+
+    assert reader.calls == 1
+    record = _record(conn, added.raw_job_id)
+    assert record["body"] == f"{IMAGE_TEXT_MARK}\n모집분야: 설계\n지원자격: 학사 이상"
+    assert record["source_text"] == record["body"]
+    # 제목 대체값은 이미지 글 표시가 아니라 읽은 글의 첫 줄이다
+    assert record["title"] == "모집분야: 설계"
+    assert "올린 이미지 1장에서 글을 읽어 원문에 붙였다" in added.notes
+
+
+@pytest.mark.asyncio
+async def test_글과_이미지를_같이_넣으면_글_뒤에_이미지_글을_붙인다(
+    conn: sqlite3.Connection,
+) -> None:
+    fetcher = blocked()
+    try:
+        added = await add_posting(
+            conn, URL, fetcher=fetcher, reader=FakeReader(), text=PASTED, images=[_png()]
+        )
+    finally:
+        await fetcher.aclose()
+
+    body = _record(conn, added.raw_job_id)["body"]
+    assert body.startswith("[나인하이어] 퍼포먼스 마케터 채용")
+    assert body.endswith(f"{IMAGE_TEXT_MARK}\n모집분야: 설계\n지원자격: 학사 이상")
+
+
+@pytest.mark.asyncio
+async def test_이미지만_올렸는데_못_읽으면_저장하지_않는다(conn: sqlite3.Connection) -> None:
+    fetcher = blocked()
+    try:
+        with pytest.raises(ManualAddError, match="올린 이미지를 읽지 못했다"):
+            await add_posting(conn, URL, fetcher=fetcher, reader=FailingReader(), images=[_png()])
+        with pytest.raises(ManualAddError, match="열 수 있는 이미지가 없다"):
+            await add_posting(conn, URL, fetcher=fetcher, reader=FakeReader(), images=[b"not png"])
+    finally:
+        await fetcher.aclose()
+
+    assert conn.execute("SELECT count(*) FROM raw_jobs").fetchone()[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_글이_있으면_이미지를_못_읽어도_글로_저장한다(conn: sqlite3.Connection) -> None:
+    fetcher = blocked()
+    try:
+        added = await add_posting(
+            conn, URL, fetcher=fetcher, reader=FailingReader(), text=PASTED, images=[_png()]
+        )
+    finally:
+        await fetcher.aclose()
+
+    assert IMAGE_TEXT_MARK not in _record(conn, added.raw_job_id)["body"]
+    assert any("올린 이미지를 읽지 못해 붙여 넣은 글만 저장했다" in note for note in added.notes)
+
+
+def test_화면에서_이미지를_올려_저장한다(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launched: list[Any] = []
+    monkeypatch.setattr(ui_posting_add, "get_fetcher", blocked)
+    monkeypatch.setattr(ui_posting_add, "LlmImageReader", lambda _conn: FakeReader())
+    app.dependency_overrides[ui_posting_add.get_add_launcher] = lambda: launched.append
+    app.dependency_overrides[ui_posting_add.get_add_connect] = lambda: (
+        lambda: db.connect(tmp_path / "jobs.db")
+    )
+
+    form = client.get("/ui/postings/new").text
+    assert 'hx-encoding="multipart/form-data"' in form
+    assert 'name="images" type="file" accept="image/*" multiple' in form
+
+    html = client.post(
+        "/ui/postings/new",
+        data={"url": URL},
+        files=[("images", ("posting.png", _png(), "image/png"))],
+    ).text
+
+    assert "저장했어요" in html
+    assert "올린 이미지 1장에서 글을 읽어 원문에 붙였다" in html
+    for coroutine in launched:
+        coroutine.close()
+    raw = conn.execute("SELECT raw_data_json FROM raw_jobs").fetchone()
+    assert "지원자격: 학사 이상" in json.loads(raw["raw_data_json"])["body"]
+
+
+def test_파일을_고르지_않은_빈_칸은_이미지로_보지_않는다(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """브라우저는 파일을 고르지 않아도 이름 없는 빈 파일 하나를 보낸다."""
+    monkeypatch.setattr(ui_posting_add, "get_fetcher", blocked)
+
+    html = client.post(
+        "/ui/postings/new",
+        data={"url": URL},
+        files=[("images", ("", b"", "application/octet-stream"))],
+    ).text
+
+    assert "주소를 열지 못했다" in html

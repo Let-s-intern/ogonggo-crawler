@@ -14,6 +14,7 @@
     {% if step == "form" %}
     <p class="text-sm text-slate-600">공고 페이지 주소 하나를 넣으면 한 번만 가져와 저장하고, 이어서 AI가 분류합니다. 주기적으로 수집하지 않습니다. 목록이 없는 캠페인 페이지 같은 공고에 씁니다</p>
     <form class="space-y-3" hx-post="/ui/postings/new" hx-target="#app-modal-body" hx-swap="innerHTML"
+          hx-encoding="multipart/form-data"
           hx-disabled-elt="find button" hx-indicator="find .posting-add-wait">
       <p class="my-0">
         <label for="posting-add-url" class="block">공고 주소</label>
@@ -35,12 +36,36 @@
                     placeholder="브라우저에서 공고를 열어 본문을 전부 복사해 붙여 넣습니다">{{ text }}</textarea>
           <span class="text-xs text-slate-500">넣으면 페이지를 열지 않고 이 글로 저장한 뒤 AI가 분류합니다. 공고 주소는 원문 주소로 함께 저장됩니다</span>
         </p>
+        {# 공고가 이미지 한 장인 곳이 흔하다. 파일을 고르거나, 위 칸에 캡처를 붙여 넣으면 여기 담긴다 #}
+        <p class="my-2">
+          <label for="posting-add-images" class="block text-sm">공고 이미지 <span class="font-normal text-slate-500">(선택, {{ max_images }}장까지)</span></label>
+          <input id="posting-add-images" name="images" type="file" accept="image/*" multiple class="w-full">
+          <span class="text-xs text-slate-500">위 칸에 캡처 이미지를 붙여 넣어도 여기 담깁니다. AI가 이미지의 글을 읽어 원문에 붙입니다{% if images_lost %} — <span class="text-amber-700">올렸던 이미지는 다시 골라야 합니다</span>{% endif %}</span>
+        </p>
       </details>
       <p class="my-0 flex items-center justify-end gap-3">
         <span class="posting-add-wait">{{ wait("가져오는 중 — 잠시 걸립니다") }}</span>
         <button type="submit">가져오기 · 저장</button>
       </p>
     </form>
+    <script>
+      // 원문 칸에 붙여 넣은 이미지(캡처)를 이미지 칸에 더한다. 글은 그대로 칸에 들어간다
+      (function () {
+        var area = document.getElementById('posting-add-text');
+        var input = document.getElementById('posting-add-images');
+        if (!area || !input || typeof DataTransfer === 'undefined') { return; }
+        area.addEventListener('paste', function (evt) {
+          var items = (evt.clipboardData && evt.clipboardData.files) || [];
+          var images = Array.prototype.filter.call(items, function (file) { return file.type.indexOf('image/') === 0; });
+          if (!images.length) { return; }
+          var merged = new DataTransfer();
+          Array.prototype.forEach.call(input.files, function (file) { merged.items.add(file); });
+          images.forEach(function (file) { merged.items.add(file); });
+          input.files = merged.files;
+          if (!evt.clipboardData.getData('text/plain')) { evt.preventDefault(); }
+        });
+      })();
+    </script>
 
     {% elif step == "done" %}
     <div class="rounded-md border {% if added.existed %}border-amber-200 bg-amber-50 text-amber-900{% else %}border-emerald-200 bg-emerald-50 text-emerald-900{% endif %} px-3 py-2 text-sm">
