@@ -26,10 +26,13 @@ from app.crawler.images import (
     SHORT_BODY_CHARS,
     TILE_HEIGHT,
     TILE_OVERLAP,
+    UPLOAD_MAX_TILES,
+    UPLOAD_MAX_WIDTH,
     ImageReadError,
     LlmImageReader,
     needs_reading,
     read_detail_images,
+    read_uploaded,
     split_tall,
 )
 from app.crawler.parser import DetailParseResult, ListItem, ListParseResult, parse_detail
@@ -421,3 +424,61 @@ async def test_열리지_않는_이미지와_svg_는_건너뛰고_나머지를_�
     assert icon not in fetcher.urls
     assert len(reader.calls[0]) == 1
     assert result.fields["body"] == READ_TEXT
+
+
+def widths(parts: Sequence[ImageInput]) -> list[int]:
+    result = []
+    for part in parts:
+        with Image.open(io.BytesIO(part.data)) as image:
+            result.append(image.size[0])
+    return result
+
+
+def test_폭을_주면_넓은_이미지를_줄인_뒤_자른다() -> None:
+    """레티나 전체 페이지 캡처(2880 × 22680)는 그대로면 18조각, 폭 1280 으로 줄이면 8조각이다."""
+    parts = split_tall(png(2880, 22680), max_width=UPLOAD_MAX_WIDTH)
+
+    assert set(widths(parts)) == {UPLOAD_MAX_WIDTH}
+    assert len(parts) == 8
+    assert len(split_tall(png(2880, 22680))) == 18
+
+
+def test_폭보다_좁은_이미지는_줄이지_않는다() -> None:
+    data = png(800, 600)
+
+    assert split_tall(data, max_width=UPLOAD_MAX_WIDTH) == [
+        ImageInput(data=data, mime_type="image/png")
+    ]
+
+
+class CountingReader:
+    """호출마다 받은 조각 수를 적는다."""
+
+    def __init__(self) -> None:
+        self.calls: list[int] = []
+
+    async def read(self, parts: Sequence[ImageInput]) -> str:
+        self.calls.append(len(parts))
+        return f"{len(self.calls)}번째 묶음 글"
+
+
+@pytest.mark.asyncio
+async def test_올린_이미지는_넓은_상한까지_나눠_읽는다() -> None:
+    reader = CountingReader()
+
+    # 폭 1280 에서 높이 20,000 이면 16조각이다
+    text, skipped = await read_uploaded([png(1280, 20000)], reader)
+
+    assert reader.calls == [MAX_TILES, MAX_TILES]
+    assert text == "1번째 묶음 글\n2번째 묶음 글"
+    assert skipped == 0
+
+
+@pytest.mark.asyncio
+async def test_상한을_넘는_조각은_세어_돌려준다() -> None:
+    reader = CountingReader()
+
+    _text, skipped = await read_uploaded([png(1280, 30000)], reader)
+
+    assert sum(reader.calls) == UPLOAD_MAX_TILES
+    assert skipped == len(split_tall(png(1280, 30000))) - UPLOAD_MAX_TILES

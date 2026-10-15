@@ -89,6 +89,41 @@
       {{ wait("AI가 공고를 다시 읽고 있어요. 20초쯤 걸려요", "job-reclassify-wait") }}
       {{ wait("오공고로 보내는 중이에요", "job-send-wait") }}
     </p>
+    {% if job.workflow_kind == "manual" %}
+    {# 직접 넣은 공고만. 긴 캡처가 잘렸거나 이미지를 잘못 골랐으면 다시 넣어 원문을 바꾸고 바로 다시 분류한다
+       (`app/crawler/manual.py` 의 `replace_source`). 지금 원문은 이력에 남는다 #}
+    <details class="mb-0 mt-3 border-0 p-0">
+      <summary class="text-sm text-slate-600">원문 다시 넣기 <span class="font-normal text-slate-500">(이미지·글)</span></summary>
+      {# 패널 전체가 고치기 폼이라 폼을 안에 둘 수 없다. 칸은 `form` 속성으로 패널 밖 폼에 묶는다 #}
+      <div class="mt-2 space-y-2">
+        <label for="job-replace-images" class="block text-sm">공고 이미지 <span class="font-normal text-slate-500">({{ max_images }}장까지)</span></label>
+        <input id="job-replace-images" name="images" type="file" accept="image/*" multiple class="w-full" form="job-replace-form">
+        <label for="job-replace-text" class="block text-sm">공고 글 <span class="font-normal text-slate-500">(선택, 캡처를 붙여 넣어도 이미지로 담깁니다)</span></label>
+        <textarea id="job-replace-text" name="text" rows="4" class="w-full" form="job-replace-form"></textarea>
+        <p class="my-0 flex items-center justify-end gap-2">
+          {{ wait("이미지를 읽고 다시 채우는 중이에요. 1분쯤 걸려요", "job-replace-wait") }}
+          <button type="submit" id="job-replace-form-button" class="mt-0" form="job-replace-form">원문 바꾸고 다시 분류</button>
+        </p>
+      </div>
+      <script>
+        (function () {
+          var area = document.getElementById('job-replace-text');
+          var input = document.getElementById('job-replace-images');
+          if (!area || !input || typeof DataTransfer === 'undefined') { return; }
+          area.addEventListener('paste', function (evt) {
+            var files = (evt.clipboardData && evt.clipboardData.files) || [];
+            var images = Array.prototype.filter.call(files, function (file) { return file.type.indexOf('image/') === 0; });
+            if (!images.length) { return; }
+            var merged = new DataTransfer();
+            Array.prototype.forEach.call(input.files, function (file) { merged.items.add(file); });
+            images.forEach(function (file) { merged.items.add(file); });
+            input.files = merged.files;
+            if (!evt.clipboardData.getData('text/plain')) { evt.preventDefault(); }
+          });
+        })();
+      </script>
+    </details>
+    {% endif %}
     {% endif %}
   </div>
 
@@ -236,4 +271,10 @@
     {% endif %}
   </div>
 </form>
+{% if not editing and job.workflow_kind == "manual" %}
+<form id="job-replace-form" class="hidden" hx-post="/ui/review/jobs/{{ job.id }}/replace-source"
+      hx-encoding="multipart/form-data" hx-target="#app-panel-body" hx-swap="innerHTML"
+      hx-disabled-elt="#job-replace-form-button" hx-indicator="#job-replace-wait"
+      hx-confirm="지금 원문을 새로 넣은 것으로 바꾸고 AI로 다시 채울까요? 지금 원문은 이력에 남습니다"></form>
+{% endif %}
 {% endif %}

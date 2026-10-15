@@ -52,6 +52,14 @@ MAX_TILES = 8
 # 조각 하나의 높이와 조각끼리 겹치는 높이. 경계에 걸린 줄이 어느 조각에서든 온전히 보이게 겹친다
 TILE_HEIGHT = 1400
 TILE_OVERLAP = 80
+# 운영자가 올린 이미지(공고 한 건 추가의 원문 직접 넣기)만 따로 둔다. 전체 페이지 캡처는 레티나라
+# 폭이 2,000px 을 넘고 높이가 2만 px 이 넘는다. 그대로 자르면 8조각이 위쪽 절반만 덮어 모집기간·
+# 전형 일정이 빠졌다(넥스트플레이어 캡처, 2026-10-15). 폭을 줄인 뒤 자르면 같은 글이 조각 수의 절반
+# 아래로 들어오고 글자는 여전히 읽힌다. 사람이 고른 이미지라 조각 상한을 넓히되, 한 호출에는
+# 지금처럼 `MAX_TILES` 까지만 싣고 나눠 부른다
+UPLOAD_MAX_WIDTH = 1280
+UPLOAD_MAX_TILES = 16
+UPLOAD_MAX_BYTES = 30 * 1024 * 1024
 # 원문에서 이미지에서 읽은 글이 시작하는 자리
 IMAGE_TEXT_MARK = "[이미지에 적힌 글]"
 
@@ -96,16 +104,23 @@ def needs_reading(body: str, images: Sequence[str], short_chars: int = SHORT_BOD
     return bool(images) and len(_SPACES.sub(" ", body).strip()) < short_chars
 
 
-def split_tall(data: bytes) -> list[ImageInput]:
-    """세로로 긴 이미지를 조금씩 겹쳐 자른 조각들. 짧고 보낼 수 있는 형식이면 원래 바이트 하나다."""
+def split_tall(data: bytes, max_width: int | None = None) -> list[ImageInput]:
+    """세로로 긴 이미지를 조금씩 겹쳐 자른 조각들. 짧고 보낼 수 있는 형식이면 원래 바이트 하나다.
+
+    `max_width` 를 주면 그보다 넓은 이미지는 비율대로 줄인 뒤 자른다."""
     try:
         with Image.open(io.BytesIO(data)) as image:
             image.load()
             width, height = image.size
             mime_type = Image.MIME.get(image.format or "", "")
-            if height <= TILE_HEIGHT and mime_type in _SENDABLE:
+            narrow = max_width is not None and width > max_width
+            if height <= TILE_HEIGHT and mime_type in _SENDABLE and not narrow:
                 return [ImageInput(data=data, mime_type=mime_type)]
             rgb = image.convert("RGB")
+            if max_width is not None and narrow:
+                height = max(1, round(height * max_width / width))
+                width = max_width
+                rgb = rgb.resize((width, height), Image.Resampling.LANCZOS)
     except (OSError, ValueError, Image.DecompressionBombError) as exc:
         raise ImageReadError(f"이미지를 열 수 없다: {exc}") from exc
 
@@ -158,29 +173,32 @@ async def read_detail_images(
     return replace(detail, fields=fields, source_text=source)
 
 
-async def read_uploaded(images: Sequence[bytes], reader: ImageReader) -> str:
-    """운영자가 올린 이미지를 읽은 글. 공고 한 건 추가의 원문 직접 넣기가 쓴다
-    (`app/crawler/manual.py`).
+async def read_uploaded(images: Sequence[bytes], reader: ImageReader) -> tuple[str, int]:
+    """운영자가 올린 이미지를 읽은 글과, 조각 상한을 넘어 읽지 못한 조각 수.
 
-    받은 것을 같은 상한(장 수·크기·조각 수)으로 조각내 한 번에 읽는다. 열 수 없는 한 장은
+    공고 한 건 추가의 원문 직접 넣기가 쓴다 (`app/crawler/manual.py`). 폭을 `UPLOAD_MAX_WIDTH` 로
+    줄여 자르고, `UPLOAD_MAX_TILES` 조각까지 `MAX_TILES` 개씩 나눠 읽는다. 열 수 없는 한 장은
     건너뛰고, 읽을 것이 하나도 없으면 `ImageReadError` 다.
     """
     parts: list[ImageInput] = []
     for index, data in enumerate(images[:MAX_IMAGES], start=1):
-        if len(data) > MAX_IMAGE_BYTES:
+        if len(data) > UPLOAD_MAX_BYTES:
             raise ImageReadError(
-                f"{index}번째 이미지가 {len(data):,}바이트라 읽지 않는다(상한 {MAX_IMAGE_BYTES:,})"
+                f"{index}번째 이미지가 {len(data):,}바이트라 읽지 않는다(상한 {UPLOAD_MAX_BYTES:,})"
             )
         try:
-            parts.extend(split_tall(data))
+            parts.extend(split_tall(data, max_width=UPLOAD_MAX_WIDTH))
         except ImageReadError as exc:
             logger.info("올린 이미지 %s번째를 건너뛴다: %s", index, exc)
             continue
-        if len(parts) >= MAX_TILES:
-            break
     if not parts:
         raise ImageReadError("올린 파일 중 열 수 있는 이미지가 없다")
-    return (await reader.read(parts[:MAX_TILES])).strip()
+    skipped = max(0, len(parts) - UPLOAD_MAX_TILES)
+    kept = parts[:UPLOAD_MAX_TILES]
+    texts = []
+    for start in range(0, len(kept), MAX_TILES):
+        texts.append((await reader.read(kept[start : start + MAX_TILES])).strip())
+    return "\n".join(text for text in texts if text), skipped
 
 
 async def _download(
