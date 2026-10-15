@@ -4,7 +4,7 @@
 조건을 만드는 곳이 하나여야 표가 센 건수와 지우기가 지우는 행이 같다.
 
 조건은 보는 데 필요한 것만 둔다 — 목록 보기(오늘 들어옴·확인 필요·보냄·전체), 검색, 사이트,
-모집 여부, 직군, 그리고 잘못 수집된 중복을 지울 때 쓰는 중복 찾기.
+모집 여부, 직군, 경력 구분, 그리고 잘못 수집된 중복을 지울 때 쓰는 중복 찾기.
 
 ## 확인 필요
 
@@ -33,7 +33,8 @@ from fastapi.responses import HTMLResponse
 
 from app.api import crawlers
 from app.api.ui import display_zone, render
-from app.deliver.spring import OPEN_SQL, READY_SQL
+from app.classify.schema import EXPERIENCE_TYPES
+from app.deliver.spring import OPEN_SQL, READY_SQL, TARGET_MAX_YEARS, TARGET_YEARS_SQL
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,14 @@ _CHECK_SQL = f"(NOT {{sent}} AND {OPEN_SQL} AND {_TROUBLE_SQL})"
 # 짝이다. `오늘 들어옴` 과 겹쳐 오늘 들어온 것 중 손볼 것 없는 것만 한꺼번에 보낸다
 # (2026-10-14). 보낸 공고를 빼는 이유는 다시 보내면 관리자 콘솔에서 고친 값을 덮어써서다
 _READY_TO_SEND_SQL = f"(NOT {{sent}} AND {OPEN_SQL} AND NOT {_TROUBLE_SQL})"
+
+# 경력 구분. 분류가 고르는 값 그대로이고, 끝에 연차로 거르는 `3년 이하` 가 붙는다 — 자동 전송이
+# 보내는 범위(인턴~3년차)와 같은 조건이다. 비어 있으면 가르지 않는다
+EXPERIENCE_UP_TO = "up_to_3"
+EXPERIENCE_STATES: dict[str, str] = {
+    **EXPERIENCE_TYPES,
+    EXPERIENCE_UP_TO: f"{TARGET_MAX_YEARS}년 이하",
+}
 
 # 보낼 준비 여부. 비어 있으면 가르지 않는다
 READY_STATES: dict[str, str] = {
@@ -247,6 +256,7 @@ class JobFilter:
     # 직군. 목록에 없는 이름이 와도 그대로 받는다 — 꺼진 직군으로 이미 분류된 공고를 조회할
     # 방법이 없어지면 안 된다
     job_field: str = ""
+    experience: str = ""
     dup: str = ""
 
     def as_form(self) -> dict[str, str]:
@@ -259,6 +269,7 @@ class JobFilter:
             "delivered": self.delivered,
             "ready": self.ready,
             "job_field": self.job_field,
+            "experience": self.experience,
             "dup": self.dup,
         }
 
@@ -271,6 +282,7 @@ def read_filter(
     delivered: str = "",
     ready: str = "",
     job_field: str = "",
+    experience: str = "",
     dup: str = "",
 ) -> JobFilter:
     """화면이 보낸 값을 조건 한 벌로. 표에 없는 값은 조건을 걸지 않은 것으로 본다.
@@ -286,6 +298,7 @@ def read_filter(
         delivered=delivered if delivered in DELIVERY_STATES else "",
         ready=ready if ready in READY_STATES else "",
         job_field=job_field.strip(),
+        experience=experience if experience in EXPERIENCE_STATES else "",
         dup=dup if dup in DUP_CRITERIA else "",
     )
 
@@ -333,6 +346,11 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
     if picked.job_field:
         clauses.append("n.job_field = ?")
         params.append(picked.job_field)
+    if picked.experience == EXPERIENCE_UP_TO:
+        clauses.append(TARGET_YEARS_SQL)
+    elif picked.experience:
+        clauses.append("n.experience_type = ?")
+        params.append(picked.experience)
 
     if picked.status == "open":
         clauses.append("date(n.recruitment_end_at) >= ?")
@@ -513,6 +531,7 @@ def _describe(conn: sqlite3.Connection, picked: JobFilter, scope: str) -> str:
             f"워크플로우 {workflow}",
             f"보기 {VIEWS.get(picked.view, '전체')}",
             f"직군 {picked.job_field or '전체'}",
+            f"경력 {EXPERIENCE_STATES.get(picked.experience, '전체')}",
             f"모집 {DEADLINE_STATES.get(picked.status, '전체')}",
             f"오공고 {DELIVERY_STATES.get(picked.delivered, '전체')}",
             f"준비 {READY_STATES.get(picked.ready, '전체')}",
@@ -666,6 +685,7 @@ def form_filter(form: Any) -> JobFilter:
                 "delivered",
                 "ready",
                 "job_field",
+                "experience",
                 "dup",
             )
         }

@@ -60,6 +60,14 @@
     {% endfor %}
   </select>
 
+  <label for="review-experience" class="sr-only">경력</label>
+  <select id="review-experience" name="experience" class="mt-0">
+    <option value="">경력 전체</option>
+    {% for value, label in experience_states.items() %}
+    <option value="{{ value }}">{{ label }}</option>
+    {% endfor %}
+  </select>
+
   {# 잘못 수집된 중복을 지울 때만 쓴다. 자동으로 지우는 길은 두지 않는다 — 계열사가 각각 올린
      같은 제목의 공고는 다른 공고다 #}
   <details class="my-0 border-0 p-0">
