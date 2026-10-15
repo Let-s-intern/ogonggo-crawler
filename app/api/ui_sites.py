@@ -27,6 +27,11 @@
 (`app/api/ui_companies.py` 의 `save_logo_file`). 로고는 크롤러의 회사 이름
 (`crawlers.default_company`) 행에 적고, 그 이름은 이 사이트 공고의 모회사로 들어가므로 앞으로
 수집하는 공고는 이 로고로 나간다. 이미 쌓인 공고도 다시 정규화해 로고를 바꾼다.
+
+## 지우기
+
+패널 맨 아래에서 사이트를 지운다 (2026-10-15 결정). 사이트 목록·매일 수집에서 빠지고 스케줄러 잡도
+없어지지만, 그 사이트가 모은 공고는 공고 화면에 남는다 (`app/api/workflows.py` 의 `delete_site`).
 """
 
 from __future__ import annotations
@@ -419,3 +424,16 @@ async def detail_url_fragment(
         selectors_json=json.dumps(result.selectors.model_dump(), ensure_ascii=False, indent=2),
         render_mode=switched,
     )
+
+
+@router.post("/ui/sites/{workflow_id}/delete", response_class=HTMLResponse)
+def delete_fragment(
+    request: Request,
+    workflow_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(workflows.get_connection)],
+    scheduler: Annotated[WorkflowScheduler, Depends(workflows.get_workflow_scheduler)],
+) -> HTMLResponse:
+    """사이트를 지우고 패널을 닫게 한다. 목록은 닫힐 때 다시 불린다."""
+    if workflows.delete_site(conn, scheduler, workflow_id) is None:
+        return render(request, "fragments/site_panel.html", card=None, workflow_id=workflow_id)
+    return HTMLResponse("", headers={"HX-Trigger": "site-deleted"})

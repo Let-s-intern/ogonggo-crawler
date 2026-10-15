@@ -9,6 +9,7 @@
 | 패널에 조작(카드)·고치기·최근 수집이 있다 | 목록에서 할 수 있던 일을 잃는다 |
 | 공고 주소로 셀렉터를 다시 만들어 저장 없이 편집기에 올린다 | 확인 없이 셀렉터가 바뀐다 |
 | 패널에서 올린 로고가 그 사이트 회사의 로고가 된다 | 로고를 바꾸려고 회사 화면을 뒤진다 |
+| 지운 사이트는 목록·매일 수집에서 빠지고 공고는 남는다 | 공고가 같이 사라진다 |
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from fastapi.testclient import TestClient
 from app import companies, db
 from app.api import crawlers as crawlers_api
 from app.api import workflows as workflows_api
+from app.crawler import daily
 from app.main import app
 from app.normalize.engine import insert_normalized
 from app.scheduler import WorkflowScheduler
@@ -418,3 +420,45 @@ def test_정적_HTML_에_목록이_없어_렌더로_만들면_저장할_때_수�
     assert "수집 모드도 렌더로 바꿨다" in saved
     modes = conn.execute("SELECT list_mode, detail_mode FROM crawlers WHERE id = 2").fetchone()
     assert (modes["list_mode"], modes["detail_mode"]) == ("playwright", "playwright")
+
+
+def test_패널_맨_아래에_사이트_지우기가_있다(client: TestClient) -> None:
+    body = client.get("/ui/sites/1/panel").text
+    assert 'hx-post="/ui/sites/1/delete"' in body
+    assert "모은 공고는 남습니다" in body
+
+
+def test_지운_사이트는_목록과_매일_수집에서_빠지고_공고는_남는다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    conn.execute(
+        "INSERT INTO raw_jobs (workflow_id, source_url, raw_data_json, content_hash)"
+        " VALUES (1, 'https://careers.example.com/jobs/1/a', '{}', 'h1')"
+    )
+    assert 1 in daily.active_workflows(conn)
+
+    response = client.post("/ui/sites/1/delete")
+
+    assert response.status_code == 200
+    assert response.headers["HX-Trigger"] == "site-deleted"
+    assert "잘 되는 곳" not in client.get("/ui/sites").text
+    assert 1 not in daily.active_workflows(conn)
+    row = conn.execute("SELECT status, deleted_at FROM workflows WHERE id = 1").fetchone()
+    assert row["status"] == "paused"
+    assert row["deleted_at"] is not None
+    assert conn.execute("SELECT count(*) FROM raw_jobs WHERE workflow_id = 1").fetchone()[0] == 1
+
+
+def test_이미_지운_사이트나_없는_사이트는_사유를_적는다(client: TestClient) -> None:
+    client.post("/ui/sites/1/delete")
+    assert "사이트를 찾지 못했다" in client.post("/ui/sites/1/delete").text
+    assert client.delete("/api/workflows/99").status_code == 404
+
+
+def test_직접_추가_워크플로우는_지우지_않는다(client: TestClient, conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "INSERT INTO workflows (id, crawler_id, name, status, kind)"
+        " VALUES (9, 1, '직접 추가', 'paused', 'manual')"
+    )
+    assert client.delete("/api/workflows/9").status_code == 404
+    assert conn.execute("SELECT deleted_at FROM workflows WHERE id = 9").fetchone()[0] is None

@@ -123,10 +123,11 @@ def round_window(config: DailyConfig, now: datetime) -> tuple[datetime, datetime
 def active_workflows(conn: sqlite3.Connection) -> list[int]:
     """한 바퀴에 드는 크롤 워크플로우. id 순서가 곧 도는 순서다.
 
-    직접 넣은 공고의 워크플로우(`kind = 'manual'`)는 돌 목록이 없어 빼 둔다.
+    직접 넣은 공고의 워크플로우(`kind = 'manual'`)는 돌 목록이 없어 빼 둔다. 지운 사이트도 뺀다.
     """
     rows = conn.execute(
-        "SELECT id FROM workflows WHERE kind = 'crawl' AND status = 'active' ORDER BY id"
+        "SELECT id FROM workflows"
+        " WHERE kind = 'crawl' AND status = 'active' AND deleted_at IS NULL ORDER BY id"
     ).fetchall()
     return [int(row["id"]) for row in rows]
 

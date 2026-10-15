@@ -40,6 +40,8 @@ EXPECTED_COLUMNS = {
         "auto_stop_threshold",
         # 0042. 주소로 직접 넣은 공고의 워크플로우를 가른다
         "kind",
+        # 0053. 지운 사이트. 행은 남고 공고도 남는다
+        "deleted_at",
     },
     "crawl_runs": {
         "id",
@@ -316,6 +318,7 @@ ALL_VERSIONS = [
     "0050",
     "0051",
     "0052",
+    "0053",
 ]
 
 
