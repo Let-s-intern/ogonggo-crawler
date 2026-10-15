@@ -26,6 +26,16 @@
 
 같은 주소를 두 번 넣으면 새로 저장하지 않고 이미 넣은 공고를 알려 준다. 다시 읽히려면 공고
 화면의 `AI로 다시 채우기` 를 쓴다.
+
+## 원문을 붙여 넣을 수 있다 (2026-10-15)
+
+페이지를 열 수 없는 공고가 있다. 나인하이어(`*.ninehire.site`)는 브라우저가 아닌 요청에 Vercel
+봇 확인 페이지를 429 로 돌려준다 — robots.txt 까지다. 브라우저 위장으로 넘지 않는다
+(`.claude/rules/crawling.md`). 대신 운영자가 브라우저에서 복사한 원문을 붙여 넣으면 페이지를
+열지 않고 그 글을 본문이자 원문으로 저장한다. 주소는 그대로 받는다 — 원문 주소이고, 같은 공고를
+두 번 넣지 않게 하는 열쇠이고, 오공고가 반드시 받는 칸이다. 제목은 첫 줄을 대체값으로 두고
+분류가 짓는 제목이 이긴다. 원문 HTML 은 없으므로 오공고로 보낼 때 글자를 문단으로 감싼다
+(`app/deliver/spring.py`).
 """
 
 from __future__ import annotations
@@ -66,6 +76,8 @@ MIN_TEXT_CHARS = 300
 # 본문이 이보다 짧고 이미지가 있으면 이미지를 읽는다. 셀렉터 없이 페이지 전체를 읽어 메뉴 글자가
 # 섞이므로 사이트 수집의 기준(500자)보다 넓다 — HD현대 공고 페이지가 이미지 한 장에 글자 수백 자다
 IMAGE_READ_CHARS = 1500
+# 붙여 넣은 원문의 첫 줄을 제목 대체값으로 쓸 때의 상한. 첫 줄이 문단이면 제목이 되지 않게 자른다
+_PASTED_TITLE_CHARS = 100
 # 공고 본문으로 먼저 보는 자리. 없으면 `body` 다
 _CONTENT_SELECTORS = ("main", "article", "[role=main]")
 # 공고 내용이 아닌 것. 스크립트와 SVG 아이콘, 입력 폼
@@ -126,9 +138,12 @@ async def add_posting(
     fetcher: FetchPolicy,
     open_renderer: RenderOpener | None = None,
     reader: ImageReader | None = None,
+    text: str = "",
 ) -> ManualAdd:
     """주소 하나를 받아 저장하고 정규화한다. 분류는 부르는 쪽이 한다 — 돌고 있는 분류와 겹치는지
-    보는 일이 화면에 있다 (`app/api/ui_posting_add.py`)."""
+    보는 일이 화면에 있다 (`app/api/ui_posting_add.py`).
+
+    `text` 가 있으면 페이지를 열지 않고 그 글을 원문으로 쓴다."""
     cleaned = url.strip()
     if urlsplit(cleaned).scheme not in ("http", "https") or not urlsplit(cleaned).netloc:
         raise ManualAddError(f"http:// 나 https:// 로 시작하는 공고 주소를 넣는다: {cleaned}")
@@ -141,16 +156,11 @@ async def add_posting(
     if known is not None:
         return ManualAdd(raw_job_id=int(known["id"]), workflow_id=workflow_id, existed=True)
 
-    html, page_url, notes = await _page(cleaned, fetcher, open_renderer)
-    detail = page_detail(html)
-    if reader is not None:
-        detail = await read_detail_images(
-            detail, page_url, fetcher, reader, short_chars=IMAGE_READ_CHARS
-        )
-        # 셀렉터로 본문을 가르지 않았으니 본문은 원문 전체다. 이미지 읽기는 본문이 비었을 때만
-        # 본문을 바꾸는데, 제목 한 줄이 본문 영역에 있으면 읽은 글이 원문에만 붙고 본문은 제목으로
-        # 남는다
-        detail = replace(detail, fields={**detail.fields, "body": detail.source_text})
+    if text.strip():
+        detail = pasted_detail(text)
+        notes: tuple[str, ...] = ("붙여 넣은 원문으로 저장했다. 페이지는 열지 않았다",)
+    else:
+        detail, notes = await _fetched_detail(cleaned, fetcher, open_renderer, reader)
     if not detail.fields["body"].strip():
         raise ManualAddError(
             "페이지에서 공고 글자를 읽지 못했다. 공고 본문이 있는 주소인지 확인한다"
@@ -178,6 +188,39 @@ async def add_posting(
         # 원문은 남는다. 정규화 규칙을 고치고 다시 돌리면 된다
         notes = (*notes, f"정규화하지 못했다: {exc}")
     return ManualAdd(raw_job_id=raw_job_id, workflow_id=workflow_id, notes=(*notes, *detail.notes))
+
+
+async def _fetched_detail(
+    url: str,
+    fetcher: FetchPolicy,
+    open_renderer: RenderOpener | None,
+    reader: ImageReader | None,
+) -> tuple[DetailParseResult, tuple[str, ...]]:
+    """페이지를 받아 편다. 본문이 짧고 이미지가 있으면 이미지를 읽는다."""
+    html, page_url, notes = await _page(url, fetcher, open_renderer)
+    detail = page_detail(html)
+    if reader is not None:
+        detail = await read_detail_images(
+            detail, page_url, fetcher, reader, short_chars=IMAGE_READ_CHARS
+        )
+        # 셀렉터로 본문을 가르지 않았으니 본문은 원문 전체다. 이미지 읽기는 본문이 비었을 때만
+        # 본문을 바꾸는데, 제목 한 줄이 본문 영역에 있으면 읽은 글이 원문에만 붙고 본문은 제목으로
+        # 남는다
+        detail = replace(detail, fields={**detail.fields, "body": detail.source_text})
+    return detail, notes
+
+
+def pasted_detail(text: str) -> DetailParseResult:
+    """붙여 넣은 원문을 공고 상세로. 줄 끝 공백과 이어진 빈 줄만 줄이고 글은 그대로 둔다."""
+    lines = [line.rstrip() for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    body = "\n".join(lines).strip()
+    while "\n\n\n" in body:
+        body = body.replace("\n\n\n", "\n\n")
+    first = next((line.strip() for line in lines if line.strip()), "")
+    fields = {name: "" for name in DETAIL_FIELDS}
+    fields["title"] = first[:_PASTED_TITLE_CHARS]
+    fields["body"] = body
+    return DetailParseResult(fields=fields, missing=[], source_text=body)
 
 
 def page_detail(html: str) -> DetailParseResult:

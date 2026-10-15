@@ -26,9 +26,19 @@
                placeholder="예: 동원" class="w-full">
         <span class="text-xs text-slate-500">비워 두면 AI 가 공고에서 읽습니다</span>
       </p>
+      {# 페이지를 열 수 없는 공고에 쓴다. 가져오기가 실패하면 펼친 채로 돌아온다 #}
+      <details class="my-0 border-0 p-0" {% if paste_open or text %}open{% endif %}>
+        <summary class="text-sm text-slate-600">원문 직접 넣기 <span class="font-normal text-slate-500">(페이지를 열 수 없을 때)</span></summary>
+        <p class="my-2">
+          <label for="posting-add-text" class="sr-only">공고 원문</label>
+          <textarea id="posting-add-text" name="text" rows="10" class="w-full"
+                    placeholder="브라우저에서 공고를 열어 본문을 전부 복사해 붙여 넣습니다">{{ text }}</textarea>
+          <span class="text-xs text-slate-500">넣으면 페이지를 열지 않고 이 글로 저장한 뒤 AI가 분류합니다. 공고 주소는 원문 주소로 함께 저장됩니다</span>
+        </p>
+      </details>
       <p class="my-0 flex items-center justify-end gap-3">
         <span class="posting-add-wait">{{ wait("가져오는 중 — 잠시 걸립니다") }}</span>
-        <button type="submit">가져오기</button>
+        <button type="submit">가져오기 · 저장</button>
       </p>
     </form>
 

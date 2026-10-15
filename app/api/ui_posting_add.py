@@ -1,6 +1,8 @@
 """공고 한 건 추가. 공고 주소 하나를 넣으면 한 번만 가져와 저장하고 바로 분류한다 (2026-09-21 결정).
 
 사이트 추가 옆에 둔다 — 등록하는 일이 한곳에 모인다. 결과는 공고 화면에서 검수하고 보낸다.
+페이지를 열 수 없는 공고(봇 확인 페이지를 돌려주는 나인하이어)는 운영자가 원문을 붙여 넣는다 —
+그러면 페이지를 열지 않는다.
 가져오기와 저장은 `app/crawler/manual.py` 가 하고, 이 파일은 분류를 붙이고 결과를 그린다.
 
 **가져와 저장하는 것까지만 창에서 기다리고, 분류는 요청 밖에서 돈다.** 처음에는 분류까지 창에서
@@ -51,7 +53,7 @@ def _form(request: Request, **context: object) -> HTMLResponse:
 
 @router.get("/ui/postings/new", response_class=HTMLResponse)
 def posting_add_form(request: Request) -> HTMLResponse:
-    return _form(request, step="form", url="", company="")
+    return _form(request, step="form", url="", company="", text="")
 
 
 @router.post("/ui/postings/new", response_class=HTMLResponse)
@@ -62,6 +64,7 @@ async def posting_add(
     launch: Annotated[Callable[[Coroutine[Any, Any, None]], None], Depends(get_add_launcher)],
     connect: Annotated[Callable[[], sqlite3.Connection], Depends(get_add_connect)],
     company: Annotated[str, Form()] = "",
+    text: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     """가져와 저장하고, 분류를 요청 밖에 건다. 어느 단계에서 멈췄는지를 결과에 적는다."""
     fetcher = get_fetcher()
@@ -81,9 +84,19 @@ async def posting_add(
             fetcher=fetcher,
             open_renderer=open_renderer,
             reader=LlmImageReader(conn),
+            text=text,
         )
     except ManualAddError as exc:
-        return _form(request, step="form", url=url, company=company, error=str(exc))
+        return _form(
+            request,
+            step="form",
+            url=url,
+            company=company,
+            text=text,
+            error=str(exc),
+            # 열지 못한 페이지다. 붙여 넣기 칸을 펼쳐 둔다
+            paste_open=not text.strip(),
+        )
     finally:
         if renderer is not None:
             await renderer.aclose()
