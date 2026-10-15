@@ -22,7 +22,7 @@ import sqlite3
 from collections.abc import Callable, Coroutine
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
 from app.api import crawlers
@@ -31,7 +31,7 @@ from app.api.ui_site_add import get_add_connect, get_add_launcher
 from app.classify.batch import ClassifyProgress, classify_ids, get_classify_run
 from app.classify.schema import EMPLOYMENT_TYPES, EXPERIENCE_TYPES
 from app.crawler.fetcher import PageSource, get_fetcher
-from app.crawler.images import LlmImageReader
+from app.crawler.images import MAX_IMAGES, LlmImageReader
 from app.crawler.manual import ManualAddError, add_posting
 from app.crawler.playwright import Renderer
 from app.side import runner as side_runner
@@ -53,7 +53,7 @@ def _form(request: Request, **context: object) -> HTMLResponse:
 
 @router.get("/ui/postings/new", response_class=HTMLResponse)
 def posting_add_form(request: Request) -> HTMLResponse:
-    return _form(request, step="form", url="", company="", text="")
+    return _form(request, step="form", url="", company="", text="", max_images=MAX_IMAGES)
 
 
 @router.post("/ui/postings/new", response_class=HTMLResponse)
@@ -65,10 +65,14 @@ async def posting_add(
     connect: Annotated[Callable[[], sqlite3.Connection], Depends(get_add_connect)],
     company: Annotated[str, Form()] = "",
     text: Annotated[str, Form()] = "",
+    # 파일을 고르지 않으면 브라우저는 이름 없는 빈 칸을 보내고, 그것은 파일이 아니라 글자로 온다
+    images: Annotated[list[UploadFile | str] | None, File()] = None,
 ) -> HTMLResponse:
     """가져와 저장하고, 분류를 요청 밖에 건다. 어느 단계에서 멈췄는지를 결과에 적는다."""
     fetcher = get_fetcher()
     renderer: Renderer | None = None
+    files = [image for image in images or [] if not isinstance(image, str)]
+    uploaded = [data for data in [await image.read() for image in files] if data]
 
     async def open_renderer() -> PageSource:
         # 정적 HTML 이 껍데기일 때만 여기까지 온다. 브라우저는 이때 뜬다
@@ -85,6 +89,7 @@ async def posting_add(
             open_renderer=open_renderer,
             reader=LlmImageReader(conn),
             text=text,
+            images=uploaded,
         )
     except ManualAddError as exc:
         return _form(
@@ -95,7 +100,9 @@ async def posting_add(
             text=text,
             error=str(exc),
             # 열지 못한 페이지다. 붙여 넣기 칸을 펼쳐 둔다
-            paste_open=not text.strip(),
+            paste_open=not text.strip() and not uploaded,
+            images_lost=bool(uploaded),
+            max_images=MAX_IMAGES,
         )
     finally:
         if renderer is not None:

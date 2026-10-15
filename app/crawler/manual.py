@@ -32,10 +32,13 @@
 페이지를 열 수 없는 공고가 있다. 나인하이어(`*.ninehire.site`)는 브라우저가 아닌 요청에 Vercel
 봇 확인 페이지를 429 로 돌려준다 — robots.txt 까지다. 브라우저 위장으로 넘지 않는다
 (`.claude/rules/crawling.md`). 대신 운영자가 브라우저에서 복사한 원문을 붙여 넣으면 페이지를
-열지 않고 그 글을 본문이자 원문으로 저장한다. 주소는 그대로 받는다 — 원문 주소이고, 같은 공고를
-두 번 넣지 않게 하는 열쇠이고, 오공고가 반드시 받는 칸이다. 제목은 첫 줄을 대체값으로 두고
-분류가 짓는 제목이 이긴다. 원문 HTML 은 없으므로 오공고로 보낼 때 글자를 문단으로 감싼다
-(`app/deliver/spring.py`).
+열지 않고 그 글을 본문이자 원문으로 저장한다. 공고가 이미지 한 장인 곳이 흔해, 이미지 파일을
+올리거나 붙여 넣어도 된다 — 이미지 읽기로 글을 얻어 붙여 넣은 글 뒤에 붙인다
+(`app/crawler/images.py` 의 `read_uploaded`). 이미지 자체는 저장하지 않는다.
+
+주소는 그대로 받는다 — 원문 주소이고, 같은 공고를 두 번 넣지 않게 하는 열쇠이고, 오공고가 반드시
+받는 칸이다. 제목은 첫 줄을 대체값으로 두고 분류가 짓는 제목이 이긴다. 원문 HTML 은 없으므로
+오공고로 보낼 때 글자를 문단으로 감싼다 (`app/deliver/spring.py`).
 """
 
 from __future__ import annotations
@@ -43,7 +46,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
 from urllib.parse import urlsplit
 
@@ -51,7 +54,13 @@ from bs4 import BeautifulSoup, Tag
 
 from app.crawler.fetcher import FetchError, FetchPolicy, PageSource
 from app.crawler.hashing import content_hash
-from app.crawler.images import ImageReader, read_detail_images
+from app.crawler.images import (
+    IMAGE_TEXT_MARK,
+    ImageReader,
+    ImageReadError,
+    read_detail_images,
+    read_uploaded,
+)
 from app.crawler.parser import (
     PAGE_FURNITURE,
     DetailParseResult,
@@ -62,6 +71,7 @@ from app.crawler.parser import (
     structured_text,
 )
 from app.crawler.runner import raw_record
+from app.llm.base import LlmCallError
 from app.normalize.engine import NormalizeError, insert_normalized, load_rules
 from app.selector.schema import DETAIL_FIELDS
 
@@ -139,11 +149,13 @@ async def add_posting(
     open_renderer: RenderOpener | None = None,
     reader: ImageReader | None = None,
     text: str = "",
+    images: Sequence[bytes] = (),
 ) -> ManualAdd:
     """주소 하나를 받아 저장하고 정규화한다. 분류는 부르는 쪽이 한다 — 돌고 있는 분류와 겹치는지
     보는 일이 화면에 있다 (`app/api/ui_posting_add.py`).
 
-    `text` 가 있으면 페이지를 열지 않고 그 글을 원문으로 쓴다."""
+    `text` 나 `images` 가 있으면 페이지를 열지 않고 그것을 원문으로 쓴다. 이미지는 `reader` 로
+    읽는다."""
     cleaned = url.strip()
     if urlsplit(cleaned).scheme not in ("http", "https") or not urlsplit(cleaned).netloc:
         raise ManualAddError(f"http:// 나 https:// 로 시작하는 공고 주소를 넣는다: {cleaned}")
@@ -156,9 +168,8 @@ async def add_posting(
     if known is not None:
         return ManualAdd(raw_job_id=int(known["id"]), workflow_id=workflow_id, existed=True)
 
-    if text.strip():
-        detail = pasted_detail(text)
-        notes: tuple[str, ...] = ("붙여 넣은 원문으로 저장했다. 페이지는 열지 않았다",)
+    if text.strip() or images:
+        detail, notes = await _pasted(text, images, reader)
     else:
         detail, notes = await _fetched_detail(cleaned, fetcher, open_renderer, reader)
     if not detail.fields["body"].strip():
@@ -208,6 +219,39 @@ async def _fetched_detail(
         # 남는다
         detail = replace(detail, fields={**detail.fields, "body": detail.source_text})
     return detail, notes
+
+
+async def _pasted(
+    text: str, images: Sequence[bytes], reader: ImageReader | None
+) -> tuple[DetailParseResult, tuple[str, ...]]:
+    """붙여 넣은 글과 올린 이미지를 원문으로. 이미지만 있는데 읽지 못하면 저장할 것이 없다."""
+    notes = ["붙여 넣은 원문으로 저장했다. 페이지는 열지 않았다"]
+    read = ""
+    if images:
+        try:
+            if reader is None:
+                raise ImageReadError("이미지 읽기를 쓸 수 없다")
+            read = await read_uploaded(images, reader)
+        except (ImageReadError, LlmCallError) as exc:
+            if not text.strip():
+                raise ManualAddError(f"올린 이미지를 읽지 못했다: {exc}") from exc
+            notes.append(f"올린 이미지를 읽지 못해 붙여 넣은 글만 저장했다: {exc}")
+        else:
+            if read:
+                notes.append(f"올린 이미지 {len(images)}장에서 글을 읽어 원문에 붙였다")
+            elif not text.strip():
+                raise ManualAddError("올린 이미지에서 읽은 글이 없다")
+            else:
+                notes.append("올린 이미지에서 읽은 글이 없다")
+    joined = "\n\n".join(
+        part for part in (text.strip(), f"{IMAGE_TEXT_MARK}\n{read}" if read else "") if part
+    )
+    detail = pasted_detail(joined)
+    if not text.strip():
+        # 첫 줄이 이미지 글 표시다. 제목 대체값은 읽은 글의 첫 줄로 둔다
+        title = pasted_detail(read).fields["title"]
+        detail = replace(detail, fields={**detail.fields, "title": title})
+    return detail, tuple(notes)
 
 
 def pasted_detail(text: str) -> DetailParseResult:

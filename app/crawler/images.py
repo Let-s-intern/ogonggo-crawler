@@ -158,6 +158,31 @@ async def read_detail_images(
     return replace(detail, fields=fields, source_text=source)
 
 
+async def read_uploaded(images: Sequence[bytes], reader: ImageReader) -> str:
+    """운영자가 올린 이미지를 읽은 글. 공고 한 건 추가의 원문 직접 넣기가 쓴다
+    (`app/crawler/manual.py`).
+
+    받은 것을 같은 상한(장 수·크기·조각 수)으로 조각내 한 번에 읽는다. 열 수 없는 한 장은
+    건너뛰고, 읽을 것이 하나도 없으면 `ImageReadError` 다.
+    """
+    parts: list[ImageInput] = []
+    for index, data in enumerate(images[:MAX_IMAGES], start=1):
+        if len(data) > MAX_IMAGE_BYTES:
+            raise ImageReadError(
+                f"{index}번째 이미지가 {len(data):,}바이트라 읽지 않는다(상한 {MAX_IMAGE_BYTES:,})"
+            )
+        try:
+            parts.extend(split_tall(data))
+        except ImageReadError as exc:
+            logger.info("올린 이미지 %s번째를 건너뛴다: %s", index, exc)
+            continue
+        if len(parts) >= MAX_TILES:
+            break
+    if not parts:
+        raise ImageReadError("올린 파일 중 열 수 있는 이미지가 없다")
+    return (await reader.read(parts[:MAX_TILES])).strip()
+
+
 async def _download(
     sources: Sequence[str], page_url: str, fetcher: FetchPolicy
 ) -> list[ImageInput]:
