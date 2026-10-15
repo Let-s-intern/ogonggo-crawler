@@ -322,3 +322,118 @@ def _png() -> bytes:
     buffer = io.BytesIO()
     Image.new("RGB", (10, 10), "white").save(buffer, format="PNG")
     return buffer.getvalue()
+
+
+PASTED = """
+[나인하이어] 퍼포먼스 마케터 채용   
+
+주요업무
+- 광고 캠페인 운영과 성과 분석
+
+
+
+자격요건
+- 마케팅 경력 1년 이상
+"""
+
+
+def blocked() -> Fetcher:
+    """나인하이어처럼 브라우저가 아닌 요청에 봇 확인 페이지를 429 로 돌려주는 사이트."""
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, text="<title>Vercel Security Checkpoint</title>")
+
+    settings = Settings(crawl_delay_seconds=0.0, crawl_max_retries=1)
+    return Fetcher(settings=settings, transport=httpx.MockTransport(handle))
+
+
+@pytest.mark.asyncio
+async def test_원문을_붙여_넣으면_페이지를_열지_않고_저장한다(conn: sqlite3.Connection) -> None:
+    requests: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(str(request.url))
+        return httpx.Response(429, text="blocked")
+
+    fetcher = Fetcher(
+        settings=Settings(crawl_delay_seconds=0.0, crawl_max_retries=1),
+        transport=httpx.MockTransport(handle),
+    )
+    try:
+        added = await add_posting(conn, URL, fetcher=fetcher, text=PASTED)
+    finally:
+        await fetcher.aclose()
+
+    assert requests == []
+    assert added.notes == ("붙여 넣은 원문으로 저장했다. 페이지는 열지 않았다",)
+    record = json.loads(
+        conn.execute(
+            "SELECT raw_data_json FROM raw_jobs WHERE id = ?", (added.raw_job_id,)
+        ).fetchone()["raw_data_json"]
+    )
+    # 줄 끝 공백과 이어진 빈 줄만 줄이고 글은 그대로다
+    assert record["body"] == (
+        "[나인하이어] 퍼포먼스 마케터 채용\n\n주요업무\n- 광고 캠페인 운영과 성과 분석\n\n"
+        "자격요건\n- 마케팅 경력 1년 이상"
+    )
+    assert record["source_text"] == record["body"]
+    # 제목은 첫 줄이 대체값이다. 분류가 짓는 제목이 이긴다
+    assert record["title"] == "[나인하이어] 퍼포먼스 마케터 채용"
+    assert (
+        conn.execute(
+            "SELECT source_url FROM normalized_jobs WHERE raw_job_id = ?", (added.raw_job_id,)
+        ).fetchone()["source_url"]
+        == URL
+    )
+
+
+@pytest.mark.asyncio
+async def test_빈칸만_붙여_넣으면_페이지를_연다(conn: sqlite3.Connection) -> None:
+    fetcher = site({URL: PAGE})
+    try:
+        added = await add_posting(conn, URL, fetcher=fetcher, text="  \n\n ")
+    finally:
+        await fetcher.aclose()
+
+    record = json.loads(
+        conn.execute(
+            "SELECT raw_data_json FROM raw_jobs WHERE id = ?", (added.raw_job_id,)
+        ).fetchone()["raw_data_json"]
+    )
+    assert "전기 설비 견적" in record["body"]
+
+
+def test_열지_못한_페이지는_붙여넣기_칸을_펼쳐_돌려준다(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ui_posting_add, "get_fetcher", blocked)
+
+    html = client.post("/ui/postings/new", data={"url": URL}).text
+
+    assert "주소를 열지 못했다" in html
+    assert 'name="text"' in html
+    assert '<details class="my-0 border-0 p-0" open>' in html
+    assert f'value="{URL}"' in html
+
+
+def test_화면에서_원문을_붙여_넣어_저장하고_분류를_건다(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launched: list[Any] = []
+    monkeypatch.setattr(ui_posting_add, "get_fetcher", blocked)
+    app.dependency_overrides[ui_posting_add.get_add_launcher] = lambda: launched.append
+    app.dependency_overrides[ui_posting_add.get_add_connect] = lambda: (
+        lambda: db.connect(tmp_path / "jobs.db")
+    )
+
+    html = client.post("/ui/postings/new", data={"url": URL, "text": PASTED}).text
+
+    assert "저장했어요" in html
+    assert "붙여 넣은 원문으로 저장했다" in html
+    assert len(launched) == 1
+    for coroutine in launched:
+        coroutine.close()
+    assert conn.execute("SELECT count(*) FROM raw_jobs").fetchone()[0] == 1
