@@ -102,3 +102,9 @@ def test_이미지만_있는_본문도_두_벌이면_한_벌만_보낸다() -> N
     )
 
     assert clean_html(raw, PAGE) == '<div><div><p><img src="https://x/job.jpg"></p></div></div>'
+
+
+def test_이미지에서_읽은_글의_표시는_빼고_감싼다() -> None:
+    assert text_html("[이미지에 적힌 글]\nNEXT PLAYER\n인플루언서 마케팅 인턴") == (
+        "<p>NEXT PLAYER<br>인플루언서 마케팅 인턴</p>"
+    )

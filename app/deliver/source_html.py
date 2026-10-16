@@ -26,6 +26,7 @@ from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 
+from app.crawler.images import IMAGE_TEXT_MARK
 from app.crawler.parser import PAGE_FURNITURE
 
 # 남기는 태그
@@ -93,12 +94,18 @@ def clean_html(raw: str | None, page_url: str) -> str | None:
 
 
 def text_html(text: str | None) -> str | None:
-    """HTML 이 없는 공고의 본문 글자를 문단으로 감싼다. 빈 줄이 문단 경계, 줄바꿈은 `<br>`."""
+    """HTML 이 없는 공고의 본문 글자를 문단으로 감싼다. 빈 줄이 문단 경계, 줄바꿈은 `<br>`.
+
+    이미지로 된 공고는 본문이 이미지에서 읽은 글이다. 그 앞에 붙은 표시(`[이미지에 적힌 글]`)는
+    AI 가 읽으라고 둔 것이라 뺀다.
+    """
     if not text:
         return None
     paragraphs: list[list[str]] = [[]]
     for line in str(text).splitlines():
         line = _LINE_SPACES.sub(" ", line).strip()
+        if line == IMAGE_TEXT_MARK:
+            continue
         if line:
             paragraphs[-1].append(html.escape(line))
         elif paragraphs[-1]:
