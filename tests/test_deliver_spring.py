@@ -333,7 +333,7 @@ async def test_임시로_정한_직군과_인턴부터_3년차까지만_보낸�
     """
     marketing = add_job(conn, 1, job_field="마케팅·광고", job_role="퍼포먼스마케팅")
     md = add_job(conn, 2, job_field="상품기획·MD", job_role="온라인MD", experience_min_years="3")
-    design = add_job(conn, 3, job_field="디자인", job_role="웹디자인")
+    design = add_job(conn, 3, job_field="디자인", job_role="UXUI·프로덕트")
     add_job(conn, 4, job_field="영업", job_role="B2B영업", experience_min_years="5")
     data = add_job(conn, 5, job_field="AI·데이터", job_role="데이터엔지니어")
     seen = mock(lambda request: created(1), monkeypatch)
@@ -350,6 +350,23 @@ async def test_임시로_정한_직군과_인턴부터_3년차까지만_보낸�
         design,
         data,
     ]
+
+
+async def test_오공고에서_지운_직무의_공고는_자동으로_보내지_않는다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-10-15 오공고가 방송작가·웹디자인 같은 직무를 지우고 더 모으지 않기로 했다(LC-3472)."""
+    add_job(conn, 1, job_field="미디어·엔터", job_role="방송작가")
+    add_job(conn, 2, job_field="디자인", job_role="웹디자인")
+    kept = add_job(conn, 3, job_field="미디어·엔터", job_role="영상편집")
+    seen = mock(lambda request: created(1), monkeypatch)
+
+    assert spring.pending_count(conn, "2026-09-01 00:00:00") == 1
+    automatic = await spring.deliver_pending(conn, settings=SETTINGS)
+    forced = await spring.deliver_pending(conn, settings=SETTINGS, force=True)
+
+    assert (automatic.sent, forced.sent) == (1, 0)
+    assert [json.loads(request.content)["sourceUrl"] for request in seen] == [kept]
 
 
 async def test_골라_보내기는_직군과_연차를_보지_않는다(

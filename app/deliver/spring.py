@@ -29,8 +29,10 @@
 - 세 번 실패한 공고. 마지막 거절 사유는 전달 화면에 남는다
 - **임시로 직군·연차를 좁힌다** (2026-10-06 결정). 마케팅·인사·기획·영업·개발 직군이고 인턴~3년차
   공고만 자동 전송·`지금 보내기` 로 보낸다 (`TARGET_SQL`). 직군은 분류 뒤에야 알아 분류는 모든
-  공고에 그대로 돈다. 골라 보내기는 사람이 고른 것이라 좁히지 않는다. 풀 때는 `TARGET_SQL` 을
-  지운다
+  공고에 그대로 돈다. 골라 보내기는 사람이 고른 것이라 좁히지 않는다. 풀 때는 직군·연차 조건을
+  지우고 아래 지운 직무 조건은 남긴다
+- 오공고에서 지운 직무(방송작가, 웹디자인 등 41개, 2026-10-15 LC-3472)의 공고. 오공고도 더 모으지
+  않는다 (`EXCLUDED_ROLES_SQL`). 골라 보내면 같은 직군의 "기타" 직무로 간다
 
 ## 원문 HTML 도 보낸다 (2026-10-13, LC-3456)
 
@@ -315,9 +317,15 @@ TARGET_YEARS_SQL = (
     "(trim(coalesce(n.experience_min_years, '')) = ''"
     f" OR CAST(n.experience_min_years AS INTEGER) <= {TARGET_MAX_YEARS})"
 )
+# 오공고에서 지운 직무의 공고는 보내지 않는다 (2026-10-15, LC-3472). 오공고도 더 모으지 않는다
+EXCLUDED_ROLES_SQL = (
+    "(n.job_field, coalesce(n.job_role, '')) NOT IN (VALUES "
+    + ", ".join(f"('{field}', '{role}')" for field, role in job_roles.excluded_labels())
+    + ")"
+)
 TARGET_SQL = (
     "(n.job_field IN (" + ", ".join(f"'{name}'" for name in TARGET_FIELDS) + ")"
-    f" AND {TARGET_YEARS_SQL})"
+    f" AND {TARGET_YEARS_SQL} AND {EXCLUDED_ROLES_SQL})"
 )
 
 
