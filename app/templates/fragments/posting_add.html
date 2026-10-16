@@ -28,7 +28,7 @@
         <span class="text-xs text-slate-500">비워 두면 AI 가 공고에서 읽습니다</span>
       </p>
       {# 페이지를 열 수 없는 공고에 쓴다. 가져오기가 실패하면 펼친 채로 돌아온다 #}
-      <details class="my-0 border-0 p-0" {% if paste_open or text %}open{% endif %}>
+      <details class="my-0 border-0 p-0" {% if paste_open or text or image_urls %}open{% endif %}>
         <summary class="text-sm text-slate-600">원문 직접 넣기 <span class="font-normal text-slate-500">(페이지를 열 수 없을 때)</span></summary>
         <p class="my-2">
           <label for="posting-add-text" class="sr-only">공고 원문</label>
@@ -41,6 +41,13 @@
           <label for="posting-add-images" class="block text-sm">공고 이미지 <span class="font-normal text-slate-500">(선택, {{ max_images }}장까지)</span></label>
           <input id="posting-add-images" name="images" type="file" accept="image/*" multiple class="w-full">
           <span class="text-xs text-slate-500">위 칸에 캡처 이미지를 붙여 넣어도 여기 담깁니다. AI가 이미지의 글을 읽어 원문에 붙입니다{% if images_lost %} — <span class="text-amber-700">올렸던 이미지는 다시 골라야 합니다</span>{% endif %}</span>
+        </p>
+        {# 올린 이미지는 저장하지 않는다. 오공고 원문 탭에 이미지를 보이려면 공개 주소를 넣는다 (`app/crawler/manual.py`) #}
+        <p class="my-2">
+          <label for="posting-add-image-urls" class="block text-sm">공고 이미지 주소 <span class="font-normal text-slate-500">(선택, 한 줄에 하나)</span></label>
+          <textarea id="posting-add-image-urls" name="image_urls" rows="2" class="w-full"
+                    placeholder="https://image.example.com/job.jpg">{{ image_urls }}</textarea>
+          <span class="text-xs text-slate-500">공고 이미지를 오른쪽 클릭해 '이미지 주소 복사'로 넣습니다. 오공고 원문 탭에 이 이미지가 그대로 보입니다. 사이트가 막아 글을 읽지 못하면 이미지 파일도 함께 올립니다</span>
         </p>
       </details>
       <p class="my-0 flex items-center justify-end gap-3">

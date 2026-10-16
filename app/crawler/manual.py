@@ -40,6 +40,14 @@
 받는 칸이다. 제목은 첫 줄을 대체값으로 두고 분류가 짓는 제목이 이긴다. 원문 HTML 은 없으므로
 오공고로 보낼 때 글자를 문단으로 감싼다 (`app/deliver/spring.py`).
 
+## 이미지 주소를 넣을 수 있다 (2026-10-16, LC-3456)
+
+올린 이미지는 저장하지 않아 오공고 원문 탭에는 이미지에서 읽은 글만 갔다. 공고가 이미지 한 장인
+곳은 그 이미지가 곧 원문인데 보여 줄 수 없었다(넥스트플레이어, 나인하이어). 그런 이미지는 대개
+공개 주소가 있다 — 브라우저에서 이미지 주소를 복사해 넣으면 원문 HTML 을 그 이미지로 저장해 오공고가
+원래 공고처럼 그린다 (`image_html`). 같은 주소로 이미지를 받아 글도 읽는다. 받지 못해도 이미지는
+원문 HTML 에 남고, 그때는 이미지 파일을 함께 올리거나 글을 붙여 넣어 분류가 읽을 글을 준다.
+
 ## 넣은 원문을 바꿀 수 있다 (2026-10-15)
 
 긴 캡처가 잘려 읽혔거나 이미지를 잘못 골랐으면, 공고 화면에서 이미지나 글을 다시 넣어 원문을
@@ -50,6 +58,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import sqlite3
@@ -63,6 +72,7 @@ from app.crawler.fetcher import FetchError, FetchPolicy, PageSource
 from app.crawler.hashing import content_hash
 from app.crawler.images import (
     IMAGE_TEXT_MARK,
+    MAX_IMAGES,
     ImageReader,
     ImageReadError,
     read_detail_images,
@@ -158,12 +168,13 @@ async def add_posting(
     reader: ImageReader | None = None,
     text: str = "",
     images: Sequence[bytes] = (),
+    image_urls: Sequence[str] = (),
 ) -> ManualAdd:
     """주소 하나를 받아 저장하고 정규화한다. 분류는 부르는 쪽이 한다 — 돌고 있는 분류와 겹치는지
     보는 일이 화면에 있다 (`app/api/ui_posting_add.py`).
 
-    `text` 나 `images` 가 있으면 페이지를 열지 않고 그것을 원문으로 쓴다. 이미지는 `reader` 로
-    읽는다."""
+    `text`·`images`·`image_urls` 중 하나라도 있으면 페이지를 열지 않고 그것을 원문으로 쓴다.
+    이미지는 `reader` 로 읽는다."""
     cleaned = url.strip()
     if urlsplit(cleaned).scheme not in ("http", "https") or not urlsplit(cleaned).netloc:
         raise ManualAddError(f"http:// 나 https:// 로 시작하는 공고 주소를 넣는다: {cleaned}")
@@ -176,8 +187,8 @@ async def add_posting(
     if known is not None:
         return ManualAdd(raw_job_id=int(known["id"]), workflow_id=workflow_id, existed=True)
 
-    if text.strip() or images:
-        detail, notes = await _pasted(text, images, reader)
+    if text.strip() or images or image_urls:
+        detail, notes = await _pasted(text, images, reader, image_urls=image_urls, fetcher=fetcher)
     else:
         detail, notes = await _fetched_detail(cleaned, fetcher, open_renderer, reader)
     if not detail.fields["body"].strip():
@@ -245,6 +256,8 @@ async def replace_source(
     text: str = "",
     images: Sequence[bytes] = (),
     reader: ImageReader | None = None,
+    image_urls: Sequence[str] = (),
+    fetcher: FetchPolicy | None = None,
 ) -> tuple[str, ...]:
     """직접 넣은 공고의 원문을 새 글·이미지로 바꾸고 다시 정규화한다. 분류는 부르는 쪽이 한다.
 
@@ -252,13 +265,13 @@ async def replace_source(
     `ManualAddError` 다."""
     if not is_manual(conn, raw_job_id):
         raise ManualAddError("직접 넣은 공고만 원문을 바꿀 수 있다")
-    if not text.strip() and not images:
+    if not text.strip() and not images and not image_urls:
         raise ManualAddError("바꿀 글이나 이미지를 넣는다")
     row = conn.execute(
         "SELECT source_url, raw_data_json FROM raw_jobs WHERE id = ?", (raw_job_id,)
     ).fetchone()
     stored = json.loads(row["raw_data_json"] or "{}")
-    detail, notes = await _pasted(text, images, reader)
+    detail, notes = await _pasted(text, images, reader, image_urls=image_urls, fetcher=fetcher)
     item = ListItem(
         index=0,
         title=detail.fields["title"],
@@ -290,11 +303,59 @@ async def replace_source(
     return tuple(note for note in notes if not note.startswith("붙여 넣은 원문으로 저장했다"))
 
 
+def set_source_images(conn: sqlite3.Connection, raw_job_id: int, image_urls: Sequence[str]) -> None:
+    """직접 넣은 공고의 원문 HTML 만 이미지 주소의 이미지로 바꾼다. 원문 글과 분류는 그대로다.
+
+    올린 이미지를 읽어 넣은 공고는 원문 글은 맞는데 오공고에 이미지가 없다. 이미지를 다시 읽힐 필요
+    없이 보여 줄 이미지만 정한다. 지금 값은 `raw_job_history` 에 남긴다.
+    """
+    if not is_manual(conn, raw_job_id):
+        raise ManualAddError("직접 넣은 공고만 원문을 바꿀 수 있다")
+    urls = image_addresses(image_urls)
+    if not urls:
+        raise ManualAddError("이미지 주소를 넣는다")
+    row = conn.execute(
+        "SELECT raw_data_json, content_hash FROM raw_jobs WHERE id = ?", (raw_job_id,)
+    ).fetchone()
+    record = {**json.loads(row["raw_data_json"] or "{}"), "body_html": image_html(urls)}
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(
+            """
+            INSERT INTO raw_job_history
+                   (raw_job_id, run_id, raw_data_json, content_hash, crawled_at)
+            SELECT id, NULL, raw_data_json, content_hash, crawled_at FROM raw_jobs WHERE id = ?
+            """,
+            (raw_job_id,),
+        )
+        conn.execute(
+            "UPDATE raw_jobs SET raw_data_json = ? WHERE id = ?",
+            (json.dumps(record, ensure_ascii=False), raw_job_id),
+        )
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+
+
 async def _pasted(
-    text: str, images: Sequence[bytes], reader: ImageReader | None
+    text: str,
+    images: Sequence[bytes],
+    reader: ImageReader | None,
+    *,
+    image_urls: Sequence[str] = (),
+    fetcher: FetchPolicy | None = None,
 ) -> tuple[DetailParseResult, tuple[str, ...]]:
-    """붙여 넣은 글과 올린 이미지를 원문으로. 이미지만 있는데 읽지 못하면 저장할 것이 없다."""
+    """붙여 넣은 글과 올린 이미지·이미지 주소를 원문으로. 읽을 글이 없으면 저장할 것이 없다."""
     notes = ["붙여 넣은 원문으로 저장했다. 페이지는 열지 않았다"]
+    urls = image_addresses(image_urls)
+    images = list(images)
+    if urls:
+        downloaded, failed = await _download_images(urls, fetcher)
+        images.extend(downloaded)
+        notes.append(f"이미지 주소 {len(urls)}개를 오공고 원문 이미지로 담았다")
+        if failed:
+            notes.append(f"이미지 주소 {len(failed)}개는 받지 못해 글을 읽지 않았다: {failed[0]}")
     read = ""
     if images:
         try:
@@ -319,12 +380,60 @@ async def _pasted(
     joined = "\n\n".join(
         part for part in (text.strip(), f"{IMAGE_TEXT_MARK}\n{read}" if read else "") if part
     )
+    if not joined:
+        raise ManualAddError(
+            "이미지 주소의 이미지를 받지 못해 읽을 글이 없다."
+            " 이미지 파일을 함께 올리거나 글을 붙여 넣는다"
+        )
     detail = pasted_detail(joined)
     if not text.strip():
         # 첫 줄이 이미지 글 표시다. 제목 대체값은 읽은 글의 첫 줄로 둔다
         title = pasted_detail(read).fields["title"]
         detail = replace(detail, fields={**detail.fields, "title": title})
+    if urls:
+        detail = replace(detail, body_html=image_html(urls))
     return detail, tuple(notes)
+
+
+def image_addresses(values: Sequence[str]) -> list[str]:
+    """입력 칸에서 이미지 주소를 꺼낸다. 줄이나 공백으로 나뉘고, http(s) 주소가 아니면 거절한다."""
+    found: list[str] = []
+    for value in values:
+        for part in value.split():
+            address = part.strip()
+            if urlsplit(address).scheme not in ("http", "https") or not urlsplit(address).netloc:
+                raise ManualAddError(
+                    f"이미지 주소는 http:// 나 https:// 로 시작해야 한다: {address}"
+                )
+            if address not in found:
+                found.append(address)
+    return found[:MAX_IMAGES]
+
+
+def image_html(urls: Sequence[str]) -> str:
+    """이미지 주소들을 원문 HTML 로. 오공고 원문 탭이 이미지를 차례로 그린다."""
+    return "".join(f'<p><img src="{html.escape(url, quote=True)}"></p>' for url in urls)
+
+
+async def _download_images(
+    urls: Sequence[str], fetcher: FetchPolicy | None
+) -> tuple[list[bytes], list[str]]:
+    """이미지 주소에서 이미지를 받는다. 받은 바이트와, 받지 못한 주소와 사유."""
+    if fetcher is None:
+        return [], [f"{url} (받을 수 없다)" for url in urls]
+    downloaded: list[bytes] = []
+    failed: list[str] = []
+    for url in urls:
+        try:
+            result = await fetcher.request(url)
+        except FetchError as exc:
+            failed.append(f"{url} ({exc})")
+            continue
+        if result.content:
+            downloaded.append(result.content)
+        else:
+            failed.append(f"{url} (비어 있다)")
+    return downloaded, failed
 
 
 def pasted_detail(text: str) -> DetailParseResult:

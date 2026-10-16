@@ -100,6 +100,9 @@
         <input id="job-replace-images" name="images" type="file" accept="image/*" multiple class="w-full" form="job-replace-form">
         <label for="job-replace-text" class="block text-sm">공고 글 <span class="font-normal text-slate-500">(선택, 캡처를 붙여 넣어도 이미지로 담깁니다)</span></label>
         <textarea id="job-replace-text" name="text" rows="4" class="w-full" form="job-replace-form"></textarea>
+        <label for="job-replace-image-urls" class="block text-sm">공고 이미지 주소 <span class="font-normal text-slate-500">(선택, 한 줄에 하나)</span></label>
+        <textarea id="job-replace-image-urls" name="image_urls" rows="2" class="w-full" form="job-replace-form" placeholder="https://image.example.com/job.jpg"></textarea>
+        <span class="block text-xs text-slate-500">오공고 원문 탭에 보일 이미지입니다. 주소만 넣으면 원문 글과 분류는 그대로 두고 이미지만 바꿔 오공고에 바로 반영합니다</span>
         <p class="my-0 flex items-center justify-end gap-2">
           {{ wait("이미지를 읽고 다시 채우는 중이에요. 1분쯤 걸려요", "job-replace-wait") }}
           <button type="submit" id="job-replace-form-button" class="mt-0" form="job-replace-form">원문 바꾸고 다시 분류</button>

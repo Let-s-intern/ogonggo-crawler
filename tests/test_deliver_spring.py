@@ -529,3 +529,24 @@ async def test_이미_보낸_공고에_원문만_채운다(
 
     again = await spring.backfill_source_html(conn, settings=SETTINGS, after_job_id=12)
     assert (again.sent, again.missing) == (0, 1)
+
+
+async def test_원문_채우기는_한_수집_건만_고를_수_있다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for seq, job_id in ((1, 11), (2, 12)):
+        source_url = add_job(conn, seq)
+        set_raw(conn, seq, body_html=f"<p>원문 {seq}</p>")
+        conn.execute(
+            "INSERT INTO spring_deliveries (source_url, spring_job_id, status)"
+            " VALUES (?, ?, 'sent')",
+            (source_url, job_id),
+        )
+    seen = mock(
+        lambda request: httpx.Response(200, json={"status": 200, "data": None}), monkeypatch
+    )
+
+    result = await spring.backfill_source_html(conn, settings=SETTINGS, raw_job_id=2)
+
+    assert result.sent == 1
+    assert [request.url.path for request in seen] == ["/api/v1/internal/jobs/12/source-html"]

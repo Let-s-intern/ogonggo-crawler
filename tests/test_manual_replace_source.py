@@ -205,3 +205,92 @@ def test_사이트_공고_패널에는_원문_다시_넣기가_없다(
     conn.commit()
 
     assert "원문 다시 넣기" not in client.get("/ui/review/jobs/1/panel").text
+
+
+IMAGE_URL = "https://image.example.test/job-posting/1.jpg"
+
+
+@pytest.mark.asyncio
+async def test_이미지_주소를_넣으면_원문_HTML_을_그_이미지로_저장한다(
+    conn: sqlite3.Connection,
+) -> None:
+    """올린 이미지는 저장하지 않아 오공고에 글만 갔다. 공개 주소를 넣으면 오공고가 그 이미지를
+    그린다 (넥스트플레이어 실측, 2026-10-16). 이미지 서버가 막아도 함께 올린 파일로 글을 읽는다."""
+    fetcher = blocked()
+    try:
+        added = await add_posting(
+            conn,
+            "https://nextplayer.example.test/job/1",
+            fetcher=fetcher,
+            reader=FakeReader(),
+            images=[_png()],
+            image_urls=[f"{IMAGE_URL}\n"],
+        )
+    finally:
+        await fetcher.aclose()
+
+    record = _record(conn, added.raw_job_id)
+    assert record["body_html"] == f'<p><img src="{IMAGE_URL}"></p>'
+    assert "지원자격: 학사 이상" in record["body"]
+    assert any("받지 못해" in note for note in added.notes)
+
+
+@pytest.mark.asyncio
+async def test_이미지_주소만_넣었는데_받지_못하면_저장하지_않는다(conn: sqlite3.Connection) -> None:
+    fetcher = blocked()
+    try:
+        with pytest.raises(ManualAddError, match="읽을 글이 없다"):
+            await add_posting(
+                conn,
+                "https://nextplayer.example.test/job/2",
+                fetcher=fetcher,
+                reader=FakeReader(),
+                image_urls=[IMAGE_URL],
+            )
+        with pytest.raises(ManualAddError, match="http"):
+            await add_posting(
+                conn,
+                "https://nextplayer.example.test/job/3",
+                fetcher=fetcher,
+                image_urls=["javascript:alert(1)"],
+            )
+    finally:
+        await fetcher.aclose()
+
+
+@pytest.mark.asyncio
+async def test_패널에서_이미지_주소만_넣으면_원문_글은_두고_이미지만_바꿔_오공고에_보낸다(
+    client: TestClient, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw_job_id = await _added(conn)
+    normalized_id = _normalized_id(conn, raw_job_id)
+    before = _record(conn, raw_job_id)
+    classified: list[list[int]] = []
+    resent: list[int | None] = []
+
+    async def classify(*_: Any, **__: Any) -> ClassifyProgress:
+        classified.append([])
+        return ClassifyProgress()
+
+    async def backfill(_conn: sqlite3.Connection, **kwargs: Any) -> Any:
+        resent.append(kwargs.get("raw_job_id"))
+        return review_actions.spring.BackfillResult(sent=1)
+
+    monkeypatch.setattr(review_actions, "classify_ids", classify)
+    monkeypatch.setattr(review_actions.spring, "backfill_source_html", backfill)
+
+    html = client.post(
+        f"/ui/review/jobs/{normalized_id}/replace-source", data={"image_urls": IMAGE_URL}
+    ).text
+
+    assert "원문 이미지를 바꿨어요" in html
+    assert "오공고 원문에도 반영했어요" in html
+    after = _record(conn, raw_job_id)
+    assert after["body_html"] == f'<p><img src="{IMAGE_URL}"></p>'
+    assert after["body"] == before["body"]
+    assert classified == []
+    assert resent == [raw_job_id]
+    history = conn.execute(
+        "SELECT count(*) AS n FROM raw_job_history WHERE raw_job_id = ?", (raw_job_id,)
+    ).fetchone()
+    assert history["n"] == 1

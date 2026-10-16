@@ -497,12 +497,16 @@ async def backfill_source_html(
     *,
     settings: Settings | None = None,
     after_job_id: int = 0,
+    raw_job_id: int | None = None,
 ) -> BackfillResult:
     """이미 보낸 공고에 원문만 채운다 (LC-3456). 원문 저장 전에 보낸 공고에 한 번 돌린다.
 
     `spring_deliveries` 에 오공고 id 가 있는 공고를 id 순으로 돈다. 같은 원문을 다시 보내도 결과가
     같아 중간에 끊겨도 처음부터 다시 돌리면 된다. `after_job_id` 를 주면 그 id 다음부터 돈다.
     원문도 본문도 없는 공고는 건너뛴다. 켜기·끄기는 보지 않는다 — 사람이 직접 돌리는 명령이다.
+
+    `raw_job_id` 를 주면 그 수집 건의 공고만 보낸다. 직접 넣은 공고의 원문 이미지를 바꾼 뒤 곧바로
+    오공고에 반영할 때 쓴다 (`app/api/review_actions.py`).
     """
     resolved = settings or get_settings()
     config = store.read_config(conn)
@@ -517,9 +521,10 @@ async def backfill_source_html(
           FROM spring_deliveries d
           JOIN normalized_jobs n ON n.source_url = d.source_url
          WHERE d.status = 'sent' AND d.spring_job_id > ?
+           AND (? IS NULL OR n.raw_job_id = ?)
          ORDER BY d.spring_job_id
         """,
-        (after_job_id,),
+        (after_job_id, raw_job_id, raw_job_id),
     ).fetchall()
     result = BackfillResult()
     async with httpx.AsyncClient(
