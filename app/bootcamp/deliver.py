@@ -139,7 +139,7 @@ async def deliver_pending(
 
 
 def payload(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
-    """오공고 크롤러 부트캠프 요청 본문. 칸 이름은 오공고 `Bootcamp` 엔티티 그대로다."""
+    """오공고 AI 서버 부트캠프 요청 본문. 칸 이름은 오공고 `Bootcamp` 엔티티 그대로다."""
     start = row["recruitment_start_date"]
     end = row["recruitment_end_date"]
     campus = str(row["campus"] or "")

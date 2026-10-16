@@ -13,5 +13,5 @@ def test_빈_값은_설정하지_않은_것으로_본다(value: str) -> None:
 
 
 def test_채운_값은_그대로_나간다() -> None:
-    ua = "job-crawler-automation (contact: someone@example.com)"
+    ua = "ogonggo-ai (contact: someone@example.com)"
     assert Fetcher(settings=Settings(crawl_user_agent=ua)).user_agent == ua

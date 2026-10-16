@@ -34,7 +34,7 @@ _BACKOFF_BASE_SECONDS = 1.0
 _ROBOTS_PATH = "/robots.txt"
 
 # 연락처를 채우지 않았을 때 나가는 이름. 이 값이 보이면 `CRAWL_USER_AGENT` 가 비어 있다
-UNSET_USER_AGENT = "job-crawler-automation (contact: unset)"
+UNSET_USER_AGENT = "ogonggo-ai (contact: unset)"
 
 
 class FetchError(Exception):
