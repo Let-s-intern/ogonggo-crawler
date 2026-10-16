@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
-TITLE = "크롤링 자동화"
+TITLE = "오공고 AI"
 
 # 화면마다 제 이름을 붙이고 뒤에 서비스 이름을 단다
 PAGES = ["/review", "/tests", "/workflows", "/rules", "/settings"]

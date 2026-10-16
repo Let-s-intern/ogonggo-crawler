@@ -150,7 +150,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await close_fetcher()
 
 
-app = FastAPI(title="job-crawler-automation", lifespan=lifespan)
+app = FastAPI(title="ogonggo-ai", lifespan=lifespan)
 app.include_router(crawlers.router)
 app.include_router(jobs.router)
 app.include_router(workflows.router)

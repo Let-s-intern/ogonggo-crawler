@@ -1,6 +1,6 @@
 """정리한 미래내일 일경험 프로그램을 오공고 채용공고로 등록·교체한다 (2026-10-02 결정, LC-3432).
 
-공고 전송과 같은 크롤러 채용공고 API 를 쓴다 (`app/deliver/spring.py`). `POST /api/v1/internal/jobs`
+공고 전송과 같은 AI 서버 채용공고 API 를 쓴다 (`app/deliver/spring.py`). `POST /api/v1/internal/jobs`
 로 등록하고 받은 id 를 행에 적는다. 보낸 뒤 읽은 값이 바뀌면(모집기간이 늘었거나 인원이 바뀌었으면)
 `PUT /{id}` 로 교체한다. 409 가 오면 `GET ?sourceUrl=` 로 id 를 찾아 교체한다 — id 를 적기 전에
 크롤러가 죽었거나 DB 를 옮긴 경우다.
@@ -149,7 +149,7 @@ async def deliver_pending(
 
 
 def payload(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
-    """오공고 크롤러 채용공고 요청 본문. 칸 이름은 오공고 `Job` 엔티티 그대로다."""
+    """오공고 AI 서버 채용공고 요청 본문. 칸 이름은 오공고 `Job` 엔티티 그대로다."""
     fill = store.fill_of(row) or ProgramFill()
     company = portal.main_company(str(row["company"] or "")) or str(row["operator"] or "").strip()
     job_field, job_role = job_roles.enum_names(fill.job_field or None, fill.job_role or None)

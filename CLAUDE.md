@@ -2,8 +2,12 @@
 
 # Repository Guide
 
-A crawling automation backend. LLM generates the CSS selectors, a test run proves them, a workflow
-runs them on a schedule, and the normalized result is served to a separate job board over REST.
+ogonggo-ai — the AI server behind Ogonggo. It started as a crawling automation backend and still
+is one at its core: LLM generates the CSS selectors, a test run proves them, a workflow runs them on
+a schedule, and the normalized result is served to a separate job board over REST. On top of that it
+analyses job postings and tags LetsCareer content with LLMs. "Crawler" now names only the
+collection part (`app/crawler/`); deploy names (repo, image, `~/ogonggo-crawler`, `crawler-data`
+volume) keep the old name on purpose.
 
 Not a job board. `.claude/rules/core.md` states what follows from that.
 

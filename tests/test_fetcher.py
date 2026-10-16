@@ -19,7 +19,7 @@ from app.crawler.fetcher import (
     TransportError,
 )
 
-USER_AGENT = "job-crawler-automation (contact: test@example.test)"
+USER_AGENT = "ogonggo-ai (contact: test@example.test)"
 DELAY_SECONDS = 3.0
 MAX_RETRIES = 3
 
