@@ -44,8 +44,9 @@ from app.classify.batch import (
     classify_ids,
     get_classify_run,
 )
+from app.crawler.fetcher import get_fetcher
 from app.crawler.images import LlmImageReader
-from app.crawler.manual import ManualAddError, replace_source
+from app.crawler.manual import ManualAddError, replace_source, set_source_images
 from app.deliver import spring
 from app.normalize.backfill import ConnectFactory, rewrite_one
 from app.normalize.engine import NormalizeError, load_rules
@@ -223,8 +224,12 @@ async def job_replace_source(
     text: Annotated[str, Form()] = "",
     # 파일을 고르지 않으면 브라우저는 이름 없는 빈 칸을 보내고, 그것은 파일이 아니라 글자로 온다
     images: Annotated[list[UploadFile | str] | None, File()] = None,
+    image_urls: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     """직접 넣은 공고의 원문을 새 이미지·글로 바꾸고 곧바로 AI 로 다시 채운다.
+
+    이미지 주소만 넣으면 원문 글과 분류는 그대로 두고 오공고에 보일 원문 이미지만 바꾼다
+    (`set_source_images`). 어느 쪽이든 이미 보낸 공고면 원문을 곧바로 오공고에 다시 보낸다.
 
     지금 원문은 이력에 남는다 (`app/crawler/manual.py` 의 `replace_source`). 다시 채우기는 패널의
     `AI로 다시 채우기` 와 같아서, 사람이 고친 칸은 남고 다른 분류가 돌고 있으면 바꾸지 않는다.
@@ -240,9 +245,26 @@ async def job_replace_source(
     files = [image for image in images or [] if not isinstance(image, str)]
     uploaded = [data for data in [await image.read() for image in files] if data]
     raw_job_id = int(job["raw_job_id"])
+    if image_urls.strip() and not text.strip() and not uploaded:
+        try:
+            set_source_images(conn, raw_job_id, [image_urls])
+        except ManualAddError as exc:
+            return render_panel(
+                request, conn, normalized_id, message=f"원문 이미지를 바꾸지 못했어요: {exc}"
+            )
+        sent = await _resend_source(conn, raw_job_id)
+        return render_panel(
+            request, conn, normalized_id, message=f"오공고에 보일 원문 이미지를 바꿨어요. {sent}"
+        )
     try:
         notes = await replace_source(
-            conn, raw_job_id, text=text, images=uploaded, reader=LlmImageReader(conn)
+            conn,
+            raw_job_id,
+            text=text,
+            images=uploaded,
+            reader=LlmImageReader(conn),
+            image_urls=[image_urls] if image_urls.strip() else [],
+            fetcher=get_fetcher(),
         )
     except ManualAddError as exc:
         return render_panel(request, conn, normalized_id, message=f"원문을 바꾸지 못했어요: {exc}")
@@ -261,7 +283,25 @@ async def job_replace_source(
         message = "원문을 바꾸고 AI로 다시 채웠어요"
     if notes:
         message = f"{message}. {' '.join(notes)}"
+    if image_urls.strip():
+        message = f"{message} {await _resend_source(conn, raw_job_id)}"
     return render_panel(request, conn, shown, message=message)
+
+
+async def _resend_source(conn: sqlite3.Connection, raw_job_id: int) -> str:
+    """이미 보낸 공고면 원문만 오공고에 다시 보낸다. 결과를 한 문장으로 돌려준다."""
+    try:
+        result = await spring.backfill_source_html(conn, raw_job_id=raw_job_id)
+    except Exception as exc:
+        logger.exception("원문을 오공고에 다시 보내지 못했다 raw_job_id=%s", raw_job_id)
+        return f"오공고에 원문을 다시 보내지 못했어요: {exc}"
+    if result.reason:
+        return f"오공고에는 보내지 않았어요: {result.reason}"
+    if result.failed:
+        return f"오공고에 원문을 다시 보내지 못했어요: {'; '.join(result.errors)}"
+    if result.sent:
+        return "오공고 원문에도 반영했어요"
+    return "아직 오공고에 보내지 않은 공고라 보낼 때 함께 가요"
 
 
 @router.post("/ui/review/send", response_class=HTMLResponse)

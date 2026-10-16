@@ -53,7 +53,9 @@ def _form(request: Request, **context: object) -> HTMLResponse:
 
 @router.get("/ui/postings/new", response_class=HTMLResponse)
 def posting_add_form(request: Request) -> HTMLResponse:
-    return _form(request, step="form", url="", company="", text="", max_images=MAX_IMAGES)
+    return _form(
+        request, step="form", url="", company="", text="", image_urls="", max_images=MAX_IMAGES
+    )
 
 
 @router.post("/ui/postings/new", response_class=HTMLResponse)
@@ -67,6 +69,7 @@ async def posting_add(
     text: Annotated[str, Form()] = "",
     # 파일을 고르지 않으면 브라우저는 이름 없는 빈 칸을 보내고, 그것은 파일이 아니라 글자로 온다
     images: Annotated[list[UploadFile | str] | None, File()] = None,
+    image_urls: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     """가져와 저장하고, 분류를 요청 밖에 건다. 어느 단계에서 멈췄는지를 결과에 적는다."""
     fetcher = get_fetcher()
@@ -90,6 +93,7 @@ async def posting_add(
             reader=LlmImageReader(conn),
             text=text,
             images=uploaded,
+            image_urls=[image_urls] if image_urls.strip() else [],
         )
     except ManualAddError as exc:
         return _form(
@@ -98,9 +102,10 @@ async def posting_add(
             url=url,
             company=company,
             text=text,
+            image_urls=image_urls,
             error=str(exc),
             # 열지 못한 페이지다. 붙여 넣기 칸을 펼쳐 둔다
-            paste_open=not text.strip() and not uploaded,
+            paste_open=not text.strip() and not uploaded and not image_urls.strip(),
             images_lost=bool(uploaded),
             max_images=MAX_IMAGES,
         )
