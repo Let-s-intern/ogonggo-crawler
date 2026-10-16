@@ -35,9 +35,9 @@ def test_씨앗의_enum_이름은_대문자_모양이고_겹치지_않는다() -
     [
         ("영업", "B2B영업", ("SALES", "SALES_B2B")),
         ("영업", "B2C영업", ("SALES", "SALES_B2C")),
-        ("IT·개발", "VR·AR·3D", ("IT_DEVELOPMENT", "IT_XR_3D")),
+        ("IT·개발", "VR·AR·3D", ("IT_DEVELOPMENT", "IT_ETC")),
         ("게임", "게임3D모델링", ("GAME", "GAME_MODELING_3D")),
-        ("디자인", "3D·VFX", ("PLANNING_STRATEGY", "DESIGN_VFX_3D")),
+        ("디자인", "3D·VFX", ("PLANNING_STRATEGY", "PLANNING_ETC")),
     ],
 )
 def test_숫자가_든_이름도_통째로_옮긴다(field: str, role: str, expected: tuple[str, str]) -> None:
@@ -52,7 +52,7 @@ def test_직군을_모르면_직무도_보내지_않는다() -> None:
 @pytest.mark.parametrize(
     ("field", "role", "expected"),
     [
-        ("AI·데이터", "데이터분석가", ("IT_DEVELOPMENT", "AI_DATA_ANALYST")),
+        ("AI·데이터", "데이터엔지니어", ("IT_DEVELOPMENT", "AI_DATA_ENGINEER")),
         ("미디어·엔터", None, ("MARKETING_ADVERTISING", None)),
         ("회계·세무·재무", None, ("HR_GENERAL_AFFAIRS", None)),
         ("게임", None, ("GAME", None)),
@@ -63,3 +63,33 @@ def test_오공고에서_합친_직군은_합쳐진_직군으로_보낸다(
 ) -> None:
     """2026-10-12 오공고가 직군 여섯 개를 다섯 직군으로 합쳤다. 직무 이름은 그대로다."""
     assert job_roles.enum_names(field, role) == expected
+
+
+@pytest.mark.parametrize(
+    ("field", "role", "expected"),
+    [
+        ("IT·개발", "프론트엔드", ("IT_DEVELOPMENT", "IT_FRONTEND_FULLSTACK")),
+        ("IT·개발", "DBA", ("IT_DEVELOPMENT", "IT_ETC")),
+        ("AI·데이터", "데이터분석가", ("IT_DEVELOPMENT", "AI_DATA_ANALYST_SCIENTIST")),
+        ("AI·데이터", "RAG", ("IT_DEVELOPMENT", "IT_ETC")),
+        ("AI·데이터", "컴퓨터비전", ("IT_DEVELOPMENT", "AI_ETC")),
+        ("미디어·엔터", "방송작가", ("MARKETING_ADVERTISING", "MARKETING_ETC")),
+        ("고객상담·TM", "인바운드", ("HR_GENERAL_AFFAIRS", "HR_ETC")),
+        ("회계·세무·재무", "IR·공시", ("HR_GENERAL_AFFAIRS", "ACCOUNTING_ETC")),
+        ("디자인", "UXUI·프로덕트", ("PLANNING_STRATEGY", "DESIGN_UX_UI_PRODUCT")),
+    ],
+)
+def test_오공고에서_묶거나_지운_직무는_새_직무로_보낸다(
+    field: str, role: str, expected: tuple[str, str]
+) -> None:
+    """2026-10-15 오공고가 IT·개발 직무를 16개로 묶고 기획이 뺀 직무를 "기타" 로 옮겼다(LC-3472)."""
+    assert job_roles.enum_names(field, role) == expected
+
+
+def test_묶거나_지운_직무는_모두_씨앗에_있다() -> None:
+    """오공고 표와 이름이 어긋나면 그 직무는 옛 이름으로 가 400 을 받는다."""
+    seed = set(job_roles._roles().values())
+
+    assert set(job_roles.MERGED_ROLES) - seed == set()
+    assert set(job_roles.EXCLUDED_ROLES) - seed == set()
+    assert len(job_roles.excluded_labels()) == len(job_roles.EXCLUDED_ROLES)
