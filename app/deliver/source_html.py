@@ -26,6 +26,7 @@ from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 
+from app.crawler.images import IMAGE_TEXT_MARK
 from app.crawler.parser import PAGE_FURNITURE
 
 # 남기는 태그
@@ -62,6 +63,8 @@ _BLOCKS: frozenset[str] = KEPT_TAGS - {"strong", "b", "em", "i", "u", "a", "img"
 # 안이 비어도 지우지 않는 태그
 _EMPTY_OK: frozenset[str] = frozenset({"br", "hr", "img", "td", "th"})
 _SPACES = re.compile(r"\s+")
+# 보이지 않는 글자. 그리팅 편집기가 낱말마다 끼운다
+_INVISIBLE = re.compile(r"[\u200b\u200c\u200d\u2060\ufeff]")
 # 글자의 줄바꿈을 화면 줄바꿈으로 그리는 인라인 스타일. `normal`·`nowrap` 은 줄바꿈을 공백으로 본다
 _PRE_STYLE = re.compile(r"white-space\s*:\s*(?:pre|pre-line|pre-wrap|break-spaces)\b", re.I)
 _LINE_SPACES = re.compile(r"[ \t 　​]+")
@@ -76,6 +79,7 @@ def clean_html(raw: str | None, page_url: str) -> str | None:
         comment.extract()
     for node in soup.select(", ".join((*DROPPED_TAGS, PAGE_FURNITURE))):
         node.decompose()
+    _drop_repeats(soup)
     _keep_line_breaks(soup)
     for tag in list(soup.find_all(True)):
         _reshape(tag, page_url)
@@ -90,12 +94,18 @@ def clean_html(raw: str | None, page_url: str) -> str | None:
 
 
 def text_html(text: str | None) -> str | None:
-    """HTML 이 없는 공고의 본문 글자를 문단으로 감싼다. 빈 줄이 문단 경계, 줄바꿈은 `<br>`."""
+    """HTML 이 없는 공고의 본문 글자를 문단으로 감싼다. 빈 줄이 문단 경계, 줄바꿈은 `<br>`.
+
+    이미지로 된 공고는 본문이 이미지에서 읽은 글이다. 그 앞에 붙은 표시(`[이미지에 적힌 글]`)는
+    AI 가 읽으라고 둔 것이라 뺀다.
+    """
     if not text:
         return None
     paragraphs: list[list[str]] = [[]]
     for line in str(text).splitlines():
         line = _LINE_SPACES.sub(" ", line).strip()
+        if line == IMAGE_TEXT_MARK:
+            continue
         if line:
             paragraphs[-1].append(html.escape(line))
         elif paragraphs[-1]:
@@ -183,7 +193,7 @@ def _absolute(value: object, page_url: str, *, allow_mail: bool) -> str:
 
 def _squeeze(text: NavigableString) -> None:
     """공백을 한 칸으로 줄인다. 블록 사이나 블록 끝에 놓인 공백뿐인 글자는 지운다."""
-    squeezed = _SPACES.sub(" ", str(text))
+    squeezed = _SPACES.sub(" ", _INVISIBLE.sub("", str(text)))
     if squeezed.strip():
         text.replace_with(squeezed)
         return
@@ -200,6 +210,41 @@ def _is_edge(node: object) -> bool:
 
 def _inside_pre(text: NavigableString) -> bool:
     return any(parent.name == "pre" for parent in text.parents if isinstance(parent, Tag))
+
+
+# 이만큼 긴 덩어리나 같은 이미지가 또 나오면 같은 본문이 두 벌 담긴 것으로 본다
+REPEAT_MIN_CHARS = 100
+
+
+def _drop_repeats(soup: BeautifulSoup) -> None:
+    """앞에 나온 덩어리와 글이 같은 덩어리를 지운다.
+
+    PC·모바일 화면에 같은 본문을 한 벌씩 둔 페이지(그리팅)는 본문 HTML 에 두 벌이 담긴 채 저장돼
+    있다 (2026-10-14~16 수집분). 수집은 이제 한 벌만 담지만(`app/crawler/parser.py` 의
+    `body_nodes`), 이미 담긴 공고도 다시 수집하지 않고 보낼 때 고쳐지게 한다. 문서 순서로 보므로
+    두 번째 벌의 가장 바깥 덩어리가 먼저 걸려 통째로 빠진다.
+    """
+    seen: list[tuple[str, Tag]] = []
+    for tag in list(soup.find_all(True)):
+        if tag.decomposed:
+            continue
+        text = _INVISIBLE.sub("", _SPACES.sub("", tag.get_text()))
+        images = [
+            str(image.get("src") or image.get("data-src") or "") for image in tag.find_all("img")
+        ]
+        if tag.name == "img":
+            images = [str(tag.get("src") or tag.get("data-src") or "")]
+        if len(text) < REPEAT_MIN_CHARS and not any(images):
+            continue
+        key = f"{text}|{','.join(images)}"
+        if any(key == known and not _contains(earlier, tag) for known, earlier in seen):
+            tag.decompose()
+            continue
+        seen.append((key, tag))
+
+
+def _contains(outer: Tag, inner: Tag) -> bool:
+    return any(parent is outer for parent in inner.parents)
 
 
 def _drop_empty(soup: BeautifulSoup) -> None:

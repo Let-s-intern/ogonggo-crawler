@@ -79,3 +79,32 @@ def test_HTML이_없으면_본문_글자를_문단으로_감싼다() -> None:
     )
     assert text_html(" \n ") is None
     assert text_html(None) is None
+
+
+def test_같은_본문이_두_벌_담겨_있으면_한_벌만_보낸다() -> None:
+    """2026-10-14~16 에 수집한 그리팅 공고는 본문 HTML 에 PC·모바일 두 벌이 담겨 있다."""
+    body = "<p>" + "리터니티는 글로벌 퍼포먼스 마케터를 찾고 있어요. " * 5 + "</p>"
+    raw = (
+        f'<div><div class="m"><div class="ql-editor">{body}</div></div>'
+        f'<div class="pc"><div><div class="ql-editor">{body}</div></div></div></div>'
+    )
+
+    cleaned = clean_html(raw, PAGE)
+
+    assert cleaned is not None
+    assert cleaned.count("글로벌 퍼포먼스 마케터를") == 5
+
+
+def test_이미지만_있는_본문도_두_벌이면_한_벌만_보낸다() -> None:
+    raw = (
+        '<div><div><p><img src="https://x/job.jpg"></p></div>'
+        '<div><div><p><img src="https://x/job.jpg"></p></div></div></div>'
+    )
+
+    assert clean_html(raw, PAGE) == '<div><div><p><img src="https://x/job.jpg"></p></div></div>'
+
+
+def test_이미지에서_읽은_글의_표시는_빼고_감싼다() -> None:
+    assert text_html("[이미지에 적힌 글]\nNEXT PLAYER\n인플루언서 마케팅 인턴") == (
+        "<p>NEXT PLAYER<br>인플루언서 마케팅 인턴</p>"
+    )

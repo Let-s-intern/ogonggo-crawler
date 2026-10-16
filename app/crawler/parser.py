@@ -725,10 +725,28 @@ def _source_container(soup: BeautifulSoup, body_selector: str) -> Tag | None:
 
 
 def body_nodes(soup: BeautifulSoup, body_selector: str) -> list[Tag]:
-    """본문 셀렉터가 잡은 노드. 다른 매칭 노드 안에 든 것은 빼서 같은 글을 두 번 담지 않는다."""
+    """본문 셀렉터가 잡은 노드. 같은 글을 두 번 담지 않는다.
+
+    다른 매칭 노드 안에 든 것과, 앞 노드와 글이 같은 것은 뺀다. 그리팅(greetinghr) 공고 페이지는
+    PC 와 모바일 화면에 같은 본문(`div.ql-editor`)을 한 벌씩 두어 셀렉터가 둘을 잡는다. 둘 다
+    섹션으로 보면 두 벌을 감싸는 페이지 영역이 원문이 되어, 본문이 두 번 나오고 공유하기 버튼
+    글자까지 섞였다 (하이브·리터니티 실측, 2026-10-16). 글이 없는 노드도 뺀다.
+    """
     nodes = select_nodes(soup, body_selector, "detail.body")
     matched = {id(node) for node in nodes}
-    return [node for node in nodes if not any(id(up) in matched for up in node.parents)]
+    seen: set[str] = set()
+    kept: list[Tag] = []
+    for node in nodes:
+        if any(id(up) in matched for up in node.parents):
+            continue
+        text = _NO_SPACE.sub("", node.get_text())
+        images = tuple(_images_in(node))
+        key = text or "|".join(images)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        kept.append(node)
+    return kept
 
 
 def _shared_container(soup: BeautifulSoup, nodes: list[Tag]) -> Tag:

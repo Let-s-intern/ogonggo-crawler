@@ -539,3 +539,24 @@ def test_공통_조상이_body_면_본문_노드만_이어_담는다() -> None:
     assert "첫 섹션" in parsed.source_text and "둘째 섹션" in parsed.source_text
     assert "메뉴" not in parsed.source_text
     assert "회사 주소" not in parsed.source_text
+
+
+def test_같은_본문이_PC와_모바일에_한_벌씩_있으면_한_번만_담는다() -> None:
+    """그리팅 공고 페이지는 같은 본문을 두 번 둔다. 두 벌을 감싼 페이지가 원문이 되면 본문이 두 번
+    나오고 공유하기 버튼 글자가 섞인다 (하이브·리터니티 실측, 2026-10-16)."""
+    editor = '<div class="ql-editor"><p>주요 업무</p><p><img src="/job.png"></p></div>'
+    html = (
+        "<html><body><main><h1>글로벌 퍼포먼스 마케터</h1>"
+        f'<div class="mobile">{editor}<button>공유하기</button></div>'
+        f'<div class="pc"><div class="left">{editor}</div><button>공유하기</button></div>'
+        "</main></body></html>"
+    )
+    selectors = DetailSelectors(
+        title="h1", body="div.ql-editor", qualifications="", recruitment_end_at="", department=""
+    )
+
+    result = parse_detail(html, selectors)
+
+    assert result.body_html.count("주요 업무") == 1
+    assert "공유하기" not in result.body_html
+    assert result.fields["body"].count("주요 업무") == 1
