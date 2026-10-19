@@ -95,12 +95,12 @@ def _titles(client: TestClient, **params: str) -> set[str]:
     return set(re.findall(r'class="job-title[^"]*">([^<]+)</span>', html))
 
 
-def test_조회_조건에_켜진_대분류만_담긴_select가_있다(client: TestClient) -> None:
+def test_조회_조건에_켜진_대분류만_담긴_직군_목록이_있다(client: TestClient) -> None:
+    """2026-10-19 고르기 칸에서 펼침 목록으로 바꿨다. 줄마다 수집 스위치가 붙는다."""
     html = client.get("/ui/review/filters").text
 
     assert 'name="job_field"' in html
-    assert ">직군</label>" in html
-    assert f'<option value="{MAJOR}">{MAJOR}</option>' in html
+    assert f'data-job-field="{MAJOR}">{MAJOR}</button>' in html
     # 꺼진 대분류는 새로 고를 목록에 없다
     assert DISABLED_MAJOR not in html
 

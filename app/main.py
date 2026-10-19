@@ -44,6 +44,7 @@ from app.api import (
     ui_site_add,
     ui_sites,
     ui_storage,
+    ui_target_fields,
     ui_taxonomy,
     ui_tests,
     ui_work_experiences,
@@ -185,6 +186,7 @@ app.include_router(ui_storage.router)
 app.include_router(ui_llm.router)
 app.include_router(ui_ai_quick.router)
 app.include_router(ui_taxonomy.router)
+app.include_router(ui_target_fields.router)
 app.include_router(ui_industries.router)
 app.include_router(ui_prompt_rules.router)
 app.include_router(ui_job_analysis.router)
