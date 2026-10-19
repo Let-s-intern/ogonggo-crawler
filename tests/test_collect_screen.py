@@ -194,13 +194,19 @@ def test_대상_직군은_저장된_값이_없으면_기본_직군이고_모두_
     assert "experience_min_years" in spring.target_sql(conn)
 
 
-def test_프롬프트에_경력_4년_이상은_대상_밖이라고_싣는다() -> None:
-    """2026-10-19 경력 4년 이상 공고도 수집에서 거른다. 우대·범위는 대상이다."""
+def test_프롬프트는_최대_경력으로_대상을_가른다() -> None:
+    """2026-10-19 결정: "2~10년" 은 2년차도 지원할 수 있지만 뽑힐 가능성이 낮아 거른다.
+
+    위가 닫힌 범위는 상한 3년, "N년 이상" 처럼 위가 열린 범위는 2년 이상까지가 대상이다.
+    """
     prompt = screen.body_prompt((), "시니어 백엔드", "경력 5년 이상 필수")
 
     assert "모든 직군이 대상이다" in prompt
-    assert "최소 경력 3년 이하" in prompt
-    assert "경력 4년 이상" in prompt and "우대" in prompt
+    assert "요구 경력의 위가 3년 이하인 자리가 대상이다" in prompt
+    assert '"2~10년"' in prompt and "아래가 낮아도 대상 밖이다" in prompt
+    assert "2년 이상까지만 대상" in prompt and '"경력 3년 이상"' in prompt
+    assert "우대" in prompt
+    assert "경력 2~10년" in screen.title_prompt((), ["백엔드 경력 2~10년"])
     assert "IT·개발:" in screen.title_prompt(("IT·개발",), ["백엔드"])
 
 

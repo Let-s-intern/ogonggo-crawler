@@ -375,3 +375,82 @@ async def test_빈_칸을_허용해_살린_답도_숫자뿐인_날짜_칸은_비
     )
 
     assert result.selectors.list.date == ""
+
+
+# 공고마다 제목 링크와 지원하기·수정하기 링크가 함께 있는 목록. 파수 채용이 이 모양이다
+BUTTON_LIST_HTML = (
+    "<html><body>"
+    + "".join(
+        f'<article class="post"><a class="cell tit" href="/apply/{n}">'
+        f'<span class="text">공고 {n}</span></a>'
+        f'<a class="cell" href="/form?idx={n}"><span class="text">지원하기</span></a>'
+        f'<a class="cell" href="/edit?idx={n}"><span class="text">수정하기</span></a></article>'
+        for n in range(5)
+    )
+    + "</body></html>"
+)
+
+
+def _button_response(item: str, title: str = "span.text") -> str:
+    payload = json.loads(VALID_RESPONSE)
+    payload["list"] = {"item": item, "title": title, "link": "a.cell", "date": ""}
+    return json.dumps(payload)
+
+
+async def test_항목들이_같은_제목을_읽으면_공고가_아닌_칸을_잡은_것이라_다시_묻는다() -> None:
+    """파수 실측(2026-10-19): 링크 칸을 항목으로 골라 공고 10건이 30건이 됐다."""
+    client = FakeClient(
+        _button_response("a.cell"), _button_response("article.post", "a.tit span.text")
+    )
+
+    result = await generate_from_html(
+        BUTTON_LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert result.selectors.list.item == "article.post"
+    assert "항목 15건 중 제목이 '지원하기' 인 것이 5건이다" in client.calls[1]["contents"]
+
+
+async def test_제목이_서로_다르면_다시_묻지_않는다() -> None:
+    client = FakeClient(_button_response("article.post", "a.tit span.text"))
+
+    await generate_from_html(
+        BUTTON_LIST_HTML, DETAIL_HTML, settings=settings_with_key(), client=client
+    )
+
+    assert len(client.calls) == 1
+
+
+def _without_detail(text: str) -> str:
+    payload = json.loads(text)
+    payload["detail"] = {name: "" for name in payload["detail"]}
+    return json.dumps(payload)
+
+
+async def test_상세_페이지가_없으면_빈_상세_칸을_거절하지_않고_목록_잘못을_다시_묻는다() -> None:
+    """파수 실측(2026-10-19): 상세 URL 없이 만들었다. 모델이 상세 칸을 비운 것을 거절하느라
+    다시 묻는 기회를 다 써, 버튼을 항목으로 잡은 첫 답이 그대로 남았다."""
+    client = FakeClient(
+        _without_detail(_button_response("a.cell")),
+        _without_detail(_button_response("article.post", "a.tit span.text")),
+    )
+
+    result = await generate_from_html(
+        BUTTON_LIST_HTML, "", settings=settings_with_key(), client=client
+    )
+
+    assert len(client.calls) == 2
+    assert "제목이 '지원하기' 인 것이" in client.calls[1]["contents"]
+    assert result.selectors.list.item == "article.post"
+    assert result.selectors.detail.title == ""
+
+
+async def test_상세_페이지가_없어도_목록_칸이_비면_거절한다() -> None:
+    payload = json.loads(_without_detail(VALID_RESPONSE))
+    payload["list"]["title"] = ""
+    client = FakeClient(json.dumps(payload), json.dumps(payload))
+
+    result = await generate_from_html(LIST_HTML, "", settings=settings_with_key(), client=client)
+
+    assert len(client.calls) == 2
+    assert any("list.title" in note for note in result.notes)

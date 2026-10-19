@@ -167,3 +167,56 @@ def test_같은_클래스의_섹션이라도_안이_제각각이면_줄이지_�
 
     assert len(soup.select("div.section")) == 8
     assert len(soup.select("a.item")) == 4
+
+
+def test_겉모양이_같은_블록이라도_혼자_큰_블록은_줄이지_않는다() -> None:
+    """greetinghr 실측(2026-10-19): 레이아웃 블록 13개 중 11번째에 공고 목록이 들어 있었다.
+
+    블록은 겉 구조가 모두 같고 요소 수도 6~18개로 고른데, 목록이 든 블록만 311개였다.
+    다섯 번째부터 지우면 목록이 사라져 모델이 제목 셀렉터를 비워 답했다.
+    """
+    wrap = '<div class="layout"><div class="page"><div class="col">{}</div></div></div>'
+    blocks = [wrap.format("<p>글</p>" * size) for size in (3, 4, 6, 3, 4, 7, 4, 3, 5, 15)]
+    items = "".join(
+        f'<a class="item" href="/ko/o/{n}"><li><span class="tit">공고 {n}</span>'
+        + "<span>부문</span><hr/><span>경력</span>" * 5
+        + "</li></a>"
+        for n in range(14)
+    )
+    blocks.append(wrap.format(f"<ul>{items}</ul>"))
+    blocks += [wrap.format("<p>끝</p>"), wrap.format("<p>끝</p>")]
+
+    cleaned = clean_html(f"<body><main>{''.join(blocks)}</main></body>")
+    soup = BeautifulSoup(cleaned.html, "html.parser")
+
+    # 목록이 든 블록은 남고, 그 안의 공고는 넷으로 줄었다
+    assert len(soup.select("a.item")) == 4
+    assert soup.select_one("span.tit") is not None
+    # 나머지 작은 블록은 그대로 넷만 남는다
+    assert len(soup.select("div.layout")) == 5
+
+
+def test_항목마다_다른_번호_클래스가_있어도_반복으로_본다() -> None:
+    """파수 실측(2026-10-19): 워드프레스가 공고마다 `post-15298` 같은 클래스를 붙였다.
+
+    번호까지 비교하면 공고 열 건이 반복으로 잡히지 않고, 상한을 넘었을 때 메뉴로 좁혀 모델이
+    공고 없는 HTML 을 받았다.
+    """
+    menu = "".join(f'<li class="menu-item"><a href="/m/{n}">메뉴 {n}</a></li>' for n in range(20))
+    posts = "".join(
+        f'<article class="elementor-post post-{15000 + n} type-apply">'
+        f'<div class="elementor elementor-2655 post-{15000 + n}">'
+        f'<a class="tit" href="/apply/{n}">공고 {n}</a><p>{"본문 " * 200}</p></div></article>'
+        for n in range(10)
+    )
+    html = (
+        f'<body><header><ul class="menu">{menu}</ul></header>'
+        f'<main><div class="posts">{posts}</div></main></body>'
+    )
+
+    cleaned = clean_html(html, max_chars=6_000)
+    soup = BeautifulSoup(cleaned.html, "html.parser")
+
+    # 공고가 넷으로 줄어 상한 안에 든다. 줄지 않으면 상한을 넘어 메뉴로 좁혀지고 공고가 사라진다
+    assert cleaned.narrowed is False
+    assert len(soup.select("article a.tit")) == 4
