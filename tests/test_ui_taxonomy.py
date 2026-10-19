@@ -26,7 +26,7 @@ from app.api.ui import SETTINGS_NAV
 from app.main import app
 from app.normalize.engine import insert_normalized
 
-SEED = pathlib.Path(__file__).parent.parent / "seeds" / "job-taxonomy-zighang-20260828.json"
+SEED = pathlib.Path(__file__).parent.parent / "seeds" / "job-taxonomy-ogonggo-20261019.json"
 
 
 def add_classified_job(

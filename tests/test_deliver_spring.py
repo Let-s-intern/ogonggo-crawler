@@ -172,14 +172,13 @@ def test_정규화_행을_오공고_요청_칸으로_옮긴다() -> None:
 
 
 def test_직군_직무는_오공고_enum_이름으로_보낸다() -> None:
-    body = spring.payload(job_row(job_field="IT·개발", job_role="서버·백엔드"))
+    body = spring.payload(job_row(job_field="IT·개발", job_role="백엔드"))
     assert (body["jobField"], body["jobRole"]) == ("IT_DEVELOPMENT", "IT_BACKEND")
 
     # 직군에 속하지 않는 직무나 목록 밖 직군은 보내지 않는다. 오공고가 400 으로 거절한다
-    body = spring.payload(job_row(job_field="디자인", job_role="서버·백엔드"))
-    # 2026-10-12 오공고가 디자인 직군을 기획·전략으로 합쳤다
+    body = spring.payload(job_row(job_field="기획·전략", job_role="백엔드"))
     assert (body["jobField"], body["jobRole"]) == ("PLANNING_STRATEGY", None)
-    body = spring.payload(job_row(job_field="옛 직군", job_role="서버·백엔드"))
+    body = spring.payload(job_row(job_field="없는 직군", job_role="백엔드"))
     assert (body["jobField"], body["jobRole"]) == (None, None)
 
 
@@ -329,13 +328,13 @@ async def test_임시로_정한_직군과_인턴부터_3년차까지만_보낸�
 ) -> None:
     """2026-10-06 결정. 연수는 원문에 있을 때만 차므로 비면 보낸다. 지금 보내기도 같다.
 
-    2026-10-12 오공고가 직군을 다섯으로 합쳐 디자인처럼 합쳐진 직군도 보낸다.
+    2026-10-12 오공고가 합친 직군의 직무(온라인MD, 데이터엔지니어 등)도 합친 직군으로 보낸다.
     """
     marketing = add_job(conn, 1, job_field="마케팅·광고", job_role="퍼포먼스마케팅")
-    md = add_job(conn, 2, job_field="상품기획·MD", job_role="온라인MD", experience_min_years="3")
-    design = add_job(conn, 3, job_field="디자인", job_role="UXUI·프로덕트")
+    md = add_job(conn, 2, job_field="기획·전략", job_role="온라인MD", experience_min_years="3")
+    design = add_job(conn, 3, job_field="기획·전략", job_role="UXUI·프로덕트디자인")
     add_job(conn, 4, job_field="영업", job_role="B2B영업", experience_min_years="5")
-    data = add_job(conn, 5, job_field="AI·데이터", job_role="데이터엔지니어")
+    data = add_job(conn, 5, job_field="IT·개발", job_role="데이터엔지니어")
     seen = mock(lambda request: created(1), monkeypatch)
 
     assert spring.pending_count(conn, "2026-09-01 00:00:00") == 4
@@ -355,10 +354,15 @@ async def test_임시로_정한_직군과_인턴부터_3년차까지만_보낸�
 async def test_오공고에서_지운_직무의_공고는_자동으로_보내지_않는다(
     conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """2026-10-15 오공고가 방송작가·웹디자인 같은 직무를 지우고 더 모으지 않기로 했다(LC-3472)."""
-    add_job(conn, 1, job_field="미디어·엔터", job_role="방송작가")
-    add_job(conn, 2, job_field="디자인", job_role="웹디자인")
-    kept = add_job(conn, 3, job_field="미디어·엔터", job_role="영상편집")
+    """2026-10-15 오공고가 방송작가·웹디자인 같은 직무를 지우고 더 모으지 않기로 했다(LC-3472).
+
+    0054 가 분류표를 옮긴 뒤에는 합친 직군 아래에 있고, 옮기기 전 이름도 막는다.
+    """
+    add_job(conn, 1, job_field="마케팅·광고", job_role="방송작가")
+    add_job(conn, 2, job_field="기획·전략", job_role="웹디자인")
+    add_job(conn, 4, job_field="HR·총무", job_role="리크루터·헤드헌터")
+    add_job(conn, 5, job_field="디자인", job_role="웹디자인")
+    kept = add_job(conn, 3, job_field="마케팅·광고", job_role="영상편집")
     seen = mock(lambda request: created(1), monkeypatch)
 
     assert spring.pending_count(conn, "2026-09-01 00:00:00") == 1
@@ -372,7 +376,7 @@ async def test_오공고에서_지운_직무의_공고는_자동으로_보내지
 async def test_골라_보내기는_직군과_연차를_보지_않는다(
     conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    add_job(conn, 1, job_field="디자인", job_role="웹디자인", experience_min_years="7")
+    add_job(conn, 1, job_field="기획·전략", job_role="웹디자인", experience_min_years="7")
     job_id = conn.execute("SELECT id FROM normalized_jobs").fetchone()["id"]
     mock(lambda request: created(1), monkeypatch)
 

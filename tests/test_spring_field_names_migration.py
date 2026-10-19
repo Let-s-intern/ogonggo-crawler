@@ -72,14 +72,14 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         INSERT INTO normalized_jobs (raw_job_id, source_url, company, deadline, job_role,
                                      job_major, job_minor, parent_company)
         VALUES (1, 'https://example.test/1', '예시', '2026-12-31', '자유 글자 직무',
-                'IT·개발', '서버·백엔드', '모회사')
+                'IT·개발', 'iOS', '모회사')
         """
     )
     connection.execute(
         """
         INSERT INTO job_classifications (raw_job_id, model, job_role, job_minor, career_level,
                                          evidence_json, dropped_fields)
-        VALUES (1, 'm', 'HS사업본부 기계', '서버·백엔드', '경력', ?, 'job_role, duties, job_minor')
+        VALUES (1, 'm', 'HS사업본부 기계', 'iOS', '경력', ?, 'job_role, duties, job_minor')
         """,
         (json.dumps({"career_level_evidence": "5년 이상", "job_minor_evidence": "서버"}),),
     )
@@ -118,11 +118,11 @@ def test_up_moves_every_name_and_keeps_the_values(conn: sqlite3.Connection) -> N
         "2026-12-31",
         "모회사",
     )
-    assert (job["job_field"], job["job_role"]) == ("IT·개발", "서버·백엔드")
+    assert (job["job_field"], job["job_role"]) == ("IT·개발", "iOS")
 
     classified = conn.execute("SELECT * FROM job_classifications").fetchone()
     assert classified["position_name"] == "HS사업본부 기계"
-    assert (classified["job_role"], classified["experience_type"]) == ("서버·백엔드", "경력")
+    assert (classified["job_role"], classified["experience_type"]) == ("iOS", "경력")
     assert json.loads(classified["evidence_json"]) == {
         "experience_type_evidence": "5년 이상",
         "job_role_evidence": "서버",
@@ -195,7 +195,7 @@ def test_down_restores_the_old_names(conn: sqlite3.Connection) -> None:
     assert (job["company"], job["deadline"], job["job_minor"]) == (
         "예시",
         "2026-12-31",
-        "서버·백엔드",
+        "iOS",
     )
     # 지운 자유 글자 직무는 되살리지 못한다. 칼럼만 빈 채로 돌아온다
     assert job["job_role"] is None

@@ -35,9 +35,11 @@ from app.api.ui import render
 router = APIRouter(tags=["ui"], include_in_schema=False)
 
 # 씨앗 파일 하나. `app/taxonomy.py::load_seed` 가 표가 완전히 비어 있을 때만 넣는다 —
-# 이미 고친 표 위에 다시 부어 손으로 넣은 값과 뒤섞이는 일은 저장소 쪽에서 막는다
+# 이미 고친 표 위에 다시 부어 손으로 넣은 값과 뒤섞이는 일은 저장소 쪽에서 막는다.
+# 오공고 직군·직무와 같다 (LC-3472, 2026-10-19). 그 전 씨앗(`job-taxonomy-zighang-20260828.json`)
+# 으로 넣은 표는 0054 가 옮긴다
 SEED_PATH = pathlib.Path(__file__).resolve().parent.parent.parent / (
-    "seeds/job-taxonomy-zighang-20260828.json"
+    "seeds/job-taxonomy-ogonggo-20261019.json"
 )
 
 

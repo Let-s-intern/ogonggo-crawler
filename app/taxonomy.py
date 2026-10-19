@@ -117,7 +117,7 @@ ETC = "기타"
 def etc_role(minors: tuple[str, ...]) -> str:
     """그 직군의 `기타` 직무. 직군마다 이름이 달라(`기타IT·개발`) `기타` 로 시작하는 것을 고른다.
 
-    씨앗의 직군 스물다섯에는 다 있다. 어드민에서 새로 만든 직군에 없으면 그냥 `기타` 다.
+    씨앗의 직군 열아홉에는 다 있다. 어드민에서 새로 만든 직군에 없으면 그냥 `기타` 다.
     """
     return next((minor for minor in minors if minor.startswith(ETC)), ETC)
 
