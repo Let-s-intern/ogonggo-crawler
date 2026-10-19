@@ -14,7 +14,7 @@ import pytest
 
 from app import db, taxonomy
 
-SEED = pathlib.Path(__file__).parent.parent / "seeds" / "job-taxonomy-zighang-20260828.json"
+SEED = pathlib.Path(__file__).parent.parent / "seeds" / "job-taxonomy-ogonggo-20261019.json"
 
 
 @pytest.fixture
