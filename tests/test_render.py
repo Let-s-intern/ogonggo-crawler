@@ -23,7 +23,7 @@ from app.crawler.playwright import (
     open_source,
 )
 
-USER_AGENT = "job-crawler-automation (contact: test@example.test)"
+USER_AGENT = "ogonggo-ai (contact: test@example.test)"
 DELAY_SECONDS = 3.0
 
 LIST_URL = "https://example.test/jobs"

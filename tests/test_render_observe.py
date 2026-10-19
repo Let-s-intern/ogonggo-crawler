@@ -22,7 +22,7 @@ from app.crawler.playwright import (
     is_data_request,
 )
 
-USER_AGENT = "job-crawler-automation (contact: test@example.test)"
+USER_AGENT = "ogonggo-ai (contact: test@example.test)"
 LIST_URL = "https://www.samsungcareers.com/hr/"
 DETAIL_DATA_URL = "https://www.samsungcareers.com/recruit/detail.data?seqno=22878&strCode="
 ROBOTS_ALLOW_ALL = "User-agent: *\nDisallow:\n"

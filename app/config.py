@@ -105,7 +105,7 @@ class Settings(BaseSettings):
     s3_public_base: str = ""
 
     # 크롤링
-    crawl_user_agent: str = "job-crawler-automation (contact: unset)"
+    crawl_user_agent: str = "ogonggo-ai (contact: unset)"
     crawl_delay_seconds: float = 3.0
     crawl_timeout_seconds: float = 20.0
     crawl_max_retries: int = 3

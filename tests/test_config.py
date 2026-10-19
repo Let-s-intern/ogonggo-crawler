@@ -46,7 +46,7 @@ def test_defaults_are_conservative(clean_env: None) -> None:
     assert settings.crawl_max_retries == 3
     assert settings.max_concurrent_runs == 3
     assert settings.run_timeout_seconds == 600
-    assert "job-crawler-automation" in settings.crawl_user_agent
+    assert "ogonggo-ai" in settings.crawl_user_agent
 
 
 def test_env_overrides_defaults(clean_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
