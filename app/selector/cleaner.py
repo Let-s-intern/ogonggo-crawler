@@ -29,6 +29,10 @@ DEFAULT_KEEP_SIBLINGS = 4
 _MIN_REPEAT = 3
 # 반복 항목끼리 안에 든 요소 수가 이 비율 안에서 비슷해야 한다 (`_alike`)
 _SIZE_TOLERANCE = 0.4
+# 반복 중 요소 수가 가운데 값의 이 배수를 넘고, 차이도 이 수 이상인 형제는 줄이지 않는다
+# (`_outlier_size`). 공고 항목은 본문 길이가 달라도 요소 수가 두어 배를 넘지 않는다
+_OUTLIER_RATIO = 3
+_OUTLIER_MIN_EXTRA = 30
 
 _DROP_TAGS = ("script", "style", "svg", "noscript", "iframe", "template")
 _ON_ATTR = re.compile(r"^on", re.IGNORECASE)
@@ -159,11 +163,25 @@ def _sample_repeats(soup: BeautifulSoup, keep: int) -> tuple[Tag | None, int]:
             if len(children) > best_count and name not in ("option", "meta", "link"):
                 best_count = len(children)
                 best_region = parent
+            limit = _outlier_size(children)
             for extra in children[keep:]:
+                # 다른 형제보다 훨씬 큰 형제는 반복의 한 칸이 아니라 그 자리에 든 다른 내용이다.
+                # greetinghr 실측(2026-10-19): 겉모양이 같은 레이아웃 블록 13개 중 11번째에 공고
+                # 목록이 들어 있었다. 블록은 요소 6~18개, 그것만 311개였고 지우면 목록이 사라졌다.
+                # 남긴 블록 안의 목록은 아래로 내려가며 따로 줄인다
+                if len(extra.find_all(True)) > limit:
+                    continue
                 extra.decompose()
                 removed += 1
 
     return best_region, removed
+
+
+def _outlier_size(children: list[Tag]) -> float:
+    """이보다 요소가 많은 형제는 반복에서 벗어난 것으로 보고 줄이지 않는다."""
+    sizes = sorted(len(node.find_all(True)) for node in children)
+    middle = sizes[len(sizes) // 2]
+    return max(middle * _OUTLIER_RATIO, middle + _OUTLIER_MIN_EXTRA)
 
 
 def _alike(children: list[Tag]) -> bool:

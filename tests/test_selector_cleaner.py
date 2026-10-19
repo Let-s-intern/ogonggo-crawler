@@ -167,3 +167,30 @@ def test_같은_클래스의_섹션이라도_안이_제각각이면_줄이지_�
 
     assert len(soup.select("div.section")) == 8
     assert len(soup.select("a.item")) == 4
+
+
+def test_겉모양이_같은_블록이라도_혼자_큰_블록은_줄이지_않는다() -> None:
+    """greetinghr 실측(2026-10-19): 레이아웃 블록 13개 중 11번째에 공고 목록이 들어 있었다.
+
+    블록은 겉 구조가 모두 같고 요소 수도 6~18개로 고른데, 목록이 든 블록만 311개였다.
+    다섯 번째부터 지우면 목록이 사라져 모델이 제목 셀렉터를 비워 답했다.
+    """
+    wrap = '<div class="layout"><div class="page"><div class="col">{}</div></div></div>'
+    blocks = [wrap.format("<p>글</p>" * size) for size in (3, 4, 6, 3, 4, 7, 4, 3, 5, 15)]
+    items = "".join(
+        f'<a class="item" href="/ko/o/{n}"><li><span class="tit">공고 {n}</span>'
+        + "<span>부문</span><hr/><span>경력</span>" * 5
+        + "</li></a>"
+        for n in range(14)
+    )
+    blocks.append(wrap.format(f"<ul>{items}</ul>"))
+    blocks += [wrap.format("<p>끝</p>"), wrap.format("<p>끝</p>")]
+
+    cleaned = clean_html(f"<body><main>{''.join(blocks)}</main></body>")
+    soup = BeautifulSoup(cleaned.html, "html.parser")
+
+    # 목록이 든 블록은 남고, 그 안의 공고는 넷으로 줄었다
+    assert len(soup.select("a.item")) == 4
+    assert soup.select_one("span.tit") is not None
+    # 나머지 작은 블록은 그대로 넷만 남는다
+    assert len(soup.select("div.layout")) == 5
