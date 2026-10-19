@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -195,7 +196,7 @@ async def generate_from_html(
         spent = usage if spent is None else _added(spent, usage)
         last_text = text
         try:
-            selectors, moved = parse_generated(text)
+            selectors, moved = parse_generated(text, allow_empty_detail=not detail_html.strip())
         except SelectorSchemaError as exc:
             logger.warning(
                 "셀렉터 생성 응답 거절 model=%s attempt=%d reason=%s message=%s",
@@ -302,6 +303,10 @@ _REQUIRED_LIST = ("list.item", "list.title")
 _REQUIRED_DETAIL = ("detail.title", "detail.body")
 # 날짜 칸을 볼 항목 수
 _DATE_SAMPLE = 20
+# 같은 제목이 이 수 이상이고 전체 항목의 이 분의 일 이상이면 항목이 공고가 아닌 칸을 잡은 것이다
+# (`_repeated_title`)
+_REPEATED_TITLE_MIN = 3
+_REPEATED_TITLE_SHARE = 4
 
 
 def _required_misses(report: VerificationReport, detail_html: str) -> list[str]:
@@ -335,7 +340,39 @@ def _problems(
             f"{sample}). 조회수나 순번 칸이다. 모집 기간이나 마감일이 적힌 칸을 고르고, 없으면 "
             "빈 문자열로 둔다"
         )
+    repeated = _repeated_title(selectors, list_html)
+    if repeated is not None:
+        text, count, total = repeated
+        lines.append(
+            f"- list.item: `{selectors.list.item}` 가 공고가 아닌 버튼·링크 칸까지 잡았다. 항목 "
+            f"{total}건 중 제목이 '{text}' 인 것이 {count}건이다. 공고 하나를 통째로 감싸는 반복 "
+            "요소를 항목으로 고르고, 제목과 링크는 그 안에서 공고 제목 칸을 고른다"
+        )
     return lines
+
+
+def _repeated_title(selectors: SelectorSet, list_html: str) -> tuple[str, int, int] | None:
+    """여러 항목이 같은 제목을 읽었으면 그 제목과 건수, 전체 항목 수. 아니면 `None`.
+
+    파수 실측(2026-10-19): 공고마다 제목·지원하기·수정하기 링크 셋이 있는데, 모델이 링크 칸을
+    항목으로 골라 공고 10건이 30건이 됐다. 0개 매칭이 아니라 검증을 통과했고, 그대로 두면
+    지원서 작성 페이지까지 공고로 수집한다. 세 번에 두 번이 그렇게 답했다.
+    """
+    if not selectors.list.item or not selectors.list.title:
+        return None
+    try:
+        nodes = BeautifulSoup(list_html, "html.parser").select(selectors.list.item)
+        found = [node.select_one(selectors.list.title) for node in nodes]
+    except Exception:  # 셀렉터 문법 오류는 검증이 따로 적는다
+        return None
+    texts = [node.get_text(" ", strip=True) for node in found if node is not None]
+    texts = [text for text in texts if text]
+    if not texts:
+        return None
+    text, count = Counter(texts).most_common(1)[0]
+    if count < _REPEATED_TITLE_MIN or count * _REPEATED_TITLE_SHARE < len(texts):
+        return None
+    return text, count, len(texts)
 
 
 def _number_only_date(selectors: SelectorSet, list_html: str) -> str:

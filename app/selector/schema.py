@@ -194,13 +194,30 @@ def parse_selectors_allowing_empty(text: str) -> tuple[SelectorSet, list[str]]:
     return validate_selectors_allowing_empty(_load(text))
 
 
-def parse_generated(text: str) -> tuple[SelectorSet, list[str]]:
+def parse_generated(
+    text: str, *, allow_empty_detail: bool = False
+) -> tuple[SelectorSet, list[str]]:
     """모델이 낸 응답을 제자리로 옮긴 뒤 검증한다. 옮긴 것은 메모로 돌려준다.
 
     손으로 저장하는 셀렉터(`parse_selectors`)에는 쓰지 않는다. 사람이 적은 자리는 사람이 고친다.
+
+    `allow_empty_detail` 은 상세 페이지 없이 만들 때다. 볼 페이지가 없으니 모델은 상세 칸을 비워
+    답하는 것이 맞고, 그것을 거절하면 다시 묻는 기회를 상세 칸에 다 써 목록 칸의 잘못을 고칠 기회가
+    남지 않는다 — 파수 채용이 그렇게 공고 대신 버튼을 항목으로 잡은 첫 답을 그대로 남겼다
+    (2026-10-19). 목록 칸이 비면 여전히 거절한다.
     """
     data, notes = relocate_misplaced(_load(text))
-    return validate_selectors(data), notes
+    if not allow_empty_detail:
+        return validate_selectors(data), notes
+    try:
+        return validate_selectors(data), notes
+    except SelectorSchemaError as exc:
+        if exc.reason != "missing_field":
+            raise
+        selectors, empty = validate_selectors_allowing_empty(_with_missing_keys(data))
+        if any(not name.startswith("detail.") for name in empty):
+            raise
+        return selectors, notes
 
 
 def parse_generated_allowing_empty(text: str) -> tuple[SelectorSet, list[str], list[str]]:
