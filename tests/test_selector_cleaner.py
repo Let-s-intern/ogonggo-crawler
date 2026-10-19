@@ -194,3 +194,29 @@ def test_겉모양이_같은_블록이라도_혼자_큰_블록은_줄이지_않�
     assert soup.select_one("span.tit") is not None
     # 나머지 작은 블록은 그대로 넷만 남는다
     assert len(soup.select("div.layout")) == 5
+
+
+def test_항목마다_다른_번호_클래스가_있어도_반복으로_본다() -> None:
+    """파수 실측(2026-10-19): 워드프레스가 공고마다 `post-15298` 같은 클래스를 붙였다.
+
+    번호까지 비교하면 공고 열 건이 반복으로 잡히지 않고, 상한을 넘었을 때 메뉴로 좁혀 모델이
+    공고 없는 HTML 을 받았다.
+    """
+    menu = "".join(f'<li class="menu-item"><a href="/m/{n}">메뉴 {n}</a></li>' for n in range(20))
+    posts = "".join(
+        f'<article class="elementor-post post-{15000 + n} type-apply">'
+        f'<div class="elementor elementor-2655 post-{15000 + n}">'
+        f'<a class="tit" href="/apply/{n}">공고 {n}</a><p>{"본문 " * 200}</p></div></article>'
+        for n in range(10)
+    )
+    html = (
+        f'<body><header><ul class="menu">{menu}</ul></header>'
+        f'<main><div class="posts">{posts}</div></main></body>'
+    )
+
+    cleaned = clean_html(html, max_chars=6_000)
+    soup = BeautifulSoup(cleaned.html, "html.parser")
+
+    # 공고가 넷으로 줄어 상한 안에 든다. 줄지 않으면 상한을 넘어 메뉴로 좁혀지고 공고가 사라진다
+    assert cleaned.narrowed is False
+    assert len(soup.select("article a.tit")) == 4

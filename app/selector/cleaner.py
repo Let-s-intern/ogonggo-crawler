@@ -33,6 +33,8 @@ _SIZE_TOLERANCE = 0.4
 # (`_outlier_size`). 공고 항목은 본문 길이가 달라도 요소 수가 두어 배를 넘지 않는다
 _OUTLIER_RATIO = 3
 _OUTLIER_MIN_EXTRA = 30
+# 끝이 번호인 클래스. 글·항목마다 달라 반복을 가를 때 보지 않는다 (`_key`)
+_NUMBERED_CLASS = re.compile(r"[-_]\d{3,}$")
 
 _DROP_TAGS = ("script", "style", "svg", "noscript", "iframe", "template")
 _ON_ATTR = re.compile(r"^on", re.IGNORECASE)
@@ -155,7 +157,7 @@ def _sample_repeats(soup: BeautifulSoup, keep: int) -> tuple[Tag | None, int]:
         # 다섯 번째 섹션이라 목록이 사라졌다 (2026-09-22)
         groups: dict[tuple[str, tuple[str, ...]], list[Tag]] = {}
         for child in parent.find_all(recursive=False):
-            groups.setdefault((child.name, tuple(child.get("class") or ())), []).append(child)
+            groups.setdefault(_key(child), []).append(child)
 
         for (name, _), children in groups.items():
             if len(children) < _MIN_REPEAT or not _alike(children):
@@ -202,9 +204,18 @@ def _alike(children: list[Tag]) -> bool:
 
 
 def _shape(node: Tag) -> tuple[tuple[str, tuple[str, ...]], ...]:
-    return tuple(
-        (child.name, tuple(child.get("class") or ())) for child in node.find_all(recursive=False)
-    )
+    return tuple(_key(child) for child in node.find_all(recursive=False))
+
+
+def _key(node: Tag) -> tuple[str, tuple[str, ...]]:
+    """반복을 가를 때 보는 태그와 클래스. 항목마다 다른 번호 클래스는 뺀다.
+
+    워드프레스는 글마다 `post-15298` 같은 번호 클래스를 붙인다. 그대로 비교하면 공고 열 건이 서로
+    다른 태그가 되어 반복으로 잡히지 않고, 상한을 넘었을 때 메뉴를 가장 큰 반복으로 골라 거기로
+    좁힌다 — 파수 채용이 그렇게 공고 없는 메뉴 1천 자만 모델에 보냈다 (2026-10-19)
+    """
+    classes = tuple(name for name in node.get("class") or () if not _NUMBERED_CLASS.search(name))
+    return node.name, classes
 
 
 def _fallback_region(soup: BeautifulSoup) -> Tag | None:
