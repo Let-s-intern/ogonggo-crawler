@@ -52,27 +52,13 @@
     {% endfor %}
   </select>
 
-  {# 직군. 고르기 칸이 아니라 펼침 목록이다 — 줄마다 수집·전송 대상 스위치가 붙는다
-     (`app/api/ui_target_fields.py`). 이름을 누를 때마다 그 직군을 넣고 빼며, 숨은 `job_field` 칸에
-     쉼표로 이어 담고 폼에 change 를 보낸다 (`pages/review.html` 의 스크립트) #}
-  <details id="review-job-field" class="relative my-0 border-0 p-0">
-    <summary class="flex cursor-pointer list-none items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800">
-      <span data-job-field-label>직군 전체</span>
-      {% include "fragments/target_field_count.html" %}
-      <span aria-hidden="true" class="text-slate-400">▾</span>
-    </summary>
-    <input type="hidden" name="job_field" value="">
-    <div class="absolute left-0 z-30 mt-1 w-72 rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
-      <div class="flex items-center justify-between px-2 py-1 text-xs text-slate-500">
-        <span>조회 (여러 개)</span><span>수집·전송</span>
-      </div>
-      <button type="button" class="m-0 w-full border-0 bg-transparent px-2 py-1 text-left text-sm font-normal text-slate-800 shadow-none hover:bg-slate-100"
-              data-job-field="">직군 전체</button>
-      <div id="target-field-rows">
-        {% include "fragments/target_field_rows.html" %}
-      </div>
-    </div>
-  </details>
+  <label for="review-job-major" class="sr-only">직군</label>
+  <select id="review-job-major" name="job_field" class="mt-0">
+    <option value="">직군 전체</option>
+    {% for name in job_majors %}
+    <option value="{{ name }}">{{ name }}</option>
+    {% endfor %}
+  </select>
 
   <label for="review-experience" class="sr-only">경력</label>
   <select id="review-experience" name="experience" class="mt-0">

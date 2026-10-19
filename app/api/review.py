@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app import custom_fields
-from app.api import crawlers, job_detail, ui_target_fields
+from app.api import crawlers, job_detail
 from app.api.review_filter import (
     DEADLINE_DIFF_SQL,
     DEADLINE_STATES,
@@ -65,6 +65,7 @@ from app.classify import refill
 from app.classify.store import read_classification
 from app.crawler.images import MAX_IMAGES
 from app.normalize.engine import read_raw
+from app.taxonomy import list_majors
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
 
@@ -262,16 +263,13 @@ def review_filters_fragment(
     request: Request,
     conn: Annotated[sqlite3.Connection, Depends(crawlers.get_connection)],
 ) -> HTMLResponse:
-    """조회 조건. 사이트는 워크플로우, 직군은 켜진 직무 분류 대분류에서 만든다.
-
-    직군 줄마다 수집·전송 대상 스위치가 붙는다 (`app/api/ui_target_fields.py`).
-    """
+    """조회 조건. 사이트는 워크플로우, 직군은 켜진 직무 분류 대분류에서 만든다."""
     workflows = conn.execute("SELECT id, name FROM workflows ORDER BY id").fetchall()
     return render(
         request,
         "fragments/review_filters.html",
         workflows=workflows,
-        **ui_target_fields.switch_context(conn),
+        job_majors=[major.name for major in list_majors(conn, enabled_only=True)],
         deadline_states=DEADLINE_STATES,
         ready_states=READY_STATES,
         experience_states=EXPERIENCE_STATES,

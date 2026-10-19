@@ -18,7 +18,7 @@ enum 을 옮긴 씨앗 파일에 있다 (`seeds/job-roles-ogonggo-20261019.json`
 새 씨앗에 없는 이름은 옛 씨앗(`seeds/job-roles-ogonggo-20260929.json`)으로 찾아 새 직무로 바꾼다.
 
 지운 직무는 분류표에 꺼진 채 남고 공고 값도 그대로다. 보낼 때는 같은 직군의 "기타" 직무로 바꾸고,
-자동 전송에서는 그 공고를 보내지 않는다 (`app/deliver/spring.py` 의 `target_sql`).
+자동 전송에서는 그 공고를 보내지 않는다 (`app/deliver/spring.py` 의 `TARGET_SQL`).
 """
 
 from __future__ import annotations
@@ -222,13 +222,3 @@ def excluded_labels() -> tuple[tuple[str, str], ...]:
         if new_field != old_field:
             pairs.append((new_field, role))
     return tuple(pairs)
-
-
-def field_labels() -> tuple[str, ...]:
-    """오공고 직군 한글 이름. 씨앗 파일 순서 그대로다."""
-    return tuple(_fields())
-
-
-def role_labels(field: str) -> tuple[str, ...]:
-    """직군 하나에 딸린 직무 한글 이름. 모르는 직군이면 비어 있다."""
-    return tuple(role for (owner, role) in _roles() if owner == field)
