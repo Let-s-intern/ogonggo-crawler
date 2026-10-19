@@ -332,7 +332,10 @@ async def _judge(
     candidates = id_candidates(nodes[0]) if nodes else []
     picked = pick_detail_request(outcome.requests, candidates) if candidates else None
 
-    if picked is not None:
+    # 상세 API 로 옮기는 것은 JSON 응답뿐이다. 공고 번호를 담은 HTML 요청은 대개 클릭이 연 상세
+    # 문서 자체라, 여기서 끝내면 아래의 주소 형식 찾기를 건너뛴다 — 현대백화점그룹이 그렇게
+    # `view.nhd?hireId=…` 를 찾고도 실패했다 (2026-10-19)
+    if picked is not None and picked[0].is_json:
         return await _from_api_request(
             fetcher, picked, clicked=clicked, count=count, list_path=list_path, list_note=list_note
         )

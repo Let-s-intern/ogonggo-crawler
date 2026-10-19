@@ -1299,3 +1299,75 @@ async def test_관찰한_JSON_응답이_없으면_AI_에게_묻지_않는다() -
 
     assert discovery.failure == DETAIL_UNREACHABLE
     assert discovery.ai_usage is None
+
+
+# 공고 번호가 `data-` 속성 두 개에 나뉘어 있고, 누르면 그 둘로 만든 상세 문서로 이동한다.
+# 현대백화점그룹 채용이 이 모양이다 (2026-10-19)
+DATA_ATTR_LIST = """
+<html><body><div class="employ-list">
+  <li class="item"><a class="listView" href="javascript:" data-hire-id="2026605"
+    data-reg-co-cd="HDHCN"><p class="tit">현장 안전관리자 채용</p></a></li>
+  <li class="item"><a class="listView" href="javascript:" data-hire-id="2026590"
+    data-reg-co-cd="HDGF"><p class="tit">급식 영양사 채용</p></a></li>
+</div></body></html>
+"""
+HYUNDAI_VIEW_URL = "https://example.test/announcement/view.nhd?hireId=2026605&regCoCd=HDHCN"
+
+
+class HtmlResponse(StubResponse):
+    """클릭이 연 상세 문서 자체의 응답. 공고 번호가 주소에 들어 있지만 JSON 이 아니다."""
+
+    def __init__(self, url: str, body: str) -> None:
+        super().__init__(url, body)
+        self.headers = {"content-type": "text/html; charset=utf-8"}
+
+
+@pytest.mark.asyncio
+async def test_클릭이_연_HTML_문서는_상세_API_가_아니라_주소_형식으로_옮긴다() -> None:
+    """공고 번호를 담은 HTML 요청을 상세 API 후보로 집어 거기서 끝내면 안 된다."""
+    opened: list[str] = []
+    pages = {
+        ("2026605", "HDHCN"): "<html><body><h1>현장 안전관리자 채용</h1></body></html>",
+        ("2026590", "HDGF"): "<html><body><h1>급식 영양사 채용</h1></body></html>",
+    }
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text=ROBOTS)
+        if request.url.path == "/jobs":
+            return httpx.Response(200, text=SHELL)
+        key = (request.url.params.get("hireId", ""), request.url.params.get("regCoCd", ""))
+        if key in pages:
+            return httpx.Response(200, text=pages[key])
+        return httpx.Response(404, text="not found")
+
+    emitter = StubEmitter()
+    log = RequestLog()
+    log.attach(emitter)
+    session = session_for(DATA_ATTR_LIST, [], log)
+
+    def navigate() -> None:
+        session.page.url = HYUNDAI_VIEW_URL
+        for handler in emitter.handlers:
+            handler(HtmlResponse(HYUNDAI_VIEW_URL, pages[("2026605", "HDHCN")]))
+
+    session.page.items.append(StubElement(action=navigate))
+    client = fetcher_for(handle)
+    try:
+        discovery = await discover_detail_path(
+            LIST_URL,
+            LINKLESS_SELECTORS,
+            fetcher=client,
+            sleep=nosleep,
+            open_probe=opener(session, opened),
+        )
+    finally:
+        await client.aclose()
+
+    assert discovery.ok is True, discovery.reason
+    assert discovery.detail_mode == STATIC
+    assert discovery.link is not None
+    assert "2026605" not in discovery.link.template
+    assert "HDHCN" not in discovery.link.template
+    assert (discovery.link.resolved, discovery.link.count) == (2, 2)
+    assert "공고마다 다른 상세 주소 형식을 얻었다" in discovery.evidence
