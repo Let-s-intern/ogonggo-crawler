@@ -1,0 +1,3 @@
+{# 직군 칸 이름 옆 수집 직군 수. 스위치 응답은 이것을 밖에서 갈아 끼운다(`oob`) #}
+<span id="target-field-count" class="rounded-full bg-emerald-50 px-1.5 text-xs text-emerald-700"
+      title="수집·자동 전송 대상으로 켜 둔 직군 수"{% if oob %} hx-swap-oob="true"{% endif %}>수집 {{ on | length }}</span>

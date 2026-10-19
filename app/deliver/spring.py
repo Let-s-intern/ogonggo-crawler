@@ -27,10 +27,10 @@
   공고는 사람이 채우거나 골라 보내기로 보낸다. 골라 보내기와 `지금 보내기` 는 필수 칸만 본다
 - 아직 보내지 않았는데 마감 일시가 이미 지난 공고
 - 세 번 실패한 공고. 마지막 거절 사유는 전달 화면에 남는다
-- **임시로 직군·연차를 좁힌다** (2026-10-06 결정). 마케팅·인사·기획·영업·개발 직군이고 인턴~3년차
-  공고만 자동 전송·`지금 보내기` 로 보낸다 (`TARGET_SQL`). 직군은 분류 뒤에야 알아 분류는 모든
-  공고에 그대로 돈다. 골라 보내기는 사람이 고른 것이라 좁히지 않는다. 풀 때는 직군·연차 조건을
-  지우고 아래 지운 직무 조건은 남긴다
+- **임시로 직군·연차를 좁힌다** (2026-10-06 결정). 대상 직군이고 인턴~3년차 공고만 자동 전송·
+  `지금 보내기` 로 보낸다 (`target_sql`). 대상 직군은 수집과 같은 설정으로, 공고 목록의 직군 칸에서
+  켜고 끈다 (`app/crawler/target_fields.py`). 수집이 먼저 거르지만 애매하면 수집하므로 여기서 한 번
+  더 막는다. 골라 보내기는 사람이 고른 것이라 좁히지 않는다
 - 오공고에서 지운 직무(방송작가, 웹디자인 등 41개, 2026-10-15 LC-3472)의 공고. 오공고도 더 모으지
   않는다 (`EXCLUDED_ROLES_SQL`). 골라 보내면 같은 직군의 "기타" 직무로 간다
 
@@ -71,6 +71,7 @@ import httpx
 from app import job_roles, regions
 from app.classify.schema import VALUE_LABELS
 from app.config import Settings, get_settings
+from app.crawler import target_fields
 from app.deliver import settings as store
 from app.deliver.source_html import clean_html, text_html
 
@@ -294,20 +295,10 @@ def auto_missing(job: Mapping[str, Any] | sqlite3.Row) -> list[str]:
     return empty
 
 
-# 임시로 보내는 직군 (2026-10-06 결정). 한글 이름은 `app/job_roles.py` 씨앗 파일의 직군 이름이다.
-# 2026-10-12 오공고가 합친 직군(AI·데이터, 디자인 등)은 2026-10-19 분류표와 함께 합친 직군으로
-# 옮겼다 (`migrations/0054_job_taxonomy_ogonggo.sql`)
-TARGET_FIELDS: tuple[str, ...] = (
-    "마케팅·광고",
-    "HR·총무",
-    "기획·전략",
-    "영업",
-    "IT·개발",
-)
 # 인턴~3년차. 최소 경력 연수는 경력 공고에서 원문이 말할 때만 차므로, 비었으면 보낸다. 신입·인턴은
 # 정규화가 0 으로 채운다. 공고 목록의 경력 조건 `3년 이하` 도 이 조건이다
 # (`app/api/review_filter.py`)
-TARGET_MAX_YEARS = 3
+TARGET_MAX_YEARS = target_fields.MAX_CAREER_YEARS
 TARGET_YEARS_SQL = (
     "(trim(coalesce(n.experience_min_years, '')) = ''"
     f" OR CAST(n.experience_min_years AS INTEGER) <= {TARGET_MAX_YEARS})"
@@ -318,10 +309,19 @@ EXCLUDED_ROLES_SQL = (
     + ", ".join(f"('{field}', '{role}')" for field, role in job_roles.excluded_labels())
     + ")"
 )
-TARGET_SQL = (
-    "(n.job_field IN (" + ", ".join(f"'{name}'" for name in TARGET_FIELDS) + ")"
-    f" AND {TARGET_YEARS_SQL} AND {EXCLUDED_ROLES_SQL})"
-)
+
+
+def target_sql(conn: sqlite3.Connection) -> str:
+    """임시 직군·연차 조건과 지운 직무 조건. 대상 직군을 모두 켜 두었으면 직군은 보지 않는다.
+
+    직군 이름은 오공고 직군 목록에 든 것만 저장되므로(`app/crawler/target_fields.py`) 글자로 박아도
+    된다. 따옴표만 겹쳐 둔다.
+    """
+    fields = target_fields.filtering_fields(conn)
+    if not fields:
+        return f"({TARGET_YEARS_SQL} AND {EXCLUDED_ROLES_SQL})"
+    listed = ", ".join("'" + name.replace("'", "''") + "'" for name in fields)
+    return f"(n.job_field IN ({listed}) AND {TARGET_YEARS_SQL} AND {EXCLUDED_ROLES_SQL})"
 
 
 def pending(
@@ -330,7 +330,7 @@ def pending(
     """보낼 공고. 아직 보내지 않은 것이 먼저이고, 실패한 것은 `MAX_ATTEMPTS` 전까지 다시 고른다.
 
     `complete` 면 자동 전송 조건(`COMPLETE_SQL`)을, 아니면 필수 칸만(`READY_SQL`) 본다. 어느 쪽이든
-    임시 직군·연차 조건(`TARGET_SQL`)을 건다.
+    임시 직군·연차 조건(`target_sql`)을 건다.
 
     필수 칸이 빈 공고는 여기서 빼 1회 상한을 차지하지 않게 한다 — 분류 전 공고가 수백 건 쌓여 있으면
     그것들이 매번 앞자리를 먹는다. 목록 밖 값처럼 SQL 로 가를 수 없는 것은 보내기 전에 걸러 실패로
@@ -340,7 +340,7 @@ def pending(
         f"""
         SELECT n.*, {SOURCE_SQL} FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
-         WHERE {_UNSENT} AND {_OPEN} AND {TARGET_SQL}
+         WHERE {_UNSENT} AND {_OPEN} AND {target_sql(conn)}
            AND {COMPLETE_SQL if complete else _READY}
          ORDER BY d.source_url IS NOT NULL, n.id
          LIMIT ?
@@ -355,7 +355,7 @@ def pending_count(conn: sqlite3.Connection, now: str) -> int:
         f"""
         SELECT count(*) AS n FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
-         WHERE {_UNSENT} AND {_OPEN} AND {TARGET_SQL} AND {COMPLETE_SQL}
+         WHERE {_UNSENT} AND {_OPEN} AND {target_sql(conn)} AND {COMPLETE_SQL}
         """,
         (MAX_ATTEMPTS, now),
     ).fetchone()
@@ -371,7 +371,7 @@ def unready_count(conn: sqlite3.Connection, now: str) -> int:
         f"""
         SELECT count(*) AS n FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
-         WHERE d.source_url IS NULL AND {_OPEN} AND {TARGET_SQL} AND NOT {_READY}
+         WHERE d.source_url IS NULL AND {_OPEN} AND {target_sql(conn)} AND NOT {_READY}
            AND EXISTS (SELECT 1 FROM job_classifications c WHERE c.raw_job_id = n.raw_job_id)
         """,
         (now,),
