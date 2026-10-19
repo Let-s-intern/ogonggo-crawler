@@ -254,10 +254,18 @@ class JobFilter:
     delivered: str = ""
     ready: str = ""
     # 직군. 목록에 없는 이름이 와도 그대로 받는다 — 꺼진 직군으로 이미 분류된 공고를 조회할
-    # 방법이 없어지면 안 된다
+    # 방법이 없어지면 안 된다. 여러 개는 쉼표로 잇는다(2026-10-19) — 한 칸이라 페이지 이동·지우기·
+    # 보내기가 실어 나르는 모양이 그대로다. 직군 이름에는 쉼표가 없다
     job_field: str = ""
     experience: str = ""
     dup: str = ""
+
+    @property
+    def job_fields(self) -> tuple[str, ...]:
+        """고른 직군들. 비면 직군 조건을 걸지 않는다."""
+        return tuple(
+            dict.fromkeys(part.strip() for part in self.job_field.split(",") if part.strip())
+        )
 
     def as_form(self) -> dict[str, str]:
         """폼에 다시 실을 값. 지우기 요청과 페이지 이동이 표와 같은 조건을 들고 가게 한다."""
@@ -297,7 +305,7 @@ def read_filter(
         status=status if status in DEADLINE_STATES else "",
         delivered=delivered if delivered in DELIVERY_STATES else "",
         ready=ready if ready in READY_STATES else "",
-        job_field=job_field.strip(),
+        job_field=",".join(JobFilter(job_field=job_field).job_fields),
         experience=experience if experience in EXPERIENCE_STATES else "",
         dup=dup if dup in DUP_CRITERIA else "",
     )
@@ -343,9 +351,9 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
     if picked.query:
         clauses.append("(n.title LIKE ? OR n.company_name LIKE ? OR n.parent_company_name LIKE ?)")
         params.extend([f"%{picked.query}%"] * 3)
-    if picked.job_field:
-        clauses.append("n.job_field = ?")
-        params.append(picked.job_field)
+    if picked.job_fields:
+        clauses.append(f"n.job_field IN ({', '.join('?' * len(picked.job_fields))})")
+        params.extend(picked.job_fields)
     if picked.experience == EXPERIENCE_UP_TO:
         clauses.append(TARGET_YEARS_SQL)
     elif picked.experience:
@@ -530,7 +538,7 @@ def _describe(conn: sqlite3.Connection, picked: JobFilter, scope: str) -> str:
         (
             f"워크플로우 {workflow}",
             f"보기 {VIEWS.get(picked.view, '전체')}",
-            f"직군 {picked.job_field or '전체'}",
+            f"직군 {', '.join(picked.job_fields) or '전체'}",
             f"경력 {EXPERIENCE_STATES.get(picked.experience, '전체')}",
             f"모집 {DEADLINE_STATES.get(picked.status, '전체')}",
             f"오공고 {DELIVERY_STATES.get(picked.delivered, '전체')}",

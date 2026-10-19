@@ -100,13 +100,19 @@ def test_조회_조건에_켜진_대분류만_담긴_직군_목록이_있다(cli
     html = client.get("/ui/review/filters").text
 
     assert 'name="job_field"' in html
-    assert f'data-job-field="{MAJOR}">{MAJOR}</button>' in html
+    assert f'data-job-field="{MAJOR}"' in html
     # 꺼진 대분류는 새로 고를 목록에 없다
     assert DISABLED_MAJOR not in html
 
 
 def test_대분류로_좁히면_그_값을_가진_건만_나온다(client: TestClient) -> None:
     assert _titles(client, job_field=MAJOR) == {TITLES[1]}
+
+
+def test_직군을_여러_개_고르면_그_중_하나를_가진_건이_나온다(client: TestClient) -> None:
+    """2026-10-19 여러 직군은 쉼표로 이어 한 칸에 담는다."""
+    assert _titles(client, job_field=f"{MAJOR},{DISABLED_MAJOR}") == {TITLES[1], TITLES[3]}
+    assert _titles(client, job_field=f" {MAJOR} ,,{MAJOR}") == {TITLES[1]}
 
 
 def test_꺼진_대분류_값으로도_이미_분류된_건을_찾을_수_있다(client: TestClient) -> None:

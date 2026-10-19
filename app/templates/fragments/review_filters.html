@@ -53,8 +53,8 @@
   </select>
 
   {# 직군. 고르기 칸이 아니라 펼침 목록이다 — 줄마다 수집·전송 대상 스위치가 붙는다
-     (`app/api/ui_target_fields.py`). 이름을 누르면 숨은 `job_field` 칸을 채우고 폼에 change 를
-     보낸다 (`pages/review.html` 의 스크립트) #}
+     (`app/api/ui_target_fields.py`). 이름을 누를 때마다 그 직군을 넣고 빼며, 숨은 `job_field` 칸에
+     쉼표로 이어 담고 폼에 change 를 보낸다 (`pages/review.html` 의 스크립트) #}
   <details id="review-job-field" class="relative my-0 border-0 p-0">
     <summary class="flex cursor-pointer list-none items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800">
       <span data-job-field-label>직군 전체</span>
@@ -64,7 +64,7 @@
     <input type="hidden" name="job_field" value="">
     <div class="absolute left-0 z-30 mt-1 w-72 rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
       <div class="flex items-center justify-between px-2 py-1 text-xs text-slate-500">
-        <span>조회</span><span>수집·전송</span>
+        <span>조회 (여러 개)</span><span>수집·전송</span>
       </div>
       <button type="button" class="m-0 w-full border-0 bg-transparent px-2 py-1 text-left text-sm font-normal text-slate-800 shadow-none hover:bg-slate-100"
               data-job-field="">직군 전체</button>
