@@ -35,6 +35,11 @@ DEFAULT_FIELDS: tuple[str, ...] = (
 )
 
 
+# 인턴~3년차. 최소 경력이 이보다 긴 공고는 수집에서 거르고(`app/crawler/screen.py`) 보내지도
+# 않는다(`app/deliver/spring.py` 의 `TARGET_MAX_YEARS`). 오공고 고용24 수집과 같은 값이다
+MAX_CAREER_YEARS = 3
+
+
 class TargetFieldError(ValueError):
     """저장할 수 없는 값. 거절 사유를 화면이 그대로 옮긴다."""
 

@@ -178,17 +178,30 @@ async def test_거르개는_ai_답을_읽고_호출을_collect_screen_으로_남
     assert [tuple(row) for row in rows] == [("collect_screen", 1), ("collect_screen", 1)]
 
 
-def test_대상_직군은_저장된_값이_없으면_기본_직군이고_모두_켜면_거르지_않는다(
+def test_대상_직군은_저장된_값이_없으면_기본_직군이고_모두_켜면_경력만_거른다(
     conn: sqlite3.Connection,
 ) -> None:
     assert target_fields.read_fields(conn) == target_fields.DEFAULT_FIELDS
-    assert screen.make_screener(conn) is not None
+    screener = screen.make_screener(conn)
+    assert screener is not None and screener.fields == target_fields.DEFAULT_FIELDS
 
     target_fields.write_fields(conn, target_fields.choices())
 
     assert target_fields.filtering_fields(conn) == ()
-    assert screen.make_screener(conn) is None
+    screener = screen.make_screener(conn)
+    assert screener is not None and screener.fields == ()
     assert "n.job_field IN" not in spring.target_sql(conn)
+    assert "experience_min_years" in spring.target_sql(conn)
+
+
+def test_프롬프트에_경력_4년_이상은_대상_밖이라고_싣는다() -> None:
+    """2026-10-19 경력 4년 이상 공고도 수집에서 거른다. 우대·범위는 대상이다."""
+    prompt = screen.body_prompt((), "시니어 백엔드", "경력 5년 이상 필수")
+
+    assert "모든 직군이 대상이다" in prompt
+    assert "최소 경력 3년 이하" in prompt
+    assert "경력 4년 이상" in prompt and "우대" in prompt
+    assert "IT·개발:" in screen.title_prompt(("IT·개발",), ["백엔드"])
 
 
 def test_직군_하나씩_켜고_끄며_모두_끄지는_못한다(conn: sqlite3.Connection) -> None:
