@@ -138,5 +138,5 @@ def test_분류표와_공고_값을_오공고_직군_직무로_옮긴다(conn: s
 def test_빈_표에도_올라간다(conn: sqlite3.Connection) -> None:
     db.migrate_up(conn)
 
-    assert db.applied_versions(conn)[-1] == "0054"
+    assert "0054" in db.applied_versions(conn)
     assert taxonomy.is_empty(conn)

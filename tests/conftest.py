@@ -64,6 +64,19 @@ def without_default_classify(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def without_collect_screen(monkeypatch: pytest.MonkeyPatch) -> None:
+    """수집의 대상 직군 거르기를 끈다.
+
+    저장된 대상 직군이 없으면 기본 직군으로 거르므로, 그대로 두면 크롤을 돌리는 테스트마다 AI 를
+    부르려 한다. 거르기를 보는 테스트는 `run_once` 에 가짜 거르개를 직접 넘긴다
+    (`tests/test_collect_screen.py`).
+    """
+    from app.crawler import runner
+
+    monkeypatch.setattr(runner, "make_screener", lambda conn: None)
+
+
+@pytest.fixture(autouse=True)
 def static_detail_holds(monkeypatch: pytest.MonkeyPatch) -> None:
     """등록이 상세 셀렉터를 정적 응답에 대 보는 확인을 네트워크 없이 통과시킨다.
 
