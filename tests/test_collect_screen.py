@@ -103,11 +103,31 @@ async def test_제목으로_대상_밖이면_상세를_열지_않고_모르면_�
 
     # 제목으로 거른 공고는 상세를 열지 않는다
     assert f"{LIST_URL}/2" not in detail.calls
-    # 제목으로 대상임이 드러난 공고는 본문으로 다시 묻지 않는다
-    assert fake.asked_bodies == ["2026년 BNK캐피탈 신입사원 채용", "2026년 하반기 공개채용"]
+    # 제목으로 대상임이 드러난 공고도 본문으로 다시 묻는다. 경력은 대개 본문에만 있다
+    assert fake.asked_bodies == [
+        "[마케팅] 퍼포먼스 마케터",
+        "2026년 BNK캐피탈 신입사원 채용",
+        "2026년 하반기 공개채용",
+    ]
     assert stored_links(conn) == [f"{LIST_URL}/1", f"{LIST_URL}/3"]
     assert screened(conn) == [(f"{LIST_URL}/2", "title"), (f"{LIST_URL}/4", "body")]
     assert (result.new_count, result.skipped_count, result.fail_count) == (2, 2, 0)
+
+
+async def test_제목이_대상이어도_본문의_경력이_대상_밖이면_거른다(
+    conn: sqlite3.Connection,
+) -> None:
+    # 제목에는 경력이 없고 본문에 "경력 5년 이상" 이 있는 공고다
+    fake = FakeScreener(
+        conn,
+        titles={"[마케팅] 퍼포먼스 마케터": screen.IN},
+        bodies={"[마케팅] 퍼포먼스 마케터": screen.OUT},
+    )
+
+    await run_once(conn, target(), collectors=collectors(StubDetail("본문"), ITEMS), screener=fake)
+
+    assert f"{LIST_URL}/1" not in stored_links(conn)
+    assert (f"{LIST_URL}/1", "body") in screened(conn)
 
 
 async def test_거른_공고는_다음_실행이_아는_공고로_본다(conn: sqlite3.Connection) -> None:
