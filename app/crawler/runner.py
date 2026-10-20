@@ -63,7 +63,6 @@ from app.crawler.images import LlmImageReader
 from app.crawler.parser import DetailParseResult, ListItem
 from app.crawler.screen import (
     BODY,
-    IN,
     OUT,
     TITLE,
     Screener,
@@ -516,8 +515,9 @@ async def _crawl(
                 target,
                 item,
                 collectors,
-                # 제목으로 대상 직군임이 드러났으면 본문으로 다시 묻지 않는다
-                None if verdict == IN else active_screener,
+                # 제목이 대상이어도 본문으로 다시 묻는다. 제목에는 경력이 거의 없어 제목만으로는
+                # "경력 5년 이상" 공고가 대상으로 들어온다
+                active_screener,
             )
         except Exception as exc:
             # 항목 하나가 실패해도 나머지는 계속 간다. 실패는 fail_count 로 남는다.
