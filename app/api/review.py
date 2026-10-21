@@ -37,6 +37,7 @@ from app.api.review_filter import (
     DUP_NOTES,
     EXPERIENCE_STATES,
     FAILED_SQL,
+    GATE_SQL,
     READY_STATES,
     SENT_SQL,
     SHORT_BODY_SQL,
@@ -94,7 +95,8 @@ _COLUMNS = f"""
            {UNREADY_SQL} AS unready,
            {UNCLASSIFIED_SQL} AS unclassified,
            {SHORT_BODY_SQL} AS short_body,
-           {DEADLINE_DIFF_SQL} AS deadline_diff
+           {DEADLINE_DIFF_SQL} AS deadline_diff,
+           {GATE_SQL} AS gate_blocked
 """
 
 _FROM = """
@@ -237,6 +239,9 @@ def row_marks(job: sqlite3.Row) -> list[tuple[str, str]]:
         marks.append(("본문 짧음", "warn"))
     if job["deadline_diff"]:
         marks.append(("마감일 다름", "warn"))
+    # 분류 전이면 칸이 다 비어 당연히 걸린다. 겹쳐 적지 않는다
+    if job["gate_blocked"] and not job["unclassified"]:
+        marks.append(("품질 검사 미통과", "warn"))
     return marks or [("보내기 전", "idle")]
 
 
@@ -293,7 +298,8 @@ def _panel_row(conn: sqlite3.Connection, normalized_id: int) -> sqlite3.Row | No
                {UNREADY_SQL} AS unready,
                {UNCLASSIFIED_SQL} AS unclassified,
                {SHORT_BODY_SQL} AS short_body,
-               {DEADLINE_DIFF_SQL} AS deadline_diff
+               {DEADLINE_DIFF_SQL} AS deadline_diff,
+               {GATE_SQL} AS gate_blocked
           FROM normalized_jobs n
           JOIN raw_jobs r ON r.id = n.raw_job_id
           JOIN workflows w ON w.id = r.workflow_id

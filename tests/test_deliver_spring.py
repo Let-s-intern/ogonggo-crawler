@@ -27,6 +27,7 @@ import httpx
 import pytest
 
 from app import db
+from app.classify import gate
 from app.classify.batch import ClassifyProgress, classify_pending
 from app.config import Settings
 from app.deliver import spring
@@ -81,6 +82,9 @@ def add_job(conn: sqlite3.Connection, seq: int, **values: Any) -> str:
         "recruitment_start_at": "2026-09-01 00:00:00",
         "closes_when_filled": "false",
         "auto_close_enabled": "true",
+        # 품질 검사를 통과한다 (`app/classify/gate.py`) — 공고 내용이 다 차 있고 경력 상한을 안다
+        **{name: f"{name} 내용" for name in gate.CONTENT_FIELDS},
+        "experience_max_years": "5",
         **values,
     }
     conn.execute(
@@ -265,13 +269,13 @@ async def test_필수_칸이_빈_공고와_마감이_지난_공고는_보내지_
 ) -> None:
     add_job(conn, 1, employment_type=None)
     add_job(conn, 2, recruitment_end_at="2000-01-01 23:59:59")
-    always_open = add_job(conn, 3, recruitment_type="ALWAYS_OPEN", recruitment_end_at=None)
+    sendable = add_job(conn, 3)
     seen = mock(lambda request: created(3), monkeypatch)
 
     result = await spring.deliver_pending(conn, settings=SETTINGS)
 
     assert result.sent == 1
-    assert [json.loads(request.content)["sourceUrl"] for request in seen] == [always_open]
+    assert [json.loads(request.content)["sourceUrl"] for request in seen] == [sendable]
 
 
 async def test_꺼져_있거나_키가_없으면_보내지_않고_지금_보내기는_보낸다(
@@ -295,20 +299,21 @@ async def test_꺼져_있거나_키가_없으면_보내지_않고_지금_보내�
 async def test_자동_전송은_기본_정보와_모집_조건이_다_찬_공고만_보낸다(
     conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """2026-09-18 결정. 최소 경력 연수·모집 인원·모회사는 비어도 되고, 상시 채용은 마감일이 없다."""
+    """2026-09-18 결정. 최소 경력 연수·모집 인원·모회사는 비어도 된다.
+
+    상시 채용처럼 마감일이 빈 공고는 품질 검사에 걸려 확인 필요로 간다 (2026-10-21,
+    `app/classify/gate.py`). 사람이 골라 보낸다.
+    """
     add_job(conn, 1, industry=None)
     add_job(conn, 2, region="")
     optional_empty = add_job(conn, 3, experience_min_years=None, recruitment_headcount=None)
-    always_open = add_job(conn, 4, recruitment_type="ALWAYS_OPEN", recruitment_end_at=None)
+    add_job(conn, 4, recruitment_type="ALWAYS_OPEN", recruitment_end_at=None)
     seen = mock(lambda request: created(1), monkeypatch)
 
     result = await spring.deliver_pending(conn, settings=SETTINGS)
 
-    assert result.sent == 2
-    assert [json.loads(request.content)["sourceUrl"] for request in seen] == [
-        optional_empty,
-        always_open,
-    ]
+    assert result.sent == 1
+    assert [json.loads(request.content)["sourceUrl"] for request in seen] == [optional_empty]
 
 
 async def test_지금_보내기는_필수_칸만_본다(
@@ -428,8 +433,8 @@ async def test_분류_배치가_끝나면_보낸다(
     conn.execute("DELETE FROM workflows")
     conn.execute("DELETE FROM crawlers")
     _seed(conn, count=1)
-    # 분류 배치 끝의 전송 경로만 본다. 칸이 다 찼는지와 직군·연차는 위 테스트들이 본다
-    monkeypatch.setattr(spring, "COMPLETE_SQL", spring.READY_SQL)
+    # 분류 배치 끝의 전송 경로만 본다. 칸이 다 찼는지, 품질 검사, 직군·연차는 위 테스트들이 본다
+    monkeypatch.setattr(spring, "_auto_sql", lambda: spring.READY_SQL)
     monkeypatch.setattr(spring, "target_sql", lambda conn: "1")
     seen = mock(lambda request: created(9), monkeypatch)
     text = response(
@@ -554,3 +559,19 @@ async def test_원문_채우기는_한_수집_건만_고를_수_있다(
 
     assert result.sent == 1
     assert [request.url.path for request in seen] == ["/api/v1/internal/jobs/12/source-html"]
+
+
+async def test_품질_검사에_걸린_공고는_자동으로_보내지_않고_골라_보내기는_된다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-10-21 결정. 재분류로도 못 푼 공고는 확인 필요로 가고, 사람이 골라 보낸다."""
+    thin = add_job(conn, 1, **{name: None for name in gate.CONTENT_FIELDS[:4]})
+    no_cap = add_job(conn, 2, experience_min_years="1", experience_max_years=None)
+    seen = mock(lambda request: created(1), monkeypatch)
+
+    automatic = await spring.deliver_pending(conn, settings=SETTINGS)
+    picked = await spring.deliver_ids(conn, [1, 2], settings=SETTINGS)
+
+    assert automatic.sent == 0
+    assert picked.sent == 2
+    assert {json.loads(request.content)["sourceUrl"] for request in seen} == {thin, no_cap}

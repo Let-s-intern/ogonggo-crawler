@@ -87,7 +87,7 @@ class ClassifyProgress:
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
-    # 품질 검사에 걸려 한 번 더 분류한 공고 수 (`app/classify/gate.py`). 처리 건수에는 한 번만 센다
+    # 품질 검사에 걸려 다시 분류한 횟수 (`app/classify/gate.py`). 처리 건수에는 한 번만 센다
     rechecked: int = 0
     started_at: str | None = None
     finished_at: str | None = None
@@ -390,38 +390,42 @@ async def recheck_ids(
     settings: Settings | None = None,
     on_job: OnJob | None = None,
 ) -> list[int]:
-    """품질 검사에 걸린 공고를 한 번 더 분류한다. 다시 분류한 공고 id 를 돌려준다.
+    """품질 검사에 걸린 공고를 다시 분류한다. 두 번까지 돌고, 다시 분류한 공고 id 를 돌려준다.
 
-    고른 공고는 분류 전에 적는다 — 도중에 죽어도 같은 공고에 두 번 돈을 쓰지 않는다. 호출 수와
-    토큰은 `progress` 에 더하고, 처리 건수는 `rechecked` 로 따로 센다 (`app/classify/gate.py`).
+    한 바퀴마다 검사 → 걸린 것만 재분류 → 다시 검사다. 첫 바퀴에 풀린 공고는 둘째 바퀴에 없다.
+    고른 공고는 분류 전에 한 번을 센다 — 도중에 죽어도 상한보다 더 돈을 쓰지 않는다. 호출 수와
+    토큰은 `progress` 에 더하고, 재분류 건수는 `rechecked` 로 따로 센다 (`app/classify/gate.py`).
     """
-    now = local_now(settings)
-    picked = gate.pick(conn, raw_job_ids, now)
-    if not picked:
-        return []
-    gate.record(conn, picked)
-    targets = list(picked)
-    logger.info("품질 검사: %s건을 다시 분류한다", len(targets))
-    again = await classify_ids(
-        conn,
-        targets,
-        ClassifyProgress(),
-        client=client,
-        settings=settings,
-        on_job=on_job,
-        recheck=False,
-        deliver=False,
-    )
-    gate.finish(conn, targets, local_now(settings))
-    progress.rechecked += again.processed
-    progress.dropped += again.dropped
-    progress.calls += again.calls
-    progress.input_tokens += again.input_tokens
-    progress.output_tokens += again.output_tokens
-    progress.total_tokens += again.total_tokens
-    for message in again.errors:
-        progress.note(f"품질 검사: {message}")
-    return targets
+    touched: list[int] = []
+    current = list(raw_job_ids)
+    for _ in range(gate.MAX_RECHECKS):
+        picked = gate.pick(conn, current, local_now(settings))
+        if not picked:
+            break
+        gate.record(conn, picked)
+        current = list(picked)
+        logger.info("품질 검사: %s건을 다시 분류한다", len(current))
+        again = await classify_ids(
+            conn,
+            current,
+            ClassifyProgress(),
+            client=client,
+            settings=settings,
+            on_job=on_job,
+            recheck=False,
+            deliver=False,
+        )
+        gate.finish(conn, current, local_now(settings))
+        progress.rechecked += again.processed
+        progress.dropped += again.dropped
+        progress.calls += again.calls
+        progress.input_tokens += again.input_tokens
+        progress.output_tokens += again.output_tokens
+        progress.total_tokens += again.total_tokens
+        for message in again.errors:
+            progress.note(f"품질 검사: {message}")
+        touched.extend(raw_job_id for raw_job_id in current if raw_job_id not in touched)
+    return touched
 
 
 def remaining(conn: sqlite3.Connection) -> int:

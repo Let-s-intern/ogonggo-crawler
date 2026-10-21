@@ -160,15 +160,38 @@ def test_sent_and_closed_postings_are_left_alone(conn: sqlite3.Connection) -> No
     assert gate.reasons_of(conn, [sent, closed], NOW) == {}
 
 
-def test_a_posting_is_rechecked_once(conn: sqlite3.Connection) -> None:
+def test_a_posting_is_rechecked_twice_at_most(conn: sqlite3.Connection) -> None:
     raw_id = add(conn, 1, job_role=None)
+    conn.execute(
+        "INSERT INTO job_classifications (raw_job_id, part, model) VALUES (?, 1, 'm')", (raw_id,)
+    )
     picked = gate.pick(conn, [raw_id], NOW)
     assert picked == {raw_id: [EMPTY_KEY]}
 
     gate.record(conn, picked)
+    assert gate.pick(conn, [raw_id], NOW) == picked
+    gate.record(conn, picked)
 
     assert gate.pick(conn, [raw_id], NOW) == {}
     assert gate.backlog(conn, NOW) == {}
+    attempts = conn.execute("SELECT attempts FROM quality_gate_runs").fetchone()[0]
+    assert attempts == gate.MAX_RECHECKS
+
+
+def test_blocked_postings_are_the_three_that_go_to_a_person(conn: sqlite3.Connection) -> None:
+    """대상 직군 밖은 확인 필요가 아니라 전송 제외다 — 전송의 직군 조건이 막는다."""
+    ids = {
+        "empty_key": add(conn, 1, job_role=None),
+        "thin_content": add(conn, 2, **{name: "" for name in gate.CONTENT_FIELDS[:4]}),
+        "career_cap": add(conn, 3, experience_type="EXPERIENCED", experience_min_years="1"),
+        "off_target": add(conn, 4, job_field="디자인"),
+        "complete": add(conn, 5),
+    }
+    rows = conn.execute(
+        f"SELECT raw_job_id FROM normalized_jobs n WHERE {gate.blocked_sql()} ORDER BY raw_job_id"
+    ).fetchall()
+
+    assert [row[0] for row in rows] == [ids["empty_key"], ids["thin_content"], ids["career_cap"]]
 
 
 def test_finish_keeps_what_is_still_caught(conn: sqlite3.Connection) -> None:

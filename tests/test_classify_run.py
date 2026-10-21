@@ -333,9 +333,9 @@ async def test_every_call_is_recorded_with_its_tokens(conn: sqlite3.Connection) 
 
     rows = conn.execute("SELECT feature, total_tokens, ok FROM llm_calls ORDER BY id").fetchall()
     # 공고 3건 중 첫 건은 두 번 불렀고, 공고마다 회사·모집 기간을 묻는 호출이 하나 더 있다.
-    # 셋 다 품질 검사에 걸려 공고마다 두 호출씩 한 번 더 분류한다
-    assert progress.rechecked == 3
-    assert len(rows) == 7 + 3 * 2
+    # 셋 다 품질 검사에 걸려 공고마다 두 호출씩 두 번 더 분류한다
+    assert progress.rechecked == 3 * 2
+    assert len(rows) == 7 + 3 * 2 * 2
     assert {row["feature"] for row in rows} == {"classify"}
     assert progress.calls == len(rows)
     assert progress.total_tokens == sum(row["total_tokens"] for row in rows)
@@ -355,8 +355,8 @@ async def test_a_call_that_never_answered_is_recorded_as_failed(
 async def test_an_invented_value_is_counted_and_left_out(conn: sqlite3.Connection) -> None:
     progress = await run(conn, response(region="서울 강남구 테헤란로 123"))
 
-    # 품질 검사가 셋을 한 번 더 분류해 같은 값을 또 버린다
-    assert progress.dropped == 3 + 3
+    # 품질 검사가 셋을 두 번 더 분류해 같은 값을 또 버린다
+    assert progress.dropped == 3 + 3 * 2
     assert read_classification(conn, 1)["region"] == ""
 
 
@@ -473,17 +473,18 @@ async def test_a_role_from_the_title_alone_is_stored(conn: sqlite3.Connection) -
     assert read_classification(conn, 4)["position_name"] == "카카오비즈니스 파트너 플랫폼 PM"
 
 
-async def test_the_quality_gate_reclassifies_a_caught_posting_once(
+async def test_the_quality_gate_reclassifies_a_caught_posting_twice_at_most(
     conn: sqlite3.Connection,
 ) -> None:
-    """새 공고를 분류하는 길은 끝에 품질 검사가 돈다. 같은 공고는 두 번 다시 돌지 않는다."""
+    """새 공고를 분류하는 길은 끝에 품질 검사가 돈다. 같은 공고는 두 번까지만 다시 분류한다."""
     progress = await run(conn, GOOD)
 
     rows = conn.execute(
-        "SELECT reasons, reasons_after, finished_at FROM quality_gate_runs ORDER BY raw_job_id"
+        "SELECT reasons, reasons_after, attempts, finished_at FROM quality_gate_runs"
+        " ORDER BY raw_job_id"
     ).fetchall()
-    assert progress.rechecked == 3
-    assert len(rows) == 3
+    assert progress.rechecked == 3 * 2
+    assert [row["attempts"] for row in rows] == [2, 2, 2]
     assert all(row["finished_at"] for row in rows)
     # 가짜 응답은 직무·공고 내용을 채우지 않아 다시 분류해도 그대로다
     assert rows[0]["reasons"] == "empty_key,thin_content,off_target,career_cap"

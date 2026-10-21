@@ -26,6 +26,9 @@
   회사가 많아 보지 않고, 모집 마감은 기간 채용일 때만 본다 — 상시 채용에는 마감일이 없다. 칸이 빈
   공고는 사람이 채우거나 골라 보내기로 보낸다. 골라 보내기와 `지금 보내기` 는 필수 칸만 본다
 - 아직 보내지 않았는데 마감 일시가 이미 지난 공고
+- **품질 검사에 걸린 공고는 자동 전송하지 않는다** (2026-10-21 결정). AI 재분류를 두 번 해도
+  직무·마감일·고용 형태·경력 구분이 비었거나, 공고 내용이 절반 넘게 비었거나, 1·2년차가 지원할 수
+  있는데 경력 상한을 모르면 확인 필요로 간다 (`app/classify/gate.py`). 골라 보내기는 막지 않는다
 - 세 번 실패한 공고. 마지막 거절 사유는 전달 화면에 남는다
 - **임시로 직군·연차를 좁힌다** (2026-10-06 결정). 대상 직군이고 인턴~3년차 공고만 자동 전송·
   `지금 보내기` 로 보낸다 (`target_sql`). 대상 직군은 수집과 같은 설정으로, 공고 목록의 직군 칸에서
@@ -324,13 +327,21 @@ def target_sql(conn: sqlite3.Connection) -> str:
     return f"(n.job_field IN ({listed}) AND {TARGET_YEARS_SQL} AND {EXCLUDED_ROLES_SQL})"
 
 
+def _auto_sql() -> str:
+    """자동 전송 조건. 칸이 다 찼고 품질 검사에 걸리지 않았다 (2026-10-21)."""
+    # 품질 검사가 이 모듈의 마감 조건을 읽는다
+    from app.classify import gate
+
+    return f"({COMPLETE_SQL} AND NOT {gate.blocked_sql()})"
+
+
 def pending(
     conn: sqlite3.Connection, limit: int, now: str, *, complete: bool = True
 ) -> list[sqlite3.Row]:
     """보낼 공고. 아직 보내지 않은 것이 먼저이고, 실패한 것은 `MAX_ATTEMPTS` 전까지 다시 고른다.
 
-    `complete` 면 자동 전송 조건(`COMPLETE_SQL`)을, 아니면 필수 칸만(`READY_SQL`) 본다. 어느 쪽이든
-    임시 직군·연차 조건(`target_sql`)을 건다.
+    `complete` 면 자동 전송 조건(`COMPLETE_SQL`)과 품질 검사(`app/classify/gate.py`)를, 아니면 필수
+    칸만(`READY_SQL`) 본다. 어느 쪽이든 임시 직군·연차 조건(`target_sql`)을 건다.
 
     필수 칸이 빈 공고는 여기서 빼 1회 상한을 차지하지 않게 한다 — 분류 전 공고가 수백 건 쌓여 있으면
     그것들이 매번 앞자리를 먹는다. 목록 밖 값처럼 SQL 로 가를 수 없는 것은 보내기 전에 걸러 실패로
@@ -341,7 +352,7 @@ def pending(
         SELECT n.*, {SOURCE_SQL} FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
          WHERE {_UNSENT} AND {_OPEN} AND {target_sql(conn)}
-           AND {COMPLETE_SQL if complete else _READY}
+           AND {_auto_sql() if complete else _READY}
          ORDER BY d.source_url IS NOT NULL, n.id
          LIMIT ?
         """,
@@ -355,7 +366,7 @@ def pending_count(conn: sqlite3.Connection, now: str) -> int:
         f"""
         SELECT count(*) AS n FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
-         WHERE {_UNSENT} AND {_OPEN} AND {target_sql(conn)} AND {COMPLETE_SQL}
+         WHERE {_UNSENT} AND {_OPEN} AND {target_sql(conn)} AND {_auto_sql()}
         """,
         (MAX_ATTEMPTS, now),
     ).fetchone()
