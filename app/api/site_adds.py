@@ -25,12 +25,14 @@ CONCURRENCY = 2
 WAITING = "waiting"
 FINDING = "finding"
 TESTING = "testing"
+REPAIRING = "repairing"
 FAILED = "failed"
 
 STATE_WORDS: dict[str, str] = {
     WAITING: "기다리는 중",
     FINDING: "목록을 읽고 상세 페이지로 가는 길을 찾는 중",
     TESTING: "공고 몇 건을 시험으로 가져오는 중",
+    REPAIRING: "시험 수집이 안 돼 AI 로 셀렉터를 고치는 중",
     FAILED: "찾지 못했어요",
 }
 

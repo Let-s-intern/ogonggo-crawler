@@ -21,9 +21,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import pathlib
 import sqlite3
 from collections.abc import Iterator
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -37,8 +39,12 @@ from app.api import site_adds, ui_site_add
 from app.api import workflows as workflows_api
 from app.main import app
 from app.scheduler import WorkflowScheduler
+from app.selector.repair import RepairOutcome, SelectorChange
+from app.selector.schema import SelectorSet
 from app.storage import s3
 from app.storage import settings as store
+from tests.test_api_selector_repair import FIXED, outcome_for
+from tests.test_selector_repair import BROKEN
 
 LIST_URL = "https://careers.example.com/jobs"
 
@@ -90,6 +96,7 @@ def client(
     app.dependency_overrides[crawlers_api.get_generator] = lambda: None
     app.dependency_overrides[crawlers_api.get_discoverer] = lambda: None
     app.dependency_overrides[crawlers_api.get_crawl_fetcher] = lambda: None
+    app.dependency_overrides[crawlers_api.get_repairer] = lambda: None
     app.dependency_overrides[ui_site_add.get_add_launcher] = lambda: launched.append
     app.dependency_overrides[ui_site_add.get_add_connect] = lambda: (
         lambda: db.connect(tmp_path / "jobs.db")
@@ -484,3 +491,77 @@ def test_저장소가_비면_할_일을_적고_올리기가_실패하면_걸지_
     assert "로고를 올리지 못했어요" in body
     assert launched == []
     assert companies.read(conn, "예시") is None
+
+
+class BrokenSelectors(Fake):
+    """첫 시험 수집은 셀렉터 문제로 실패하고, AI 가 고친 뒤의 시험 수집은 된다."""
+
+    def __init__(self, conn: sqlite3.Connection, *, fixed: bool) -> None:
+        super().__init__(conn, found=False)
+        self.fixed = fixed
+        self.runs = 0
+
+    async def create(self, payload: Any, conn: sqlite3.Connection, *_: Any) -> Any:
+        created = await super().create(payload, conn)
+        conn.execute(
+            "UPDATE crawlers SET selectors_json = ?, list_mode = 'static' WHERE id = ?",
+            (json.dumps(BROKEN, ensure_ascii=False), created.id),
+        )
+        return created
+
+    async def run(self, crawler_id: int, conn: sqlite3.Connection, *_: Any) -> Any:
+        self.runs += 1
+        self.found = self.fixed and self.runs > 1
+        result = await super().run(crawler_id, conn)
+        return result if self.found else result.model_copy(update={"error_class": "selector_miss"})
+
+
+def use_repairer(fix: bool = True) -> None:
+    async def repair(
+        list_url: str, detail_url: str, render_mode: str, selectors: SelectorSet, **_: Any
+    ) -> RepairOutcome:
+        outcome = outcome_for(selectors)
+        if not fix:
+            return outcome
+        change = SelectorChange("list.item", BROKEN["list"]["item"], FIXED["list"]["item"])
+        return replace(outcome, changes=[change])
+
+    app.dependency_overrides[crawlers_api.get_repairer] = lambda: repair
+
+
+def test_시험_수집이_셀렉터_때문에_안_되면_AI_로_고쳐_자동_수집까지_시작한다(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    launched: list[Any],
+) -> None:
+    install(monkeypatch, BrokenSelectors(conn, fixed=True))
+    use_repairer()
+    client.post("/ui/sites/new", data={"list_url": LIST_URL, "company": "예시"})
+
+    finish(launched)
+
+    assert conn.execute("SELECT status FROM workflows").fetchone()["status"] == "active"
+    saved = json.loads(conn.execute("SELECT selectors_json FROM crawlers").fetchone()[0])
+    assert saved["list"]["item"] == FIXED["list"]["item"]
+    assert conn.execute("SELECT outcome FROM selector_auto_repairs").fetchone()[0] == "repaired"
+
+
+def test_고쳐도_안_되면_되돌리고_고친_단계까지_보여_준다(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    launched: list[Any],
+) -> None:
+    install(monkeypatch, BrokenSelectors(conn, fixed=False))
+    use_repairer()
+    client.post("/ui/sites/new", data={"list_url": LIST_URL, "company": "예시"})
+
+    finish(launched)
+
+    assert conn.execute("SELECT count(*) FROM workflows").fetchone()[0] == 0
+    saved = json.loads(conn.execute("SELECT selectors_json FROM crawlers").fetchone()[0])
+    assert saved["list"]["item"] == BROKEN["list"]["item"]
+    retry = client.get("/ui/sites/new/1").text
+    assert "✕ 4. AI 로 셀렉터 고쳐 다시 시험 수집" in retry
+    assert "고쳐도 시험 수집이 안 돼 되돌렸다" in retry
