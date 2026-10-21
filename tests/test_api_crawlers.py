@@ -257,6 +257,34 @@ def test_robots_disallow_refuses_registration(client: TestClient, conn: sqlite3.
     assert rows(conn) == []
 
 
+def test_목록_주소와_공고_주소가_같으면_만들지_않고_거절한다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """RAPA·잡코리아 리마크(2026-10-21): 공고 한 건 주소를 목록 자리에도 넣었다."""
+    use_generator(AssertionError("같은 주소면 생성까지 가지 않는다"))
+
+    response = client.post(
+        "/api/crawlers", json={"list_url": f"{DETAIL_URL}/", "detail_url": f"{DETAIL_URL}#top"}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["reason"] == "list_is_posting"
+    assert rows(conn) == []
+
+
+@pytest.mark.parametrize(
+    ("list_url", "detail_url", "same"),
+    [
+        ("https://a.test/jobs", "https://A.test/jobs/", True),
+        ("https://a.test/jobs", "https://a.test/jobs/7", False),
+        ("https://a.test/view?id=1", "https://a.test/view?id=2", False),
+        ("https://a.test/jobs", "", False),
+    ],
+)
+def test_같은_페이지_판정(list_url: str, detail_url: str, same: bool) -> None:
+    assert crawlers_api.same_page(list_url, detail_url) is same
+
+
 def test_transport_failure_leaves_no_row(client: TestClient, conn: sqlite3.Connection) -> None:
     use_generator(TransportError("전송 실패"))
 

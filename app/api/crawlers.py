@@ -137,6 +137,29 @@ class CrawlerCreate(BaseModel):
     render_mode: str = ""
 
 
+SAME_PAGE_MESSAGE = (
+    "목록 주소와 공고 주소가 같아요. 목록 자리에는 공고 여러 건이 보이는 채용 목록 페이지 주소를 "
+    "넣어 주세요"
+)
+
+
+def same_page(list_url: str, detail_url: str) -> bool:
+    """목록 주소와 공고 주소가 같은 페이지인가. 끝의 `/`·`#…`·호스트 대소문자는 보지 않는다.
+
+    공고 한 건의 주소를 목록 자리에 넣으면 셀렉터가 그 페이지의 다른 반복(추천 공고, 메뉴)을
+    목록으로 잡고, 등록은 세 단계를 다 돌고 나서야 엉뚱한 사유로 실패한다. RAPA 와 잡코리아
+    리마크가 그랬다 (2026-10-21).
+    """
+    if not detail_url.strip():
+        return False
+
+    def key(url: str) -> tuple[str, str, str, str]:
+        parts = urlsplit(url.strip())
+        return (parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"), parts.query)
+
+    return key(list_url) == key(detail_url)
+
+
 class RenderModeUpdate(BaseModel):
     """`static` 과 `playwright` 둘뿐이다. 승격은 운영자가 정한다."""
 
@@ -605,6 +628,10 @@ async def create_crawler(
     generate: Annotated[GenerateFn, Depends(get_generator)],
     discover: Annotated[DiscoverFn, Depends(get_discoverer)],
 ) -> CrawlerOut:
+    if same_page(payload.list_url, payload.detail_url):
+        raise HTTPException(
+            status_code=400, detail={"reason": "list_is_posting", "message": SAME_PAGE_MESSAGE}
+        )
     # 비우면 등록이 스스로 정한다. 값을 주면 그 모드로만 만들고 판정이 덮어쓰지 않는다
     requested = _requested_render_mode(payload.render_mode)
     try:

@@ -343,6 +343,8 @@ async def site_add_try(
             error="공고 주소는 http:// 나 https:// 로 시작해야 합니다",
             **kept,
         )
+    if crawlers.same_page(list_url, detail_url):
+        return _form(request, conn, step="form", error=crawlers.SAME_PAGE_MESSAGE, **kept)
     try:
         save_logo_file(conn, company, logo)
     except s3.StorageError as exc:
