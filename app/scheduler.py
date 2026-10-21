@@ -246,7 +246,7 @@ class WorkflowScheduler:
         async with get_gate().slot():
             conn = db.connect()
             try:
-                await run_workflow(conn, workflow_id, trigger=SCHEDULE)
+                await run_workflow(conn, workflow_id, trigger=SCHEDULE, enrich=True)
             finally:
                 self.sync(conn)
                 conn.close()
