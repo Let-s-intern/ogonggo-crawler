@@ -109,6 +109,11 @@ class Settings(BaseSettings):
     crawl_delay_seconds: float = 3.0
     crawl_timeout_seconds: float = 20.0
     crawl_max_retries: int = 3
+    # robots.txt 를 보지 않는 호스트. 쉼표로 잇는다. 요청 간격·User-Agent 는 그대로 지킨다.
+    # 운영자가 사이트마다 정한다 — 한진은 채용 경로를 막아 두었지만 수집하기로 했다 (2026-10-21).
+    # 파이썬 3.12 의 robots 파서는 `Allow: /` 를 먼저 따라 이를 허용으로 읽었고, 표준대로 읽는
+    # 3.14 부터 막힌다. 버전에 따라 조용히 바뀌지 않게 여기 적는다
+    crawl_robots_ignore_hosts: str = "www.hanjin.com"
     # 렌더 1회의 상한. 정적 타임아웃보다 길지만 무한정 기다리지 않는다
     render_timeout_seconds: float = 60.0
 

@@ -139,6 +139,11 @@ class Fetcher:
         self._last_request_at: dict[str, float] = {}
         self._host_locks: dict[str, asyncio.Lock] = {}
         self._robots: dict[str, RobotFileParser | None] = {}
+        self._robots_ignored = frozenset(
+            host.strip().lower()
+            for host in resolved.crawl_robots_ignore_hosts.split(",")
+            if host.strip()
+        )
 
     async def fetch(self, url: str) -> FetchResult:
         """robots 확인을 통과한 URL 만 가져온다. 실패는 `FetchError` 로 올라온다."""
@@ -205,6 +210,9 @@ class Fetcher:
         if parts.scheme not in ("http", "https") or not parts.netloc:
             raise FetchError(f"가져올 수 없는 URL 이다: {url}")
 
+        if parts.netloc.lower() in self._robots_ignored:
+            # 운영자가 robots 를 보지 않기로 한 호스트다 (`Settings.crawl_robots_ignore_hosts`)
+            return
         origin = f"{parts.scheme}://{parts.netloc}"
         if origin not in self._robots:
             # 판정을 얻지 못하면 캐시하지 않는다. robots 를 모르는 채로 대상에 요청하지 않는다.
