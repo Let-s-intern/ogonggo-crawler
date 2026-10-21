@@ -573,6 +573,7 @@ def settle_fields(fields: dict[str, str | None]) -> dict[str, str | None]:
       같은 모양이 된다
     - 최소 경력 연수는 신입(`NEWCOMER`)·인턴(`INTERN`) 공고면 0 이다 (2026-09-18 결정). 경력
       공고(`EXPERIENCED`)는 원문에서 읽은 숫자를 남기고, 그 밖에는 비운다
+    - 최대 경력 연수는 경력·신입경력(`BOTH`) 공고에서만 원문에서 읽은 숫자를 남긴다 (0056)
     - 모집 유형과 자동 종료는 마감일로 정한다. 마감일이 있으면 기간 채용이고 마감일에 닫힌다.
       오공고는 상시 채용에 마감일이 있으면 받지 않는다
     - `2999-12-31` 처럼 먼 마감일은 마감이 없다는 뜻이라 비운다 (2026-09-30 결정). 비워 두면
@@ -586,6 +587,12 @@ def settle_fields(fields: dict[str, str | None]) -> dict[str, str | None]:
         fields["experience_min_years"] = str(int(years))
     else:
         fields["experience_min_years"] = None
+    # 최대 경력 연수는 경력을 받는 공고(경력, 신입·경력)에서만 뜻이 있다
+    top = (fields.get("experience_max_years") or "").strip()
+    if fields.get("experience_type") in ("EXPERIENCED", "BOTH") and _YEARS.fullmatch(top):
+        fields["experience_max_years"] = str(int(top))
+    else:
+        fields["experience_max_years"] = None
     if _no_deadline(fields.get(END)):
         fields[END] = None
     period = bool(fields.get(END))

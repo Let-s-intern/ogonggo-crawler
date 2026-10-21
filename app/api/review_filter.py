@@ -737,6 +737,7 @@ def _delete_rows(conn: sqlite3.Connection, raw_job_ids: Sequence[int]) -> tuple[
             conn.execute(f"DELETE FROM job_custom_values WHERE raw_job_id IN ({marks})", part)
             conn.execute(f"DELETE FROM job_classifications WHERE raw_job_id IN ({marks})", part)
             conn.execute(f"DELETE FROM job_field_suggestions WHERE raw_job_id IN ({marks})", part)
+            conn.execute(f"DELETE FROM quality_gate_runs WHERE raw_job_id IN ({marks})", part)
             normalized += conn.execute(
                 f"DELETE FROM normalized_jobs WHERE raw_job_id IN ({marks})", part
             ).rowcount

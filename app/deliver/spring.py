@@ -696,6 +696,11 @@ def _message(response: httpx.Response) -> str:
     return response.text[:200]
 
 
+def local_now(settings: Settings | None = None) -> str:
+    """마감 일시와 견줄 지금. 표시 시간대의 시각이다. 분류 뒤 품질 검사가 쓴다."""
+    return _now(settings or get_settings())
+
+
 def _now(settings: Settings) -> str:
     try:
         zone: Any = ZoneInfo(settings.display_timezone)
