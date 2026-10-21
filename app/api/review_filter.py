@@ -725,7 +725,7 @@ def form_raw_ids(conn: sqlite3.Connection, form: Any) -> list[int]:
 
 
 def _delete_rows(conn: sqlite3.Connection, raw_job_ids: Sequence[int]) -> tuple[int, int, int]:
-    """여섯 표를 한 트랜잭션으로, 외래키 순서대로 비운다.
+    """여섯 표를 한 트랜잭션으로, 외래키 순서대로 비운다. 지운 주소는 `discarded_jobs` 에 남긴다.
 
     `job_field_overrides` -> `job_classifications` -> `job_field_suggestions` ->
     `normalized_jobs` -> `raw_job_history` -> `raw_jobs` 순이다. 거꾸로 지우면 외래키가 막는다.
@@ -749,6 +749,14 @@ def _delete_rows(conn: sqlite3.Connection, raw_job_ids: Sequence[int]) -> tuple[
             ).rowcount
             # 원문 다시 수집이 남긴 이전 값. 공고를 지우면 그 이력도 가리킬 곳이 없다
             conn.execute(f"DELETE FROM raw_job_history WHERE raw_job_id IN ({marks})", part)
+            # 지운 공고는 폐기한 것이다. 주소를 남겨 다음 수집이 다시 담지 않게 한다 (0061)
+            conn.execute(
+                "INSERT OR IGNORE INTO discarded_jobs (workflow_id, source_url, title)"
+                " SELECT workflow_id, source_url,"
+                " coalesce(json_extract(raw_data_json, '$.title'), '')"
+                f" FROM raw_jobs WHERE id IN ({marks})",
+                part,
+            )
             raw += conn.execute(f"DELETE FROM raw_jobs WHERE id IN ({marks})", part).rowcount
         conn.execute("COMMIT")
     except BaseException:
