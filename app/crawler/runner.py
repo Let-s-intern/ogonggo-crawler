@@ -181,6 +181,7 @@ async def run_workflow(
     fetcher: FetchPolicy | None = None,
     limit: int | None = None,
     timeout_seconds: float | None = None,
+    enrich: bool = False,
 ) -> RunResult:
     """스케줄러가 부르는 진입점. 무엇을 실행할지는 매번 테이블에서 다시 읽는다.
 
@@ -193,6 +194,9 @@ async def run_workflow(
 
     셀렉터가 없거나 스키마에 맞지 않으면 실행하지 못하지만, 그것도 종료 경로다.
     `crawl_runs` 행을 실패로 남긴다.
+
+    `enrich` 면 이번에 담은 공고 중 본문이 짧은 것을 분류 전에 페이지 전체로 다시 읽는다
+    (`app/crawler/enrich.py`). 스케줄러만 켠다 — 브라우저와 이미지 읽기를 부를 수 있다.
 
     `trigger` 는 이 실행을 무엇이 시작했는지다. 기본값이 `SCHEDULE` 인 것은 여기가 스케줄러의
     진입점이기 때문이고, 화면의 1회 실행은 `MANUAL` 을 직접 준다.
@@ -280,6 +284,14 @@ async def run_workflow(
             if item.state == STORED
         ],
     )
+    if enrich and result.new_count:
+        # 분류가 짧은 본문을 먼저 읽지 않게 그 앞에서 돈다. 이 모듈을 읽는 쪽이라 여기서 읽는다
+        from app.crawler import enrich as enrich_module
+
+        stored = [
+            item.raw_job_id for item in result.items if item.state == STORED and item.raw_job_id
+        ]
+        await enrich_module.after_run(conn, result.run_id, stored, fetcher=fetcher)
     # 새 공고가 있을 때만 `after_crawl` 분류를 잇는다. 실패해도 이 실행은 그대로다 —
     # 알림과 같은 이유다 (`app/side/runner.py` 의 `trigger_after_crawl`)
     trigger_after_crawl(conn, new_count=result.new_count)
