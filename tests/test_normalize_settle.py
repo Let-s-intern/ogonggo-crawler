@@ -137,6 +137,26 @@ def test_다른_물결표도_기간으로_읽고_날짜만_있으면_하루의_�
     assert fields["recruitment_end_at"] == "2026-08-31 23:59:59"
 
 
+@pytest.mark.parametrize("tilde", ["∼", "～"])
+def test_수학_기호나_전각_물결도_기간으로_읽는다(tilde: str) -> None:
+    """한진 실측(2026-10-21): `∼`(U+223C)로 적은 기간이 통째로 남아 시작일이 마감일로 읽혔다."""
+    fields = normalize_fields(
+        {"recruitment_end_at": f"2026-10-01 09:00 {tilde} 2026-10-21 14:00"}, RULES
+    )
+
+    assert fields["recruitment_start_at"] == "2026-10-01 09:00:00"
+    assert fields["recruitment_end_at"] == "2026-10-21 14:00:00"
+
+
+def test_칸_하나_정규화도_수학_기호_물결의_뒤쪽을_마감일로_읽는다() -> None:
+    """마감 거르기가 쓰는 길이다. 앞쪽을 읽으면 접수 중인 공고를 마감으로 건너뛴다."""
+    value = normalize_value(
+        "recruitment_end_at", "2026-10-01 09:00 ∼ 2026-10-21 14:00", RULES, date(2026, 10, 21)
+    )
+
+    assert value == "2026-10-21 14:00:00"
+
+
 def test_기간의_앞쪽만_있으면_시작일이고_마감일은_빈다() -> None:
     """GS리테일 실측(2026-10-01): `2026.09.30 ~` 가 마감일 칸에 남아 시작일이 마감일로 보였다."""
     fields = normalize_fields({"recruitment_end_at": "2026.09.30 ~ "}, RULES)
