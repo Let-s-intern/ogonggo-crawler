@@ -263,3 +263,21 @@ def test_전송도_같은_대상_직군을_읽는다(conn: sqlite3.Connection) -
     sql = spring.target_sql(conn)
 
     assert "n.job_field IN ('IT·개발', '게임')" in sql
+
+
+async def test_운영자가_지운_공고는_다음_실행이_다시_담지_않는다(conn: sqlite3.Connection) -> None:
+    """지운 공고는 폐기한 것이다 (2026-10-21, `migrations/0061_discarded_jobs.sql`)."""
+    from app.api.review_filter import _delete_rows
+
+    await run_once(conn, target(), collectors=collectors(StubDetail("본문"), ITEMS), limit=None)
+    deleted = conn.execute(
+        "SELECT id FROM raw_jobs WHERE source_url = ?", (f"{LIST_URL}/2",)
+    ).fetchone()[0]
+    _delete_rows(conn, [deleted])
+
+    detail = StubDetail("본문")
+    result = await run_once(conn, target(), collectors=collectors(detail, ITEMS), limit=None)
+
+    assert f"{LIST_URL}/2" not in stored_links(conn)
+    assert detail.calls == []
+    assert result.new_count == 0
