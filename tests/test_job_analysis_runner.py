@@ -48,16 +48,27 @@ def target(job_id: int, content_hash: str = "h") -> dict[str, Any]:
 
 
 class FakeOgonggo:
-    def __init__(self, targets: list[dict[str, Any]], put_status: dict[int, int] | None = None):
+    def __init__(
+        self,
+        targets: list[dict[str, Any]],
+        put_status: dict[int, int] | None = None,
+        hide_status: int = 200,
+    ):
         self.targets = targets
         self.put_status = put_status or {}
+        self.hide_status = hide_status
         self.puts: list[tuple[int, dict[str, Any]]] = []
+        self.hides: list[int] = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         if request.method == "GET":
             assert request.headers["X-Internal-Api-Key"] == "key"
             return httpx.Response(200, json={"status": 200, "message": "ok", "data": self.targets})
         job_id = int(request.url.path.split("/")[-2])
+        if request.url.path.endswith("/hide"):
+            assert request.method == "POST"
+            self.hides.append(job_id)
+            return httpx.Response(self.hide_status, json={})
         self.puts.append((job_id, json.loads(request.content)))
         return httpx.Response(self.put_status.get(job_id, 200), json={})
 
@@ -183,6 +194,9 @@ async def test_본문이_빈_공고는_연달아_있어도_건너뛰고_간다(
     assert summary.status == "success"
     assert (summary.failed, summary.sent, summary.left) == (len(empty), 1, 0)
     assert [job_id for job_id, _ in server.puts] == [100]
+    # 본문이 빈 공고는 분석할 수 없어 바로 숨긴다 (2026-10-21)
+    assert server.hides == [job["jobId"] for job in empty]
+    assert summary.hidden == len(empty)
 
 
 async def test_같은_본문으로_세_번_실패한_공고는_건너뛴다(
@@ -228,3 +242,68 @@ async def test_오공고_주소가_없으면_실행을_실패로_닫는다(
     assert summary.status == "failed"
     run = conn.execute("SELECT status, notes FROM job_analysis_runs").fetchone()
     assert run["status"] == "failed" and "오공고 주소" in run["notes"]
+
+
+async def test_같은_본문으로_세_번_실패하면_오공고에서_한_번_숨긴다(
+    conn: sqlite3.Connection, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-10-21 결정. 보여 줄 분석이 없는 공고를 사용자에게 내놓지 않는다."""
+    server = FakeOgonggo([target(1)])
+    serve(monkeypatch, server)
+    use(
+        monkeypatch, FakeProvider(*[LlmCallError("api_error", "503")] * runner.MAX_FAILURES_PER_JOB)
+    )
+
+    hidden_after: list[int] = []
+    for _ in range(runner.MAX_FAILURES_PER_JOB + 1):
+        await runner.run_once(conn, settings=settings)
+        hidden_after.append(len(server.hides))
+
+    assert hidden_after == [0, 0, 1, 1]
+    row = store.get(conn, 1)
+    assert row is not None and row["hidden_at"]
+
+
+async def test_기업회원_공고는_분석을_못_해도_숨기지_않는다(
+    conn: sqlite3.Connection, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server = FakeOgonggo([{**target(1), "source": "COMPANY", "qualifications": ""}])
+    serve(monkeypatch, server)
+    use(monkeypatch, FakeProvider(answer()))
+
+    summary = await runner.run_once(conn, settings=settings)
+
+    assert (summary.failed, summary.hidden) == (1, 0)
+    assert server.hides == []
+
+
+async def test_숨기지_못하면_적어_두고_다음_실행이_다시_숨긴다(
+    conn: sqlite3.Connection, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    empty = {**target(1), "qualifications": ""}
+    use(monkeypatch, FakeProvider(answer()))
+    serve(monkeypatch, FakeOgonggo([empty], hide_status=500))
+
+    failed = await runner.run_once(conn, settings=settings)
+    serve(monkeypatch, retry := FakeOgonggo([empty]))
+    again = await runner.run_once(conn, settings=settings)
+
+    assert failed.hidden == 0
+    assert any("숨기지 못했다" in note for note in failed.notes)
+    assert (again.hidden, retry.hides) == (1, [1])
+
+
+async def test_본문이_바뀌면_숨긴_기록을_비우고_다시_분석한다(
+    conn: sqlite3.Connection, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    serve(monkeypatch, FakeOgonggo([{**target(1), "qualifications": ""}]))
+    use(monkeypatch, FakeProvider(answer()))
+    await runner.run_once(conn, settings=settings)
+    serve(monkeypatch, server := FakeOgonggo([target(1, content_hash="new")]))
+
+    summary = await runner.run_once(conn, settings=settings)
+
+    row = store.get(conn, 1)
+    assert summary.sent == 1
+    assert row is not None and row["hidden_at"] is None
+    assert server.hides == []

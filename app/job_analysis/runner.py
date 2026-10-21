@@ -10,6 +10,9 @@
    빈 공고가 위에 몰리면 실행마다 같은 자리에서 멈춘다 (2026-10-13)
 6. 같은 본문으로 `MAX_FAILURES_PER_JOB` 번 실패한 공고는 건너뛴다. 본문이 바뀌면 다시 센다.
    상세 패널의 다시 분석은 그대로 된다 (2026-10-13)
+7. **분석을 끝내 못 한 공고는 오공고에서 숨긴다** (2026-10-21). 6의 공고와 본문이 비어 분석할 수
+   없는 공고다. 보여 줄 분석이 없는 공고를 사용자에게 내놓지 않는다. 기업회원 공고는 소유자가
+   관리하므로 숨기지 않는다. 숨기지 못하면 다음 실행이 다시 숨긴다
 
 실패한 공고는 서버가 다음 실행에도 대상으로 내주므로 따로 다시 부를 목록을 두지 않는다. 건너뛴
 공고도 서버는 계속 내준다 — 그래서 크롤러가 센다.
@@ -40,8 +43,10 @@ MAX_PER_RUN = 500
 MAX_FAILURES_IN_ROW = 5
 # AI 를 부르기 전에 난 실패. 연달아 실패한 수에 세지 않는다
 NOT_AI_FAILURE = "empty_body"
-# 같은 본문으로 이만큼 실패한 공고는 실행마다 다시 하지 않는다
+# 같은 본문으로 이만큼 실패한 공고는 실행마다 다시 하지 않고 오공고에서 숨긴다
 MAX_FAILURES_PER_JOB = 3
+# 소유자가 관리하는 기업회원 공고. 분석을 못 해도 숨기지 않는다
+COMPANY = "COMPANY"
 
 
 @dataclass
@@ -53,6 +58,7 @@ class RunSummary:
     sent: int = 0
     failed: int = 0
     skipped: int = 0
+    hidden: int = 0
     left: int = 0
     notes: list[str] = field(default_factory=list)
 
@@ -85,6 +91,8 @@ async def run_once(
             summary.notes.append(
                 f"{MAX_FAILURES_PER_JOB}번 실패한 공고 {summary.skipped}건은 건너뛰었다"
             )
+        if summary.hidden:
+            summary.notes.append(f"분석을 못 한 공고 {summary.hidden}건을 오공고에서 숨겼다")
     except (ogonggo.OgonggoUnavailable, guides.GuideError) as exc:
         summary.status = "failed"
         summary.notes.append(str(exc))
@@ -152,6 +160,8 @@ async def _work(
         row = store.get(conn, target.job_id)
         if _given_up(row, target):
             summary.skipped += 1
+            # 이 결정 전에 포기한 공고도 여기서 숨긴다
+            await _hide(conn, client, target, summary)
             continue
         reuse = _reusable(row, target, version.number)
         store.save_target(conn, target.job_id, target.source, target.job, target.content_hash)
@@ -172,6 +182,10 @@ async def _work(
                 summary.failed += 1
                 if exc.reason != NOT_AI_FAILURE:
                     failures_in_row += 1
+                if exc.reason == NOT_AI_FAILURE or _given_up(
+                    store.get(conn, target.job_id), target
+                ):
+                    await _hide(conn, client, target, summary)
                 continue
             failures_in_row = 0
             reuse = store.Analyzed(
@@ -247,6 +261,24 @@ def _given_up(row: sqlite3.Row | None, target: ogonggo.Target) -> bool:
         and row["content_hash"] == target.content_hash
         and int(row["attempts"]) >= MAX_FAILURES_PER_JOB
     )
+
+
+async def _hide(
+    conn: sqlite3.Connection,
+    client: httpx.AsyncClient,
+    target: ogonggo.Target,
+    summary: RunSummary,
+) -> None:
+    """분석을 못 한 공고를 오공고에서 숨긴다. 이미 숨겼거나 기업회원 공고면 건너뛴다."""
+    row = store.get(conn, target.job_id)
+    if target.source == COMPANY or (row is not None and row["hidden_at"]):
+        return
+    result = await ogonggo.hide(client, target.job_id)
+    if result.outcome == ogonggo.HIDDEN:
+        store.mark_hidden(conn, target.job_id)
+        summary.hidden += 1
+        return
+    summary.notes.append(f"공고 {target.job_id} 를 숨기지 못했다: {result.message}")
 
 
 def close_orphan_runs(conn: sqlite3.Connection) -> int:

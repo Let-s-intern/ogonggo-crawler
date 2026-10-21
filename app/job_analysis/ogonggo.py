@@ -18,6 +18,11 @@
  "sourceUrl": "…", "responsibilities": "…", … 본문 여덟 칸}
 ```
 
+`POST /api/v1/internal/jobs/{jobId}/hide`
+
+분석을 끝내 못 한 공고를 사용자 화면에서 내린다 (2026-10-21). 크롤링·고용24 공고만 숨기고, 기업회원
+공고는 404 다. 이미 숨긴 공고를 다시 숨겨도 200 이다.
+
 `PUT /api/v1/internal/jobs/{jobId}/analysis`
 
 ```json
@@ -49,6 +54,7 @@ transport: httpx.AsyncBaseTransport | None = None
 SOURCE_LABELS: dict[str, str] = {"CRAWLER": "크롤러", "WORK24": "고용24", "COMPANY": "직접 등록"}
 
 SENT = "sent"
+HIDDEN = "hidden"
 NOT_FOUND = "not_found"
 STALE = "stale"
 FAILED = "failed"
@@ -140,3 +146,18 @@ async def put(
     if response.status_code == 409:
         return PutResult(STALE, "그사이 공고 본문이 바뀌었다. 다음 실행에서 다시 분석한다")
     return PutResult(FAILED, f"오공고가 받지 않았다({response.status_code}): {response.text[:300]}")
+
+
+async def hide(client: httpx.AsyncClient, job_id: int) -> PutResult:
+    """공고를 오공고 사용자 화면에서 내린다."""
+    try:
+        response = await client.post(f"{JOBS_PATH}/{job_id}/hide")
+    except httpx.HTTPError as exc:
+        return PutResult(FAILED, f"숨기지 못했다: {exc}")
+    if response.status_code in (200, 204):
+        return PutResult(HIDDEN)
+    if response.status_code == 404:
+        return PutResult(NOT_FOUND, "오공고에서 숨길 수 있는 공고가 아니다")
+    return PutResult(
+        FAILED, f"오공고가 숨기지 않았다({response.status_code}): {response.text[:300]}"
+    )

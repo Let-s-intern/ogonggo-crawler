@@ -252,7 +252,7 @@ class WorkflowScheduler:
         async with get_gate().slot():
             conn = db.connect()
             try:
-                result = await run_workflow(conn, workflow_id, trigger=SCHEDULE)
+                result = await run_workflow(conn, workflow_id, trigger=SCHEDULE, enrich=True)
                 try:
                     fixed = await auto_repair.after_failed_run(conn, workflow_id, result)
                 except Exception:
@@ -260,7 +260,7 @@ class WorkflowScheduler:
                     logger.exception("자동 수리: workflow %s 에서 예외", workflow_id)
                     fixed = False
                 if fixed:
-                    await run_workflow(conn, workflow_id, trigger=SCHEDULE)
+                    await run_workflow(conn, workflow_id, trigger=SCHEDULE, enrich=True)
             finally:
                 self.sync(conn)
                 conn.close()
