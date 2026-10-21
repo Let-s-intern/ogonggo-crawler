@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 
 from app import db
 from app.api import crawlers as crawlers_api
+from app.classify import gate
 from app.main import app
 
 LIST_URL = "https://www.python.org/jobs/"
@@ -92,6 +93,14 @@ def add_job(
             values.get("recruitment_type"),
         ),
     )
+    if ready:
+        # 품질 검사를 통과하는 칸 (`app/classify/gate.py`). 마감일과 본문은 인자 그대로다
+        conn.execute(
+            "UPDATE normalized_jobs SET job_role = '서버·백엔드', job_field = 'IT·개발', "
+            + ", ".join(f"{name} = '내용'" for name in gate.CONTENT_FIELDS)
+            + " WHERE raw_job_id = ?",
+            (raw_job_id,),
+        )
     if classified:
         conn.execute(
             "INSERT INTO job_classifications (raw_job_id, model) VALUES (?, 'test')", (raw_job_id,)
@@ -264,3 +273,16 @@ def test_켜진_사이트의_마지막_수집이_실패하면_알린다(
     assert "잘 되는 곳" not in html
     assert "멈춘 곳" not in html
     assert 'href="/workflows"' in html
+
+
+def test_품질_검사에_걸린_공고는_확인_필요에_사유와_함께_보인다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """재분류로도 못 푼 공고다 (2026-10-21, `app/classify/gate.py`)."""
+    conn.execute("UPDATE normalized_jobs SET job_role = NULL WHERE title = '정상 대기'")
+
+    html = client.get("/ui/review").text
+    checked = client.get("/ui/review?view=check").text
+
+    assert "품질 검사 미통과" in row_of(html, "정상 대기")
+    assert "정상 대기" in checked
