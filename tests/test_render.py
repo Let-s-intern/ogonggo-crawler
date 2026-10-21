@@ -18,8 +18,10 @@ from app.crawler.fetcher import Fetcher, RobotsDisallowedError
 from app.crawler.playwright import (
     PLAYWRIGHT,
     STATIC,
+    InFlight,
     Renderer,
     RenderError,
+    _settle,
     open_source,
 )
 
@@ -273,3 +275,61 @@ async def test_open_source_playwright_closes_the_renderer() -> None:
         await source.fetch(LIST_URL)
 
     assert browser.closed is True
+
+
+class EventPage:
+    """요청 이벤트를 흘려보내는 페이지. `networkidle` 과 항목 힌트는 곧바로 통과한 척한다."""
+
+    def __init__(self) -> None:
+        self.handlers: dict[str, list[Any]] = {}
+        self.html = "<ul><li>메뉴</li><li>메뉴</li><li>메뉴</li></ul>"
+
+    def on(self, event: str, handler: Any) -> None:
+        self.handlers.setdefault(event, []).append(handler)
+
+    def emit(self, event: str, request: Any) -> None:
+        for handler in self.handlers.get(event, []):
+            handler(request)
+
+    async def wait_for_load_state(self, state: str, **kwargs: Any) -> None:
+        return None
+
+    async def wait_for_function(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+
+def data_request(kind: str) -> Any:
+    return type("Request", (), {"resource_type": kind})()
+
+
+async def test_목록_API_가_늦어도_요청이_끝날_때까지_기다린다() -> None:
+    """KT 실측(2026-10-21): 메뉴로 항목 힌트가 먼저 차, 늦게 온 목록을 빼고 읽었다."""
+    page = EventPage()
+    inflight = InFlight()
+    inflight.attach(page)
+    listing = data_request("fetch")
+    page.emit("request", listing)
+    page.emit("request", data_request("image"))
+
+    async def answer() -> None:
+        await asyncio.sleep(0.2)
+        page.html = "<ul><li><a href='/jobs/1'>공고</a></li></ul>"
+        page.emit("requestfinished", listing)
+
+    task = asyncio.create_task(answer())
+    await _settle(page, inflight)
+    await task
+
+    assert inflight.open == 0
+    assert "/jobs/1" in page.html
+
+
+async def test_실패한_요청도_끝난_것으로_센다() -> None:
+    page = EventPage()
+    inflight = InFlight()
+    inflight.attach(page)
+    request = data_request("xhr")
+    page.emit("request", request)
+    page.emit("requestfailed", request)
+
+    assert await inflight.wait(1.0) is True

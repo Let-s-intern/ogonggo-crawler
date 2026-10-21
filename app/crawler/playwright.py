@@ -79,6 +79,14 @@ _SETTLE_SECONDS = 5.0
 # 현대자동차가 그랬다 — 같은 셀렉터가 어떤 실행에는 20건, 어떤 실행에는 0건이었다.
 # 반복 항목이 실제로 생길 때까지 한 번 더 기다린다.
 _ITEMS_SECONDS = 10.0
+# 진행 중인 XHR·fetch 가 끝나기를 기다리는 상한. `networkidle` 은 위 5초에서 끊기는데, 목록 API 가
+# 그보다 늦게 오면 빈 목록을 가져간다. KT(recruiter.co.kr) 실측(2026-10-21): 상단 메뉴가 이미
+# `ul li` 9개라 항목 힌트도 먼저 차 있었고, 목록 API 를 7초 늦추면 공고 0건을 가져갔다. 폴링으로
+# 영영 끝나지 않는 페이지가 있어 상한을 둔다
+_INFLIGHT_SECONDS = 15.0
+# 요청이 끝난 뒤 화면이 응답을 그리는 데 주는 시간
+_PAINT_SECONDS = 0.3
+_DATA_RESOURCES = frozenset({"xhr", "fetch"})
 _ITEM_HINTS = ("li[data-recucls]", "ul li", "ol li", "tbody tr", "article")
 
 # 응답 본문을 여기까지만 들고 있는다. 상세 경로를 알아보는 데는 앞부분이면 충분하고, 큰 응답을
@@ -464,8 +472,10 @@ class Renderer:
                 log.attach(page)
                 context.on("page", log.attach)
                 log.watch_navigations(context)
+                inflight = InFlight()
+                inflight.attach(page)
                 await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
-                await _settle(page)
+                await _settle(page, inflight)
                 await log.drain()
                 yield ProbeSession(
                     page=page, context=context, log=log, html=await page.content(), url=page.url
@@ -497,10 +507,12 @@ class Renderer:
                     page = await context.new_page()
                     if log is not None:
                         log.attach(page)
+                    inflight = InFlight()
+                    inflight.attach(page)
                     response = await page.goto(
                         url, wait_until="domcontentloaded", timeout=timeout_ms
                     )
-                    await _settle(page)
+                    await _settle(page, inflight)
                     await _inline_frames(page)
                     html = await page.content()
                     final_url = page.url
@@ -535,7 +547,48 @@ class Renderer:
         return self._browser
 
 
-async def _settle(page: Any) -> None:
+class InFlight:
+    """페이지가 낸 XHR·fetch 중 아직 끝나지 않은 것을 센다. 이미지·스크립트는 세지 않는다.
+
+    `goto` 전에 붙여야 한다. 그 뒤에 붙이면 먼저 나간 요청을 모른다.
+    """
+
+    def __init__(self) -> None:
+        self._open: set[int] = set()
+
+    def attach(self, page: Any) -> None:
+        with suppress(Exception):
+            page.on("request", self._started)
+            page.on("requestfinished", self._ended)
+            page.on("requestfailed", self._ended)
+
+    @property
+    def open(self) -> int:
+        return len(self._open)
+
+    async def wait(self, timeout: float) -> bool:
+        """모두 끝나면 참. 상한까지 기다려도 남아 있으면 거짓이고, 그 시점의 DOM 을 쓴다."""
+        if not self._open:
+            return True
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while self._open and loop.time() < deadline:
+            await asyncio.sleep(0.1)
+        if self._open:
+            return False
+        await asyncio.sleep(_PAINT_SECONDS)
+        return True
+
+    def _started(self, request: Any) -> None:
+        with suppress(Exception):
+            if request.resource_type in _DATA_RESOURCES:
+                self._open.add(id(request))
+
+    def _ended(self, request: Any) -> None:
+        self._open.discard(id(request))
+
+
+async def _settle(page: Any, inflight: InFlight | None = None) -> None:
     """XHR 이 잦아들고 반복 항목이 생길 때까지 기다린다. 안 되어도 실패로 보지 않는다.
 
     `networkidle` 만 보면 목록을 늦게 채우는 사이트에서 빈 DOM 을 가져온다. 그 결과는
@@ -547,6 +600,10 @@ async def _settle(page: Any) -> None:
     """
     with suppress(Exception):
         await page.wait_for_load_state("networkidle", timeout=int(_SETTLE_SECONDS * 1000))
+    if inflight is not None and not await inflight.wait(_INFLIGHT_SECONDS):
+        logger.info(
+            "XHR %d건이 %.0f초 안에 끝나지 않아 그대로 읽는다", inflight.open, _INFLIGHT_SECONDS
+        )
     with suppress(Exception):
         await page.wait_for_function(
             "(hints) => hints.some((h) => document.querySelectorAll(h).length >= 3)",

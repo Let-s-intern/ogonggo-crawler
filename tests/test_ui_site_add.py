@@ -221,6 +221,23 @@ def test_주소와_회사_이름이_없으면_걸지_않는다(
     assert launched == []
 
 
+def test_목록_주소와_공고_주소가_같으면_걸지_않고_목록_주소를_달라고_한다(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    launched: list[Any],
+) -> None:
+    install(monkeypatch, Fake(conn, found=True))
+
+    html = client.post(
+        "/ui/sites/new",
+        data={"list_url": f"{LIST_URL}/7", "company": "예시", "detail_url": f"{LIST_URL}/7"},
+    ).text
+
+    assert "채용 목록 페이지 주소를" in html
+    assert launched == []
+
+
 def test_걸면_기다리지_않고_돌아오고_목록_맨_위에_추가_중으로_보인다(
     client: TestClient,
     conn: sqlite3.Connection,

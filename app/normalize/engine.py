@@ -223,7 +223,9 @@ def normalize_fields(
     메우지 않는다.
     """
     ordered = _by_field(rules)
-    raw = _with_period_start(_with_counted_end(raw, collected_on or date.today()))
+    raw = _with_period_start(
+        _with_counted_end(_with_plain_tilde(raw), collected_on or date.today())
+    )
     result: dict[str, str | None] = {}
     for field_name in NORMALIZED_FIELDS:
         raw_value = raw.get(field_name)
@@ -242,6 +244,11 @@ def normalize_fields(
 _PERIOD_SEPARATOR = re.compile(r"\s*[~〜]\s*")
 START = "recruitment_start_at"
 END = "recruitment_end_at"
+# 기간을 잇는 물결의 다른 글자. 규칙의 기간 regex 와 위 구분자는 `~`·`〜` 만 안다. 한진은 수학 기호
+# `∼`(U+223C)로 "2026-10-01 09:00 ∼ 2026-10-21 14:00" 을 적었고, 기간이 통째로 남아 앞쪽 시작일이
+# 마감일로 읽혀 접수 중인 공고를 마감으로 건너뛰었다 (2026-10-21). 규칙마다 글자를 늘리는 대신 규칙
+# 전에 `~` 로 맞춘다
+_TILDES = re.compile(r"[∼～〜]")
 
 
 def normalize_value(
@@ -252,9 +259,21 @@ def normalize_value(
     마감 거르기가 목록의 마감일 하나를 읽을 때 쓴다 (`app/crawler/deadline.py`). 공고 전체를
     정규화하면 기간 앞쪽에서 나눈 시작일까지 읽다가, 그 칸의 실패 때문에 마감일을 못 읽는다.
     """
+    if field_name in (START, END):
+        value = _TILDES.sub("~", value)
     if field_name == END:
         value = loose_date.settle_counted(value, collected_on or date.today())
     return _run_rules(value, _by_field(rules).get(field_name, ()))
+
+
+def _with_plain_tilde(raw: Mapping[str, object]) -> Mapping[str, object]:
+    """시작일·마감일 칸의 물결 변형을 `~` 로 맞춘다 (`_TILDES`)."""
+    changed = {
+        key: _TILDES.sub("~", value)
+        for key in (START, END)
+        if isinstance(value := raw.get(key), str) and _TILDES.search(value)
+    }
+    return {**raw, **changed} if changed else raw
 
 
 def _with_counted_end(raw: Mapping[str, object], collected_on: date) -> Mapping[str, object]:

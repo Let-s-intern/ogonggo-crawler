@@ -91,12 +91,14 @@ def make_fetcher(
     *,
     delay: float = DELAY_SECONDS,
     max_retries: int = MAX_RETRIES,
+    robots_ignore_hosts: str = "",
 ) -> Fetcher:
     settings = Settings(
         crawl_user_agent=USER_AGENT,
         crawl_delay_seconds=delay,
         crawl_timeout_seconds=5.0,
         crawl_max_retries=max_retries,
+        crawl_robots_ignore_hosts=robots_ignore_hosts,
     )
     return Fetcher(
         settings=settings,
@@ -197,6 +199,22 @@ async def test_robots_disallow_blocks_the_request() -> None:
     await fetcher.aclose()
 
     assert site.urls() == [ROBOTS_URL]
+
+
+async def test_robots_를_보지_않기로_한_호스트는_robots_를_읽지_않고_가져온다() -> None:
+    """한진(2026-10-21): 채용 경로를 robots 로 막았지만 운영자가 수집하기로 했다."""
+    clock = FakeClock()
+    site = StubSite(clock, robots_then(ROBOTS_DISALLOW_JOBS, ok_page))
+    fetcher = make_fetcher(site, clock, robots_ignore_hosts=" Example.test , other.test")
+
+    await fetcher.fetch(LIST_URL)
+    await fetcher.fetch(LIST_URL)
+    await fetcher.aclose()
+
+    assert site.urls() == [LIST_URL, LIST_URL]
+    # 요청 간격은 그대로 지킨다
+    times = site.times()
+    assert times[1] - times[0] >= DELAY_SECONDS
 
 
 async def test_robots_verdict_is_cached_per_host() -> None:
