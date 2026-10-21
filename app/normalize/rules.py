@@ -98,6 +98,8 @@ NORMALIZED_FIELDS: tuple[str, ...] = (
     "inquiry_email",
     # 0046 이 더한 근무 시·군·구. 분류가 오공고 enum 에서 고른다 (`app/regions.py`)
     "sub_region",
+    # 0056 이 더한 최대 경력 연수. 분류가 원문에 상한이 있을 때만 채운다 (`app/classify/gate.py`)
+    "experience_max_years",
 )
 
 # 규칙도 보정도 걸리지 않고 정규화가 다른 칸에서 정하는 칸. `normalized_jobs` 에만 있다 — 모집
