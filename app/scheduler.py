@@ -240,13 +240,27 @@ class WorkflowScheduler:
     async def _execute(self, workflow_id: int) -> None:
         """잡 하나의 기본 실행 경로. 상한을 얻은 뒤에 연결을 연다.
 
+        셀렉터 문제로 실패하면 AI 로 고쳐 보고, 고쳐졌으면 그 자리에서 한 번 더 돈다
+        (`app/api/auto_repair.py`). 크롤러마다 하루 한 번이다.
+
         끝나고 다시 `sync()` 한다. 연속 실패로 자동 중지된 워크플로우는 테이블에서 `paused` 가
         되는데, 그 사실이 잡 목록까지 오지 않으면 멈춘 워크플로우가 계속 깨어난다.
         """
+        # 화면 쪽 모듈이 이 모듈을 읽으므로 여기서 읽는다
+        from app.api import auto_repair
+
         async with get_gate().slot():
             conn = db.connect()
             try:
-                await run_workflow(conn, workflow_id, trigger=SCHEDULE)
+                result = await run_workflow(conn, workflow_id, trigger=SCHEDULE)
+                try:
+                    fixed = await auto_repair.after_failed_run(conn, workflow_id, result)
+                except Exception:
+                    # 고치기가 죽어도 수집 실패는 이미 실행 기록에 남았다
+                    logger.exception("자동 수리: workflow %s 에서 예외", workflow_id)
+                    fixed = False
+                if fixed:
+                    await run_workflow(conn, workflow_id, trigger=SCHEDULE)
             finally:
                 self.sync(conn)
                 conn.close()
