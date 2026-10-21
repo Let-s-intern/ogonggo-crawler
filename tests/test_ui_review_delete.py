@@ -29,6 +29,7 @@ from fastapi.testclient import TestClient
 
 from app import db
 from app.api import crawlers as crawlers_api
+from app.crawler import runner
 from app.main import app
 
 LIST_URL = "https://www.python.org/jobs/"
@@ -377,18 +378,24 @@ def test_워크플로우_범위는_걸리지_않는_조건을_적지_않는다(c
     assert "검색어 엘지화학" not in html
 
 
-def test_확인_창이_다시_수집된다는_것을_적는다(client: TestClient) -> None:
-    """모집 중인 공고를 지우면 다음 실행에서 다시 들어온다. 모르면 왜 되살아나는지 알 수 없다."""
+def test_확인_창이_지운_공고는_다시_수집하지_않는다고_적는다(client: TestClient) -> None:
+    """지운 공고는 폐기한 것이다 (2026-10-21). 예전에는 다음 날 다시 들어왔다."""
     html = client.post("/ui/review/delete/confirm", data={"raw_job_id": ["1"]}).text
 
-    assert "아직 게시 중인 공고는 다음 실행에서 다시 들어온다" in html
-    assert "content_hash" in html
-    assert "source_url" in html
-    # 되살아나지 않게 하는 길도 함께 적는다
-    assert "워크플로우</a> 를 먼저 중지한다" in html
+    assert "아직 게시 중이어도 다시 수집하지 않는다" in html
+    assert "다시 들어온다" not in html
 
 
-def test_지운_뒤에도_다시_수집된다는_것을_적는다(client: TestClient) -> None:
+def test_지운_주소는_폐기로_남고_수집이_아는_공고로_본다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    row = conn.execute("SELECT workflow_id, source_url FROM raw_jobs WHERE id = 1").fetchone()
+
     html = client.post("/ui/review/delete", data={"raw_job_id": ["1"]}).text
 
-    assert "다음 실행에서 다시 들어온다" in html
+    assert "다음 수집이 다시 담지 않는다" in html
+    discarded = conn.execute("SELECT workflow_id, source_url FROM discarded_jobs").fetchall()
+    assert [tuple(r) for r in discarded] == [tuple(row)]
+    assert runner._is_known(conn, row["workflow_id"], "source_url", row["source_url"])
+    # 다른 사이트의 같은 주소는 모른다
+    assert not runner._is_known(conn, 999, "source_url", row["source_url"])

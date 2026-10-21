@@ -822,16 +822,27 @@ def _is_known(conn: sqlite3.Connection, workflow_id: int | None, column: str, va
     """이미 적재한 공고인지 본다. 적재하지 않는 실행에는 아는 공고가 없다.
 
     대상 직군 밖이라 거른 주소도 아는 공고다. 다시 열고 다시 묻지 않고, 쪽을 넘기는 목록이 그
-    쪽에서 멈춘다 (`app/crawler/screen.py`).
+    쪽에서 멈춘다 (`app/crawler/screen.py`). 운영자가 공고 목록에서 지운 주소도 아는 공고다 —
+    폐기한 공고를 다음 날 다시 담지 않는다 (`migrations/0061_discarded_jobs.sql`).
     """
     if workflow_id is None:
         return False
-    if column == "source_url" and is_screened(conn, workflow_id, value):
+    if column == "source_url" and (
+        is_screened(conn, workflow_id, value) or _is_discarded(conn, workflow_id, value)
+    ):
         return True
     # column 은 이 모듈 안에서 넘기는 고정 값 둘뿐이다. 밖에서 오는 값이 들어오지 않는다.
     row = conn.execute(
         f"SELECT 1 FROM raw_jobs WHERE workflow_id = ? AND {column} = ? LIMIT 1",
         (workflow_id, value),
+    ).fetchone()
+    return row is not None
+
+
+def _is_discarded(conn: sqlite3.Connection, workflow_id: int, source_url: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM discarded_jobs WHERE workflow_id = ? AND source_url = ? LIMIT 1",
+        (workflow_id, source_url),
     ).fetchone()
     return row is not None
 

@@ -25,9 +25,8 @@
       그중 {{ done.sent }}건은 이미 오공고로 보낸 공고였다. 여기서 지워도 오공고에서는 지워지지 않는다.
     </p>
     {% endif %}
-    <p class="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-      아직 게시 중인 공고였다면 다음 실행에서 다시 들어온다. 아는 공고인지를 가리는 기억이
-      그 행에 있었기 때문이다.
+    <p class="mb-3 rounded-md bg-slate-100 px-3 py-2 text-sm">
+      지운 공고는 폐기했다. 사이트에 아직 게시 중이어도 다음 수집이 다시 담지 않는다.
     </p>
     <p class="text-sm text-slate-600">표는 다시 그려졌다. 창을 닫고 남은 목록을 확인한다.</p>
 
@@ -39,8 +38,8 @@
 
     {% else %}
     <p class="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
-      <span class="font-semibold">되돌릴 수 없다.</span> 마감된 공고는 사이트에서 이미 내려가
-      다시 수집되지 않는다. 지운 수집 건은 다시 만들 수 없다.
+      <span class="font-semibold">되돌릴 수 없다.</span> 지운 공고는 폐기한 것으로 보고 사이트에
+      아직 게시 중이어도 다시 수집하지 않는다. 지운 수집 건은 다시 만들 수 없다.
     </p>
     {% if target.scope == "workflow" %}
     <p class="mb-3 rounded-md bg-slate-100 px-3 py-2 text-sm">
@@ -54,13 +53,6 @@
       이 중 {{ target.sent }}건은 이미 오공고로 보낸 공고다. 여기서 지워도 오공고에서는 지워지지 않는다.
     </p>
     {% endif %}
-    {# 지운 것이 되살아나는 이유. 모르고 지우면 같은 것을 두 번 세 번 지우게 된다 #}
-    <p class="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-      <span class="font-semibold">아직 게시 중인 공고는 다음 실행에서 다시 들어온다.</span>
-      크롤러는 <code>source_url</code> 과 <code>content_hash</code> 가 이미 있는지로 아는
-      공고인지를 가리는데, 지우면 그 기억도 함께 사라지기 때문이다. 다시 들어오지 않게 하려면
-      <a class="font-medium underline" href="/workflows">워크플로우</a> 를 먼저 중지한다.
-    </p>
 
     <div class="table-scroll">
     <table class="data-table">
