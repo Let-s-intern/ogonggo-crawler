@@ -9,9 +9,10 @@
 ## 확인 필요
 
 운영자가 이 화면을 여는 이유는 "공고가 잘 들어왔는지 보기" 하나다 (2026-09-17 결정, LC-3344).
-그래서 손이 가야 하는 공고를 한데 모은다. 아직 보내지 않았고 마감 전인 공고 중 다섯 중 하나라도
+그래서 손이 가야 하는 공고를 한데 모은다. 아직 보내지 않았고 마감 전인 공고 중 여섯 중 하나라도
 걸린 것이다 — 오공고가 거절했다, 오공고가 반드시 받는 칸이 비었다, AI 분류가 아직 안 됐다,
-본문이 거의 없다, AI 가 원문에서 짚은 마감일이 저장된 마감일과 다른 날이다(2026-10-02).
+본문이 거의 없다, AI 가 원문에서 짚은 마감일이 저장된 마감일과 다른 날이다(2026-10-02), 품질
+검사에 걸려 AI 재분류로도 풀리지 않았다(2026-10-21, `app/classify/gate.py`).
 마감이 지난 공고는 어차피 보내지 않으므로 넣지 않는다.
 
 ## 조건은 화면에서 온 문자열로 조립하지 않는다
@@ -33,6 +34,7 @@ from fastapi.responses import HTMLResponse
 
 from app.api import crawlers
 from app.api.ui import display_zone, render
+from app.classify import gate
 from app.classify.schema import EXPERIENCE_TYPES
 from app.deliver.spring import OPEN_SQL, READY_SQL, TARGET_MAX_YEARS, TARGET_YEARS_SQL
 
@@ -98,10 +100,14 @@ DEADLINE_DIFF_SQL = (
     " AND o.part = n.part AND o.field_name = 'recruitment_end_at'))"
 )
 
-# 손이 가야 하는 까닭 다섯 중 하나라도 걸렸다
+# 품질 검사(`app/classify/gate.py`)에 걸려 자동 전송이 막혔다. AI 재분류를 두 번 해도 못 풀었거나
+# 아직 재분류 전이다 (2026-10-21)
+GATE_SQL = gate.blocked_sql()
+
+# 손이 가야 하는 까닭 여섯 중 하나라도 걸렸다
 _TROUBLE_SQL = (
     f"({FAILED_SQL} OR {UNREADY_SQL}"
-    f" OR {UNCLASSIFIED_SQL} OR {SHORT_BODY_SQL} OR {DEADLINE_DIFF_SQL})"
+    f" OR {UNCLASSIFIED_SQL} OR {SHORT_BODY_SQL} OR {DEADLINE_DIFF_SQL} OR {GATE_SQL})"
 )
 
 # 마감 전 조건(`OPEN_SQL`)에 바인딩 하나가 든다 — 표시 시간대의 지금이다
@@ -737,6 +743,7 @@ def _delete_rows(conn: sqlite3.Connection, raw_job_ids: Sequence[int]) -> tuple[
             conn.execute(f"DELETE FROM job_custom_values WHERE raw_job_id IN ({marks})", part)
             conn.execute(f"DELETE FROM job_classifications WHERE raw_job_id IN ({marks})", part)
             conn.execute(f"DELETE FROM job_field_suggestions WHERE raw_job_id IN ({marks})", part)
+            conn.execute(f"DELETE FROM quality_gate_runs WHERE raw_job_id IN ({marks})", part)
             normalized += conn.execute(
                 f"DELETE FROM normalized_jobs WHERE raw_job_id IN ({marks})", part
             ).rowcount

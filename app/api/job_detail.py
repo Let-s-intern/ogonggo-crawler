@@ -93,6 +93,7 @@ SECTIONS: tuple[tuple[str, tuple[Field, ...]], ...] = (
             Field("employment_type", "고용 형태", KIND_CHOICE),
             Field("experience_type", "경력", KIND_CHOICE),
             Field("experience_min_years", "최소 경력 연수"),
+            Field("experience_max_years", "최대 경력 연수"),
             Field("education_level", "학력", KIND_CHOICE),
             # 오공고 enum 이다. 시·군·구가 시·도 안에 있는지는 고치기가 본다 (`app/regions.py`)
             Field("region", "근무 시·도", KIND_CHOICE),
@@ -280,6 +281,8 @@ def display(field: Field, value: Any) -> str:
         return text[:16]
     if field.name == "experience_min_years":
         return f"{text}년 이상"
+    if field.name == "experience_max_years":
+        return f"{text}년 이하"
     if field.name == "recruitment_headcount":
         return f"{text}명"
     return text

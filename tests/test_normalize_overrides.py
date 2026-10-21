@@ -243,12 +243,13 @@ async def test_every_normalized_column_can_be_corrected(conn: sqlite3.Connection
 
     values = {field: f"{field} 를 사람이 고쳤다" for field in OVERRIDABLE_FIELDS}
     # 정규화가 오공고 모양으로 마무리하는 칸은 그 모양으로 고친다. 모집 인원은 숫자로 읽히고,
-    # 최소 경력 연수는 경력 공고에만 남는다 (`app/normalize/engine.py` 의 `settle_fields`)
+    # 최소·최대 경력 연수는 경력 공고에만 남는다 (`app/normalize/engine.py` 의 `settle_fields`)
     values.update(
         {
             "recruitment_headcount": "3명",
             "experience_type": "EXPERIENCED",
             "experience_min_years": "5",
+            "experience_max_years": "7",
         }
     )
     for field, value in values.items():

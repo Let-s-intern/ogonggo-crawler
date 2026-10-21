@@ -127,6 +127,8 @@ EXPECTED_COLUMNS = {
         "logo_url",
         # 0046. 근무 시·군·구. 오공고 enum 이름이다
         "sub_region",
+        # 0056. 최대 경력 연수
+        "experience_max_years",
     },
     "normalization_rules": {
         "id",
@@ -321,6 +323,8 @@ ALL_VERSIONS = [
     "0053",
     "0054",
     "0055",
+    "0056",
+    "0057",
     "0060",
     "0061",
 ]
