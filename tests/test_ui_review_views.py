@@ -335,8 +335,8 @@ def test_확인_필요_보기에서만_걸린_사유의_건수를_보여준다(c
     assert "data-reason=" not in everything
 
 
-def test_조회_조건에_확인_사유_칸이_있다(client: TestClient) -> None:
+def test_사유는_고르는_칸_없이_칩이_바꾸는_숨은_칸이다(client: TestClient) -> None:
     html = client.get("/ui/review/filters").text
 
-    assert 'name="reason"' in html
-    assert '<option value="career_cap">최대 경력 연수 없음</option>' in html
+    assert '<input type="hidden" id="review-reason" name="reason" value="">' in html
+    assert "사유 전체" not in html

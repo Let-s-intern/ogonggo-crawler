@@ -287,7 +287,6 @@ def review_filters_fragment(
         default_view=VIEW_TODAY,
         dup_criteria=DUP_CRITERIA,
         dup_labels=DUP_LABELS,
-        check_reasons={key: label for key, (label, _) in CHECK_REASONS.items()},
     )
 
 
