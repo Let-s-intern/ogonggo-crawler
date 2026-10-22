@@ -7,6 +7,7 @@ python -m app.cli migrate status
 python -m app.cli spring backfill-source-html [--after-job-id 0]
 python -m app.cli gate backlog [--run] [--limit 50]
 python -m app.cli enrich backlog [--run] [--limit 30]
+python -m app.cli discard off-target [--run]
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import argparse
 import asyncio
 import sqlite3
 
-from app import db
+from app import db, discard
 from app.classify import gate
 from app.classify.batch import ClassifyProgress, classify_ids, recheck_ids
 from app.crawler import enrich
@@ -51,6 +52,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     short.add_argument("--run", action="store_true", help="세기만 하지 않고 다시 읽는다")
     short.add_argument("--limit", type=int, default=30, help="--run 이 한 번에 여는 공고 수")
+    discard_parser = sub.add_parser("discard", help="공고 폐기 (app/discard.py)")
+    discard_sub = discard_parser.add_subparsers(dest="action", required=True)
+    off = discard_sub.add_parser(
+        "off-target", help="분류가 직군을 대상 밖으로 정한 공고를 센다. --run 이면 폐기한다"
+    )
+    off.add_argument("--run", action="store_true", help="세기만 하지 않고 폐기한다")
     parser.add_argument("--database", default=None, help="기본값은 DATABASE_PATH")
 
     args = parser.parse_args(argv)
@@ -62,6 +69,8 @@ def main(argv: list[str] | None = None) -> int:
             return _gate_backlog(conn, run=args.run, limit=args.limit)
         if args.group == "enrich":
             return _enrich_backlog(conn, run=args.run, limit=args.limit)
+        if args.group == "discard":
+            return _discard_off_target(conn, run=args.run)
         if args.action == "up":
             applied = db.migrate_up(conn)
             print("적용됨: " + (", ".join(applied) if applied else "없음 (이미 최신)"))
@@ -136,6 +145,20 @@ def _enrich_backlog(conn: sqlite3.Connection, *, run: bool, limit: int) -> int:
     for error in progress.errors:
         print(error)
     return 1 if progress.failed else 0
+
+
+def _discard_off_target(conn: sqlite3.Connection, *, run: bool) -> int:
+    """쌓인 공고 중 분류가 직군을 대상 밖으로 정한 것을 폐기한다. 새 공고는 분류 끝에서 버린다.
+
+    폐기한 공고는 다시 수집되지 않는다. 대상 직군을 바꾼 직후라면 먼저 세어 보고 돌린다.
+    """
+    picked = discard.off_target_ids(conn)
+    print(f"대상 직군 밖 공고 {len(picked)}건")
+    if not run or not picked:
+        return 0
+    raw, normalized, _ = discard.discard(conn, picked, reason=discard.OFF_TARGET)
+    print(f"폐기: 수집 건 {raw}건, 정규화 행 {normalized}건")
+    return 0
 
 
 if __name__ == "__main__":

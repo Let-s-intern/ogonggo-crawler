@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from app import custom_fields, industries, taxonomy
+from app import custom_fields, discard, industries, taxonomy
 from app.classify import gate, prompt_rules
 from app.classify.basics import find_basics
 from app.classify.classifier import ClassifyError, chosen, classify_body
@@ -89,6 +89,8 @@ class ClassifyProgress:
     total_tokens: int = 0
     # 품질 검사에 걸려 다시 분류한 횟수 (`app/classify/gate.py`). 처리 건수에는 한 번만 센다
     rechecked: int = 0
+    # 분류 뒤 직군이 대상 밖이라 버린 공고 수 (`app/discard.py`)
+    discarded: int = 0
     started_at: str | None = None
     finished_at: str | None = None
     errors: list[str] = field(default_factory=list)
@@ -222,7 +224,8 @@ async def classify_ids(
     `on_job` 은 공고마다 시작(`JOB_RUNNING`)과 끝(`JOB_DONE`·`JOB_FAILED`)을 받는다. 공고 목록이
     행마다 AI 로 채우는 중인지 보여줄 때 쓴다.
 
-    `recheck` 면 끝난 뒤 품질 검사에 걸린 공고를 한 번 더 분류하고, 그다음 오공고로 보낸다
+    `recheck` 면 끝난 뒤 품질 검사에 걸린 공고를 한 번 더 분류하고, 그래도 직군이 대상 밖인 공고를
+    버린 뒤(`app/discard.py`) 오공고로 보낸다
     (`deliver`). 새 공고를 분류하는 두 길(`classify_pending`, 부가 워크플로우)만 켠다 — 운영자가
     고른 공고를 다시 채우는 길은 이미 사람이 보고 있다. 검사가 다시 분류할 때는 둘 다 끈다.
     """
@@ -375,6 +378,12 @@ async def classify_ids(
         await recheck_ids(
             conn, done, progress, client=resolved_client, settings=settings, on_job=on_job
         )
+        # 재분류까지 끝난 뒤에도 직군이 대상 밖이면 버린다. 다시 수집하지 않는다 (2026-10-22)
+        off_target = discard.off_target_ids(conn, done)
+        if off_target:
+            discard.discard(conn, off_target, reason=discard.OFF_TARGET)
+            progress.discarded += len(off_target)
+            logger.info("분류: 대상 직군 밖 공고 %s건을 버렸다", len(off_target))
     if deliver and progress.processed:
         # 분류가 끝난 공고를 오공고로 보낸다 (2026-09-15 결정). 전송이 실패해도 분류는 성공이다
         await deliver_after_classify(conn, settings)

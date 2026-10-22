@@ -32,6 +32,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 
+from app import discard
 from app.api import crawlers
 from app.api.ui import display_zone, render
 from app.classify import gate
@@ -796,44 +797,8 @@ def form_raw_ids(conn: sqlite3.Connection, form: Any) -> list[int]:
 
 
 def _delete_rows(conn: sqlite3.Connection, raw_job_ids: Sequence[int]) -> tuple[int, int, int]:
-    """여섯 표를 한 트랜잭션으로, 외래키 순서대로 비운다. 지운 주소는 `discarded_jobs` 에 남긴다.
-
-    `job_field_overrides` -> `job_classifications` -> `job_field_suggestions` ->
-    `normalized_jobs` -> `raw_job_history` -> `raw_jobs` 순이다. 거꾸로 지우면 외래키가 막는다.
-    분류·제안은 원문에서 다시 만들 수 있는 파생값이라 반환값 개수에 넣지 않는다.
-
-    한 트랜잭션인 이유는 절반만 지워진 상태를 운영자가 손으로 풀 수 없어서다.
-    """
-    conn.execute("BEGIN IMMEDIATE")
-    try:
-        overrides = normalized = raw = 0
-        for part, marks in _chunks(raw_job_ids):
-            overrides += conn.execute(
-                f"DELETE FROM job_field_overrides WHERE raw_job_id IN ({marks})", part
-            ).rowcount
-            conn.execute(f"DELETE FROM job_custom_values WHERE raw_job_id IN ({marks})", part)
-            conn.execute(f"DELETE FROM job_classifications WHERE raw_job_id IN ({marks})", part)
-            conn.execute(f"DELETE FROM job_field_suggestions WHERE raw_job_id IN ({marks})", part)
-            conn.execute(f"DELETE FROM quality_gate_runs WHERE raw_job_id IN ({marks})", part)
-            normalized += conn.execute(
-                f"DELETE FROM normalized_jobs WHERE raw_job_id IN ({marks})", part
-            ).rowcount
-            # 원문 다시 수집이 남긴 이전 값. 공고를 지우면 그 이력도 가리킬 곳이 없다
-            conn.execute(f"DELETE FROM raw_job_history WHERE raw_job_id IN ({marks})", part)
-            # 지운 공고는 폐기한 것이다. 주소를 남겨 다음 수집이 다시 담지 않게 한다 (0061)
-            conn.execute(
-                "INSERT OR IGNORE INTO discarded_jobs (workflow_id, source_url, title)"
-                " SELECT workflow_id, source_url,"
-                " coalesce(json_extract(raw_data_json, '$.title'), '')"
-                f" FROM raw_jobs WHERE id IN ({marks})",
-                part,
-            )
-            raw += conn.execute(f"DELETE FROM raw_jobs WHERE id IN ({marks})", part).rowcount
-        conn.execute("COMMIT")
-    except BaseException:
-        conn.execute("ROLLBACK")
-        raise
-    return raw, normalized, overrides
+    """운영자가 고른 공고를 지운다. 폐기로 남아 다시 수집되지 않는다 (`app/discard.py`)."""
+    return discard.discard(conn, raw_job_ids, reason=discard.OPERATOR)
 
 
 @router.post("/ui/review/delete/confirm", response_class=HTMLResponse)
