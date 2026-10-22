@@ -90,6 +90,18 @@
   })();
 </script>
 
+{# 표 위 사유별 칩. 누르면 조회 조건의 사유 칸을 그 값으로 바꾸고 폼에 change 를 보낸다.
+   표 조각은 다시 그려지므로 문서에 한 번만 건다 #}
+<script>
+  document.addEventListener('click', function (event) {
+    var chip = event.target.closest('[data-reason]');
+    var select = document.getElementById('review-reason');
+    if (!chip || !select) { return; }
+    select.value = chip.getAttribute('data-reason');
+    select.closest('form').dispatchEvent(new Event('change', { bubbles: true }));
+  });
+</script>
+
 <script>
   (function () {
     var host = document.getElementById('review-table');

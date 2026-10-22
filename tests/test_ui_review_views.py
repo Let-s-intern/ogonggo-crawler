@@ -284,5 +284,57 @@ def test_품질_검사에_걸린_공고는_확인_필요에_사유와_함께_보
     html = client.get("/ui/review").text
     checked = client.get("/ui/review?view=check").text
 
-    assert "품질 검사 미통과" in row_of(html, "정상 대기")
+    assert "핵심 칸 빔: 직무" in row_of(html, "정상 대기")
     assert "정상 대기" in checked
+
+
+# 확인 사유로 거르기 (2026-10-22) ---------------------------------------------------
+
+
+def test_확인_사유_하나로_거르면_그_사유에_걸린_공고만_남는다(client: TestClient) -> None:
+    assert titles(client, view="check", reason="short_body") == {"본문 짧은 공고"}
+    assert titles(client, view="check", reason="unclassified") == {"분류 전 공고"}
+    assert titles(client, view="check", reason="delivery_failed") == {"거절된 공고"}
+    # 분류 전 공고는 필수 칸이 당연히 비어 있어 `필수 칸 빔` 에 세지 않는다
+    assert titles(client, view="check", reason="unready") == {
+        "칸 빈 공고",
+        "어제 들어온 칸 빈 공고",
+    }
+    # 모르는 사유는 조건을 걸지 않는다
+    assert titles(client, view="check", reason="없는 사유") == titles(client, view="check")
+
+
+def test_거른_사유의_표시가_모든_행에_있다(client: TestClient) -> None:
+    html = client.get("/ui/review", params={"view": "check", "reason": "unready"}).text
+
+    for title in ("칸 빈 공고", "어제 들어온 칸 빈 공고"):
+        assert "필수 칸 빔" in row_of(html, title)
+    assert "확인 필요 · 필수 칸 빔 2건" in " ".join(html.split())
+
+
+def test_칸이_빈_사유는_어느_칸이_비었는지_적는다(client: TestClient) -> None:
+    html = client.get("/ui/review").text
+    row = row_of(html, "칸 빈 공고")
+
+    assert "필수 칸 빔: 고용 형태·경력·학력·모집 유형" in row
+    assert "핵심 칸 빔: 직무·고용 형태·경력" in row
+    assert "공고 내용 절반 이상 빔: 8/8칸" in row
+
+
+def test_확인_필요_보기에서만_사유별_건수를_보여준다(client: TestClient) -> None:
+    checked = " ".join(client.get("/ui/review", params={"view": "check"}).text.split())
+    everything = client.get("/ui/review", params={"view": "all"}).text
+
+    assert 'data-reason="short_body"' in checked
+    assert re.search(r'data-reason="short_body"[^>]*> 본문 짧음 <span[^>]*>1</span>', checked)
+    assert re.search(r'data-reason="unready"[^>]*> 필수 칸 빔 <span[^>]*>2</span>', checked)
+    # 걸린 공고가 없는 사유는 누를 수 없다
+    assert re.search(r'data-reason="deadline_diff"[^>]*disabled', checked)
+    assert "data-reason=" not in everything
+
+
+def test_조회_조건에_확인_사유_칸이_있다(client: TestClient) -> None:
+    html = client.get("/ui/review/filters").text
+
+    assert 'name="reason"' in html
+    assert '<option value="career_cap">경력 상한 모름</option>' in html

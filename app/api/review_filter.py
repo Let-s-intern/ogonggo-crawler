@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -103,6 +103,32 @@ DEADLINE_DIFF_SQL = (
 # 품질 검사(`app/classify/gate.py`)에 걸려 자동 전송이 막혔다. AI 재분류를 두 번 해도 못 풀었거나
 # 아직 재분류 전이다 (2026-10-21)
 GATE_SQL = gate.blocked_sql()
+
+# 확인 필요의 까닭 하나하나 (2026-10-22). 행 표시·사유 필터·사유별 건수가 모두 이 표를 본다 — 셋이
+# 다른 조건을 쓰면 `본문 짧음` 으로 거른 표에 그 표시가 없는 행이 섞인다. 키가 화면 값이자 행의
+# 칸 이름이다. 분류 전 공고는 칸이 다 비어 필수 칸·품질 검사 셋에 당연히 걸리므로 그 넷은 분류된
+# 공고만 센다 — `AI 분류 안 됨` 하나로 보인다
+_CLASSIFIED = f"NOT {UNCLASSIFIED_SQL}"
+_BLOCKING = gate.blocking_sqls()
+CHECK_REASONS: dict[str, tuple[str, str]] = {
+    "delivery_failed": ("전송 실패", FAILED_SQL),
+    "unclassified": ("AI 분류 안 됨", UNCLASSIFIED_SQL),
+    "unready": ("필수 칸 빔", f"({UNREADY_SQL} AND {_CLASSIFIED})"),
+    "empty_key": (
+        "핵심 칸 빔",
+        f"({_BLOCKING[gate.EMPTY_KEY]} AND {_CLASSIFIED})",
+    ),
+    "thin_content": (
+        "공고 내용 절반 이상 빔",
+        f"({_BLOCKING[gate.THIN_CONTENT]} AND {_CLASSIFIED})",
+    ),
+    "career_cap": ("경력 상한 모름", f"({_BLOCKING[gate.CAREER_CAP]} AND {_CLASSIFIED})"),
+    "short_body": ("본문 짧음", SHORT_BODY_SQL),
+    "deadline_diff": ("마감일 다름", DEADLINE_DIFF_SQL),
+}
+
+# 행마다 사유를 칸으로 싣는 SELECT 조각. 표와 상세 패널이 함께 쓴다
+REASON_COLUMNS = ",\n".join(f"{sql} AS {key}" for key, (_, sql) in CHECK_REASONS.items())
 
 # 손이 가야 하는 까닭 여섯 중 하나라도 걸렸다
 _TROUBLE_SQL = (
@@ -265,6 +291,8 @@ class JobFilter:
     job_field: str = ""
     experience: str = ""
     dup: str = ""
+    # 확인 필요의 까닭 하나 (`CHECK_REASONS` 의 키). 비면 가르지 않는다
+    reason: str = ""
 
     @property
     def job_fields(self) -> tuple[str, ...]:
@@ -285,6 +313,7 @@ class JobFilter:
             "job_field": self.job_field,
             "experience": self.experience,
             "dup": self.dup,
+            "reason": self.reason,
         }
 
 
@@ -298,6 +327,7 @@ def read_filter(
     job_field: str = "",
     experience: str = "",
     dup: str = "",
+    reason: str = "",
 ) -> JobFilter:
     """화면이 보낸 값을 조건 한 벌로. 표에 없는 값은 조건을 걸지 않은 것으로 본다.
 
@@ -314,6 +344,7 @@ def read_filter(
         job_field=",".join(JobFilter(job_field=job_field).job_fields),
         experience=experience if experience in EXPERIENCE_STATES else "",
         dup=dup if dup in DUP_CRITERIA else "",
+        reason=reason if reason in CHECK_REASONS else "",
     )
 
 
@@ -384,6 +415,9 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
         clauses.append(ready_sql())
         params.append(now_local())
 
+    if picked.reason in CHECK_REASONS:
+        clauses.append(CHECK_REASONS[picked.reason][1])
+
     # 중복은 나머지 조건 안에서 센다. `SK 안에서만 중복 찾기` 가 실제 쓰임이라, 전체에서 센
     # 묶음을 나중에 좁히면 짝을 잃은 한 건만 남아 중복이 아닌 것이 중복으로 보인다.
     # 여분만이 아니라 묶음 전체가 걸린다 — 짝을 봐야 어느 쪽을 지울지 정할 수 있다
@@ -410,6 +444,23 @@ def _count(conn: sqlite3.Connection, where: str, params: list[Any]) -> int:
         params,
     ).fetchone()
     return int(row["total"]) if row is not None else 0
+
+
+def reason_counts(conn: sqlite3.Connection, picked: JobFilter) -> list[dict[str, Any]]:
+    """지금 조건(고른 사유는 빼고)에 걸린 공고의 사유별 수. 여러 사유에 걸린 공고는 사유마다 센다.
+
+    확인 필요 보기에서 무엇부터 손볼지 고르게 하는 숫자다. 0건인 사유도 그대로 둔다.
+    """
+    where, params = filter_sql(replace(picked, reason=""))
+    sums = ", ".join(f"coalesce(sum({sql}), 0) AS {key}" for key, (_, sql) in CHECK_REASONS.items())
+    row = conn.execute(
+        f"SELECT {sums} FROM normalized_jobs n JOIN raw_jobs r ON r.id = n.raw_job_id{where}",
+        params,
+    ).fetchone()
+    return [
+        {"key": key, "label": label, "count": int(row[key]) if row is not None else 0}
+        for key, (label, _) in CHECK_REASONS.items()
+    ]
 
 
 def count(conn: sqlite3.Connection, picked: JobFilter) -> int:
@@ -701,6 +752,7 @@ def form_filter(form: Any) -> JobFilter:
                 "job_field",
                 "experience",
                 "dup",
+                "reason",
             )
         }
     )
