@@ -105,26 +105,45 @@ DEADLINE_DIFF_SQL = (
 GATE_SQL = gate.blocked_sql()
 
 # 확인 필요의 까닭 하나하나 (2026-10-22). 행 표시·사유 필터·사유별 건수가 모두 이 표를 본다 — 셋이
-# 다른 조건을 쓰면 `본문 짧음` 으로 거른 표에 그 표시가 없는 행이 섞인다. 키가 화면 값이자 행의
-# 칸 이름이다. 분류 전 공고는 칸이 다 비어 필수 칸·품질 검사 셋에 당연히 걸리므로 그 넷은 분류된
-# 공고만 센다 — `AI 분류 안 됨` 하나로 보인다
+# 다른 조건을 쓰면 `본문 200자 미만` 으로 거른 표에 그 표시가 없는 행이 섞인다. 키가 화면 값이자
+# 행의 칸 이름이다.
+#
+# 이름은 무엇이 없는지 바로 읽히게 짓는다. `필수 칸 빔`·`핵심 칸 빔` 으로 묶으면 어느 칸인지 알 수
+# 없어서, 오공고 필수 칸(`READY_SQL`)과 품질 검사의 핵심 칸(`app/classify/gate.py`)을 칸 하나씩
+# 나눈다. 두 묶음의 합집합이라 확인 필요에 걸린 공고는 늘 하나 이상의 사유를 갖는다.
+#
+# 분류 전 공고는 칸이 다 비어 칸 사유에 당연히 걸리므로, 칸 사유와 품질 검사 사유는 분류된 공고만
+# 센다 — `AI 분류 전` 하나로 보인다
 _CLASSIFIED = f"NOT {UNCLASSIFIED_SQL}"
 _BLOCKING = gate.blocking_sqls()
+
+
+def _missing(condition: str) -> str:
+    return f"({condition} AND {_CLASSIFIED})"
+
+
+def _blank(column: str) -> str:
+    return f"trim(coalesce(n.{column}, '')) = ''"
+
+
 CHECK_REASONS: dict[str, tuple[str, str]] = {
-    "delivery_failed": ("전송 실패", FAILED_SQL),
-    "unclassified": ("AI 분류 안 됨", UNCLASSIFIED_SQL),
-    "unready": ("필수 칸 빔", f"({UNREADY_SQL} AND {_CLASSIFIED})"),
-    "empty_key": (
-        "핵심 칸 빔",
-        f"({_BLOCKING[gate.EMPTY_KEY]} AND {_CLASSIFIED})",
+    "delivery_failed": ("오공고 전송 거절", FAILED_SQL),
+    "unclassified": ("AI 분류 전", UNCLASSIFIED_SQL),
+    "no_company": (
+        "회사명 없음",
+        _missing("trim(coalesce(n.company_name, '') || coalesce(n.parent_company_name, '')) = ''"),
     ),
-    "thin_content": (
-        "공고 내용 절반 이상 빔",
-        f"({_BLOCKING[gate.THIN_CONTENT]} AND {_CLASSIFIED})",
-    ),
-    "career_cap": ("경력 상한 모름", f"({_BLOCKING[gate.CAREER_CAP]} AND {_CLASSIFIED})"),
-    "short_body": ("본문 짧음", SHORT_BODY_SQL),
-    "deadline_diff": ("마감일 다름", DEADLINE_DIFF_SQL),
+    "no_title": ("제목 없음", _missing(_blank("title"))),
+    "no_job_role": ("직무 없음", _missing(_blank("job_role"))),
+    "no_deadline": ("마감일 없음", _missing(_blank("recruitment_end_at"))),
+    "no_employment_type": ("고용 형태 없음", _missing(_blank("employment_type"))),
+    "no_experience_type": ("경력 구분 없음", _missing(_blank("experience_type"))),
+    "no_education_level": ("학력 없음", _missing("n.education_level IS NULL")),
+    "no_recruitment_type": ("모집 유형 없음", _missing("n.recruitment_type IS NULL")),
+    "thin_content": ("상세 내용 부족", _missing(_BLOCKING[gate.THIN_CONTENT])),
+    "career_cap": ("최대 경력 연수 없음", _missing(_BLOCKING[gate.CAREER_CAP])),
+    "short_body": (f"본문 {SHORT_BODY_CHARS}자 미만", SHORT_BODY_SQL),
+    "deadline_diff": ("AI가 읽은 마감일과 다름", DEADLINE_DIFF_SQL),
 }
 
 # 행마다 사유를 칸으로 싣는 SELECT 조각. 표와 상세 패널이 함께 쓴다

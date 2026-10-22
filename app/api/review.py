@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import math
 import sqlite3
-from collections.abc import Iterable
 from datetime import date, datetime
 from typing import Annotated
 from urllib.parse import urlencode
@@ -221,31 +220,11 @@ _EMPTY_HINTS: dict[str, str] = {
 }
 
 
-# 필수 칸과 핵심 칸의 화면 이름. 어느 칸이 비어 확인 필요로 왔는지 행에 적는다
-_REQUIRED_WORDS: tuple[tuple[str, str], ...] = (
-    ("title", "제목"),
-    ("employment_type", "고용 형태"),
-    ("experience_type", "경력"),
-    ("education_level", "학력"),
-    ("recruitment_type", "모집 유형"),
-)
-_KEY_WORDS: dict[str, str] = {
-    "job_role": "직무",
-    "recruitment_end_at": "마감일",
-    "employment_type": "고용 형태",
-    "experience_type": "경력",
-}
-
-
-def _empty_words(job: sqlite3.Row, names: Iterable[tuple[str, str]]) -> str:
-    return "·".join(word for name, word in names if not str(job[name] or "").strip())
-
-
 def row_marks(job: sqlite3.Row) -> list[tuple[str, str]]:
     """행에 붙일 상태 표시 (낱말, 색). 보낸 공고는 `오공고 보냄` 하나다.
 
-    사유는 `CHECK_REASONS` 그대로다 — 사유로 거른 표의 행에는 늘 그 표시가 있다. 칸이 빈 사유는
-    어느 칸이 비었는지까지 적는다 (2026-10-22). 사유 이름을 고칠 때는 표의 이름만 고친다.
+    사유는 `CHECK_REASONS` 그대로다 — 사유로 거른 표의 행에는 늘 그 표시가 있다 (2026-10-22).
+    사유 이름을 고칠 때는 표의 이름만 고친다.
     """
     if job["sent"]:
         return [("오공고 보냄", "ok")]
@@ -260,15 +239,11 @@ def row_marks(job: sqlite3.Row) -> list[tuple[str, str]]:
 
 
 def _detail(job: sqlite3.Row, key: str) -> str:
-    """사유 뒤에 붙일 한 마디. 어느 칸이 비었는지, 공고 내용이 몇 칸 비었는지다."""
-    if key == "unready":
-        company = str(job["company_name"] or "") + str(job["parent_company_name"] or "")
-        words = [] if company.strip() else ["회사"]
-        return "·".join([*words, _empty_words(job, _REQUIRED_WORDS)]).strip("·")
-    if key == "empty_key":
-        return _empty_words(job, _KEY_WORDS.items())
+    """사유 뒤에 붙일 한 마디. 공고 내용이 몇 칸 비었는지, 최소 경력이 몇 년인지다."""
     if key == "thin_content":
-        return f"{job['content_empty']}/{len(gate.CONTENT_FIELDS)}칸"
+        return f"{len(gate.CONTENT_FIELDS)}칸 중 {job['content_empty']}칸 빔"
+    if key == "career_cap":
+        return f"최소 {job['experience_min_years']}년"
     return ""
 
 

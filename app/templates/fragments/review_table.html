@@ -17,16 +17,16 @@
 
 {# 확인 필요의 사유별 건수 (2026-10-22). 지금 조건(고른 사유는 빼고) 안에서 센다. 한 공고가 여러
    사유에 걸리면 사유마다 센다 — 합이 위의 건수보다 클 수 있다. 칩을 누르면 조회 조건의 사유 칸이
-   바뀌어 표가 그 사유로 좁혀진다 (`pages/review.html` 의 스크립트) #}
+   바뀌어 표가 그 사유로 좁혀진다 (`pages/review.html` 의 스크립트). 사유가 칸마다 나뉘어 많으므로
+   걸린 공고가 없는 사유는 숨긴다 — 지금 고른 사유는 0건이어도 남긴다 #}
 {% if reasons %}
 <div class="mt-2 flex flex-wrap items-center gap-1" role="group" aria-label="확인 사유별 건수">
   <span class="mr-1 text-xs text-slate-500">사유별</span>
   <button type="button" data-reason="" aria-pressed="{{ 'true' if not reason else 'false' }}"
           class="m-0 inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-normal text-slate-700 shadow-none hover:bg-slate-100 aria-pressed:border-slate-900 aria-pressed:bg-slate-900 aria-pressed:text-white">전체</button>
-  {% for item in reasons %}
+  {% for item in reasons if item.count or item.key == reason %}
   <button type="button" data-reason="{{ item.key }}" aria-pressed="{{ 'true' if item.key == reason else 'false' }}"
-          {% if not item.count %}disabled{% endif %}
-          class="m-0 inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-normal text-slate-700 shadow-none hover:bg-slate-100 disabled:opacity-40 aria-pressed:border-slate-900 aria-pressed:bg-slate-900 aria-pressed:text-white">
+          class="m-0 inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-normal text-slate-700 shadow-none hover:bg-slate-100 aria-pressed:border-slate-900 aria-pressed:bg-slate-900 aria-pressed:text-white">
     {{ item.label }} <span class="tabular-nums opacity-70">{{ item.count }}</span>
   </button>
   {% endfor %}
