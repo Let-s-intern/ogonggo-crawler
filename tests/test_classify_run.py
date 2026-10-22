@@ -505,3 +505,25 @@ async def test_refilling_by_hand_skips_the_quality_gate(conn: sqlite3.Connection
 
     assert progress.rechecked == 0
     assert conn.execute("SELECT count(*) FROM quality_gate_runs").fetchone()[0] == 0
+
+
+async def test_새_공고_분류_뒤_직군이_대상_밖이면_버리고_보내지_않는다(
+    conn: sqlite3.Connection,
+) -> None:
+    """2026-10-22 결정 (`app/discard.py`). 재분류까지 끝난 뒤에도 대상 밖이면 버린다."""
+    # 분류가 직군을 고른 것과 같은 결과를 사람 보정으로 만든다 — 가짜 응답은 직군을 채우지 않는다
+    conn.execute(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+        ("job_field", "엔지니어링·R&D"),
+    )
+    conn.execute(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (2, ?, ?)",
+        ("job_field", "IT·개발"),
+    )
+
+    progress = await run(conn, GOOD)
+
+    assert progress.discarded == 1
+    assert [row[0] for row in conn.execute("SELECT id FROM raw_jobs ORDER BY id")] == [2, 3]
+    reason = conn.execute("SELECT reason FROM discarded_jobs WHERE source_url = 'https://x/1'")
+    assert reason.fetchone()[0] == "off_target"
