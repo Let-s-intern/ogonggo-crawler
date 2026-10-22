@@ -29,20 +29,16 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app import custom_fields
 from app.api import crawlers, job_detail, ui_target_fields
 from app.api.review_filter import (
-    DEADLINE_DIFF_SQL,
+    CHECK_REASONS,
     DEADLINE_STATES,
     DUP_CRITERIA,
     DUP_GROUP_PREVIEW,
     DUP_LABELS,
     DUP_NOTES,
     EXPERIENCE_STATES,
-    FAILED_SQL,
-    GATE_SQL,
     READY_STATES,
+    REASON_COLUMNS,
     SENT_SQL,
-    SHORT_BODY_SQL,
-    UNCLASSIFIED_SQL,
-    UNREADY_SQL,
     VIEW_ALL,
     VIEW_CHECK,
     VIEW_SENT,
@@ -57,12 +53,13 @@ from app.api.review_filter import (
     filter_sql,
     order_clause,
     read_filter,
+    reason_counts,
     sent_today,
     view_counts,
     workflow_label,
 )
 from app.api.ui import display_zone, render, render_page
-from app.classify import refill
+from app.classify import gate, refill
 from app.classify.store import read_classification
 from app.crawler.images import MAX_IMAGES
 from app.normalize.engine import read_raw
@@ -88,15 +85,13 @@ _COLUMNS = f"""
            n.experience_type AS experience_type,
            n.experience_min_years AS experience_min_years,
            n.recruitment_end_at AS recruitment_end_at,
+           n.education_level AS education_level,
+           n.recruitment_type AS recruitment_type,
            r.crawled_at AS crawled_at,
            w.name AS workflow_name,
+           {gate.content_empty_sql()} AS content_empty,
            {SENT_SQL} AS sent,
-           {FAILED_SQL} AS delivery_failed,
-           {UNREADY_SQL} AS unready,
-           {UNCLASSIFIED_SQL} AS unclassified,
-           {SHORT_BODY_SQL} AS short_body,
-           {DEADLINE_DIFF_SQL} AS deadline_diff,
-           {GATE_SQL} AS gate_blocked
+           {REASON_COLUMNS}
 """
 
 _FROM = """
@@ -203,6 +198,10 @@ def review_table_fragment(
         workflow=workflow_label(conn, picked.workflow_id),
         view=picked.view or VIEW_ALL,
         view_label=VIEWS.get(picked.view, VIEWS[VIEW_ALL]),
+        # 확인 필요 보기에서만 센다. 다른 보기에서는 보낸 공고·마감 공고까지 섞여 뜻이 없다
+        reasons=reason_counts(conn, picked) if picked.view == VIEW_CHECK else [],
+        reason=picked.reason,
+        reason_label=CHECK_REASONS[picked.reason][0] if picked.reason else "",
         empty_hint=_EMPTY_HINTS.get(picked.view, _EMPTY_HINTS[""]),
         refill_labels=refill.LABELS,
         refill_pending=refill.PENDING,
@@ -224,25 +223,28 @@ _EMPTY_HINTS: dict[str, str] = {
 def row_marks(job: sqlite3.Row) -> list[tuple[str, str]]:
     """행에 붙일 상태 표시 (낱말, 색). 보낸 공고는 `오공고 보냄` 하나다.
 
-    AI 분류가 안 된 공고는 필수 칸도 당연히 비어 있어 `필수 칸 빔` 을 겹쳐 적지 않는다.
+    사유는 `CHECK_REASONS` 그대로다 — 사유로 거른 표의 행에는 늘 그 표시가 있다 (2026-10-22).
+    사유 이름을 고칠 때는 표의 이름만 고친다.
     """
     if job["sent"]:
         return [("오공고 보냄", "ok")]
     marks: list[tuple[str, str]] = []
-    if job["delivery_failed"]:
-        marks.append(("전송 실패", "bad"))
-    if job["unclassified"]:
-        marks.append(("AI 분류 안 됨", "warn"))
-    elif job["unready"]:
-        marks.append(("필수 칸 빔", "warn"))
-    if job["short_body"]:
-        marks.append(("본문 짧음", "warn"))
-    if job["deadline_diff"]:
-        marks.append(("마감일 다름", "warn"))
-    # 분류 전이면 칸이 다 비어 당연히 걸린다. 겹쳐 적지 않는다
-    if job["gate_blocked"] and not job["unclassified"]:
-        marks.append(("품질 검사 미통과", "warn"))
+    for key, (label, _) in CHECK_REASONS.items():
+        if not job[key]:
+            continue
+        detail = _detail(job, key)
+        tone = "bad" if key == "delivery_failed" else "warn"
+        marks.append((f"{label}: {detail}" if detail else label, tone))
     return marks or [("보내기 전", "idle")]
+
+
+def _detail(job: sqlite3.Row, key: str) -> str:
+    """사유 뒤에 붙일 한 마디. 공고 내용이 몇 칸 비었는지, 최소 경력이 몇 년인지다."""
+    if key == "thin_content":
+        return f"{len(gate.CONTENT_FIELDS)}칸 중 {job['content_empty']}칸 빔"
+    if key == "career_cap":
+        return f"최소 {job['experience_min_years']}년"
+    return ""
 
 
 @router.get("/ui/review/summary", response_class=HTMLResponse)
@@ -293,13 +295,9 @@ def _panel_row(conn: sqlite3.Connection, normalized_id: int) -> sqlite3.Row | No
         f"""
         SELECT n.*, w.name AS workflow_name, w.kind AS workflow_kind, r.crawled_at AS crawled_at,
                COALESCE(sub.logo_url, par.logo_url, n.logo_url) AS panel_logo_url,
+               {gate.content_empty_sql()} AS content_empty,
                {SENT_SQL} AS sent,
-               {FAILED_SQL} AS delivery_failed,
-               {UNREADY_SQL} AS unready,
-               {UNCLASSIFIED_SQL} AS unclassified,
-               {SHORT_BODY_SQL} AS short_body,
-               {DEADLINE_DIFF_SQL} AS deadline_diff,
-               {GATE_SQL} AS gate_blocked
+               {REASON_COLUMNS}
           FROM normalized_jobs n
           JOIN raw_jobs r ON r.id = n.raw_job_id
           JOIN workflows w ON w.id = r.workflow_id

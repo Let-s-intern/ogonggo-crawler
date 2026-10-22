@@ -111,19 +111,20 @@ def test_the_target_fields_follow_the_setting(conn: sqlite3.Connection) -> None:
 @pytest.mark.parametrize(
     ("experience_type", "min_years", "max_years", "caught"),
     [
+        # 신입이 지원할 수 없는 최소 연수가 있는데 상한을 모른다
         ("EXPERIENCED", "1", None, True),
-        ("EXPERIENCED", "2", None, True),
-        ("EXPERIENCED", None, None, True),
-        ("BOTH", None, None, True),
-        # 3년 이상은 1·2년차가 지원할 수 없다
-        ("EXPERIENCED", "3", None, False),
+        ("EXPERIENCED", "3", None, True),
         # 상한을 안다
         ("EXPERIENCED", "1", "3", False),
+        # 최소 연수가 없는 경력 공고는 통과다
+        ("EXPERIENCED", None, None, False),
+        # 신입이 지원할 수 있으면 최소 경력은 0년이다 (2026-10-22 결정)
         ("NEWCOMER", "0", None, False),
+        ("BOTH", None, None, False),
         ("IRRELEVANT", None, None, False),
     ],
 )
-def test_a_junior_friendly_posting_without_a_career_cap_is_caught(
+def test_an_experienced_posting_with_a_minimum_but_no_cap_is_caught(
     conn: sqlite3.Connection,
     experience_type: str,
     min_years: str | None,

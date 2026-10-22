@@ -226,11 +226,11 @@ def test_행마다_어디에_걸렸는지_적는다(client: TestClient) -> None:
     html = client.get("/ui/review").text
 
     assert "오공고 보냄" in row_of(html, "보낸 공고")
-    assert "전송 실패" in row_of(html, "거절된 공고")
-    assert "AI 분류 안 됨" in row_of(html, "분류 전 공고")
-    assert "필수 칸 빔" not in row_of(html, "분류 전 공고")
-    assert "필수 칸 빔" in row_of(html, "칸 빈 공고")
-    assert "본문 짧음" in row_of(html, "본문 짧은 공고")
+    assert "오공고 전송 거절" in row_of(html, "거절된 공고")
+    assert "AI 분류 전" in row_of(html, "분류 전 공고")
+    assert "없음" not in row_of(html, "분류 전 공고")
+    assert "학력 없음" in row_of(html, "칸 빈 공고")
+    assert "본문 200자 미만" in row_of(html, "본문 짧은 공고")
     assert "보내기 전" in row_of(html, "정상 대기")
 
 
@@ -284,5 +284,59 @@ def test_품질_검사에_걸린_공고는_확인_필요에_사유와_함께_보
     html = client.get("/ui/review").text
     checked = client.get("/ui/review?view=check").text
 
-    assert "품질 검사 미통과" in row_of(html, "정상 대기")
+    assert "직무 없음" in row_of(html, "정상 대기")
     assert "정상 대기" in checked
+
+
+# 확인 사유로 거르기 (2026-10-22) ---------------------------------------------------
+
+
+def test_확인_사유_하나로_거르면_그_사유에_걸린_공고만_남는다(client: TestClient) -> None:
+    assert titles(client, view="check", reason="short_body") == {"본문 짧은 공고"}
+    assert titles(client, view="check", reason="unclassified") == {"분류 전 공고"}
+    assert titles(client, view="check", reason="delivery_failed") == {"거절된 공고"}
+    # 분류 전 공고는 칸이 당연히 비어 있어 칸 사유에 세지 않는다
+    assert titles(client, view="check", reason="no_education_level") == {
+        "칸 빈 공고",
+        "어제 들어온 칸 빈 공고",
+    }
+    # 모르는 사유는 조건을 걸지 않는다
+    assert titles(client, view="check", reason="없는 사유") == titles(client, view="check")
+
+
+def test_거른_사유의_표시가_모든_행에_있다(client: TestClient) -> None:
+    html = client.get("/ui/review", params={"view": "check", "reason": "no_job_role"}).text
+
+    for title in ("칸 빈 공고", "어제 들어온 칸 빈 공고"):
+        assert "직무 없음" in row_of(html, title)
+    assert "확인 필요 · 직무 없음 2건" in " ".join(html.split())
+
+
+def test_빈_칸은_칸마다_무엇이_없는지_적는다(client: TestClient) -> None:
+    row = row_of(client.get("/ui/review").text, "칸 빈 공고")
+
+    for word in ("직무 없음", "고용 형태 없음", "경력 구분 없음", "학력 없음", "모집 유형 없음"):
+        assert word in row
+    assert "상세 내용 부족: 8칸 중 8칸 빔" in row
+    # 묶은 이름은 쓰지 않는다
+    assert "필수 칸 빔" not in row and "핵심 칸 빔" not in row
+
+
+def test_확인_필요_보기에서만_걸린_사유의_건수를_보여준다(client: TestClient) -> None:
+    checked = " ".join(client.get("/ui/review", params={"view": "check"}).text.split())
+    everything = client.get("/ui/review", params={"view": "all"}).text
+
+    assert re.search(r'data-reason="short_body"[^>]*> 본문 200자 미만 <span[^>]*>1</span>', checked)
+    assert re.search(
+        r'data-reason="no_education_level"[^>]*> 학력 없음 <span[^>]*>2</span>', checked
+    )
+    # 걸린 공고가 없는 사유는 숨긴다
+    assert 'data-reason="deadline_diff"' not in checked
+    assert "data-reason=" not in everything
+
+
+def test_사유는_고르는_칸_없이_칩이_바꾸는_숨은_칸이다(client: TestClient) -> None:
+    html = client.get("/ui/review/filters").text
+
+    assert '<input type="hidden" id="review-reason" name="reason" value="">' in html
+    assert "사유 전체" not in html

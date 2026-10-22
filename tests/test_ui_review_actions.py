@@ -388,7 +388,7 @@ def test_AI_마감일이_저장된_마감일과_다른_날이면_확인_필요�
 
     html = client.get("/ui/review?view=check").text
 
-    assert "마감일 다름" in html
+    assert "AI가 읽은 마감일과 다름" in html
     assert "백엔드 개발자" in html
 
 
@@ -398,7 +398,7 @@ def test_같은_날이거나_날짜가_아닌_제안은_띄우지_않는다(
 ) -> None:
     _suggest_end(conn, value)
 
-    assert "마감일 다름" not in client.get("/ui/review?view=all").text
+    assert "AI가 읽은 마감일과 다름" not in client.get("/ui/review?view=all").text
 
 
 def test_사람이_마감일을_고쳤으면_띄우지_않는다(
@@ -410,7 +410,7 @@ def test_사람이_마감일을_고쳤으면_띄우지_않는다(
         " VALUES (1, 1, 'recruitment_end_at', '2099-12-31')"
     )
 
-    assert "마감일 다름" not in client.get("/ui/review?view=all").text
+    assert "AI가 읽은 마감일과 다름" not in client.get("/ui/review?view=all").text
 
 
 def test_어느_보기에서나_고른_공고_다시_채우기_단추가_있다(client: TestClient) -> None:
