@@ -19,7 +19,7 @@
 | `empty_key` | 직무·마감일·고용 형태·경력 구분 중 하나라도 빔. 상시 채용도 본다 | 확인 필요 |
 | `thin_content` | 공고 내용 여덟 칸(`CONTENT_FIELDS`) 중 넷 이상 빔 | 확인 필요 |
 | `off_target` | 직군이 대상 직군(`app/crawler/target_fields.py`)이 아님 | 전송 제외 |
-| `career_cap` | 1·2년차가 지원할 수 있는데 최대 경력 연수(0056)를 모름 | 확인 필요 |
+| `career_cap` | 경력 공고에 최소 연수(1년 이상)는 있는데 최대 연수(0056)를 모름 | 확인 필요 |
 
 확인 필요로 가는 셋(`BLOCKING`)에 걸린 공고는 자동 전송하지 않는다 (`blocked_sql`). 대상 직군 밖은
 원래 전송의 직군 조건(`app/deliver/spring.py` 의 `target_sql`)이 막는다. 사람이 골라 보내는 길은
@@ -81,8 +81,6 @@ CONTENT_FIELDS: tuple[str, ...] = (
 )
 # 공고 내용이 이만큼 비면 2번 조건에 걸린다
 THIN_CONTENT_EMPTY = 4
-# 이 연차까지 지원할 수 있으면 4번 조건이 상한을 본다
-JUNIOR_YEARS = 2
 
 # 이미 보낸 공고. 확인 필요의 `SENT_SQL` 과 같은 조건이다
 _SENT_SQL = (
@@ -100,16 +98,22 @@ def _empty(name: str) -> str:
     return f"trim(coalesce(n.{name}, '')) = ''"
 
 
-def _blocking_sqls() -> dict[str, str]:
-    """확인 필요로 가는 세 조건. 설정을 읽지 않아 연결 없이 만든다."""
-    empties = " + ".join(f"({_empty(name)})" for name in CONTENT_FIELDS)
+def content_empty_sql() -> str:
+    """공고 내용 여덟 칸 중 빈 칸 수. 확인 필요 화면이 몇 칸 비었는지 적는다."""
+    return "(" + " + ".join(f"({_empty(name)})" for name in CONTENT_FIELDS) + ")"
+
+
+def blocking_sqls() -> dict[str, str]:
+    """확인 필요로 가는 세 조건. 설정을 읽지 않아 연결 없이 만든다. 확인 필요 화면도 쓴다."""
     return {
         EMPTY_KEY: "(" + " OR ".join(_empty(name) for name in KEY_FIELDS) + ")",
-        THIN_CONTENT: f"({empties}) >= {THIN_CONTENT_EMPTY}",
+        THIN_CONTENT: f"{content_empty_sql()} >= {THIN_CONTENT_EMPTY}",
+        # 신입이 지원할 수 있는 공고(신입·신입경력·경력 무관)는 최소 경력이 0년이라 보지 않는다.
+        # 경력 공고라도 최소 연수가 없으면 통과다. 신입이 지원할 수 없는 최소 연수가 적혀 있는데
+        # 상한을 모를 때만 걸린다 (2026-10-22 결정)
         CAREER_CAP: (
-            "(n.experience_type IN ('EXPERIENCED', 'BOTH')"
-            f" AND ({_empty('experience_min_years')}"
-            f" OR CAST(n.experience_min_years AS INTEGER) <= {JUNIOR_YEARS})"
+            "(n.experience_type = 'EXPERIENCED'"
+            " AND CAST(n.experience_min_years AS INTEGER) >= 1"
             f" AND {_empty('experience_max_years')})"
         ),
     }
@@ -117,7 +121,7 @@ def _blocking_sqls() -> dict[str, str]:
 
 def blocked_sql() -> str:
     """자동 전송을 막는 조건. `normalized_jobs n` 한 행을 본다. 전송과 확인 필요가 같이 쓴다."""
-    return "(" + " OR ".join(_blocking_sqls().values()) + ")"
+    return "(" + " OR ".join(blocking_sqls().values()) + ")"
 
 
 def reason_sqls(conn: sqlite3.Connection) -> dict[str, str]:
@@ -128,7 +132,7 @@ def reason_sqls(conn: sqlite3.Connection) -> dict[str, str]:
     """
     fields = target_fields.read_fields(conn)
     listed = ", ".join("'" + name.replace("'", "''") + "'" for name in fields)
-    sqls = _blocking_sqls()
+    sqls = blocking_sqls()
     return {
         EMPTY_KEY: sqls[EMPTY_KEY],
         THIN_CONTENT: sqls[THIN_CONTENT],

@@ -487,7 +487,8 @@ async def test_the_quality_gate_reclassifies_a_caught_posting_twice_at_most(
     assert [row["attempts"] for row in rows] == [2, 2, 2]
     assert all(row["finished_at"] for row in rows)
     # 가짜 응답은 직무·공고 내용을 채우지 않아 다시 분류해도 그대로다
-    assert rows[0]["reasons"] == "empty_key,thin_content,off_target,career_cap"
+    # 최소 경력 연수를 뽑지 않아 경력 상한 조건에는 걸리지 않는다
+    assert rows[0]["reasons"] == "empty_key,thin_content,off_target"
     assert rows[0]["reasons_after"] == rows[0]["reasons"]
 
     again = ClassifyProgress()
