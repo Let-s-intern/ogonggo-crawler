@@ -87,3 +87,16 @@ def test_the_list_still_yields_eight_postings() -> None:
     assert len(result.items) == 8
     assert all(item.link.startswith(f"{LIST_URL}/detail/") for item in result.items)
     assert len({item.link for item in result.items}) == 8
+
+
+def test_the_links_drop_the_list_position() -> None:
+    """롯데 링크의 `?compcd=?id=bookmark1000` 은 목록 순번이라 떼어야 한다 (LC-3504).
+
+    남으면 새 공고가 위에 붙을 때마다 같은 공고의 주소가 바뀌어 새 공고로 적재된다.
+    """
+    html = (FIXTURES / "lotte-list-20260825.html").read_text(encoding="utf-8")
+
+    result = parse_list(html, SELECTORS.list, LIST_URL)
+
+    assert result.items[0].link == f"{LIST_URL}/detail/21931077"
+    assert not any("bookmark" in item.link for item in result.items)

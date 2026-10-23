@@ -37,6 +37,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 from soupsieve import SelectorSyntaxError
 
+from app.crawler.canonical import canonical_url
 from app.selector.link import LinkResult, resolve_link
 from app.selector.schema import DETAIL_FIELDS, DetailSelectors, ListSelectors
 
@@ -194,8 +195,9 @@ def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseR
                 index=index,
                 title=title,
                 # 상세로 갈 길이 없으면 목록 주소를 남긴다. 공고를 가리키는 주소는 그것뿐이고,
-                # 같은 값이어도 content_hash 는 title·recruitment_end_at·body 로 공고를 가른다
-                link=base_url if link_absent else urljoin(base_url, link.url),
+                # 같은 값이어도 content_hash 는 title·recruitment_end_at·body 로 공고를 가른다.
+                # 목록 위치처럼 실행마다 바뀌는 조각은 뗀다 (`app/crawler/canonical.py`)
+                link=base_url if link_absent else canonical_url(urljoin(base_url, link.url)),
                 date=date,
                 company_name=company_name,
                 detail_absent=link_absent,
