@@ -31,7 +31,7 @@ from typing import Protocol
 from urllib.parse import urlsplit
 
 from app.crawler import playwright as render_module
-from app.crawler.api_source import fetch_detail, fetch_list
+from app.crawler.api_source import fetch_detail, fetch_list, observe_list
 from app.crawler.fetcher import FetchPolicy, PageSource
 from app.crawler.images import ImageReader, read_detail_images
 from app.crawler.parser import (
@@ -150,6 +150,21 @@ class ApiListCollector:
         return await fetch_list(self._client, self._config, known=self._known)
 
 
+class ObservedApiListCollector:
+    """JSON 목록을 직접 부르지 않고, 목록 페이지를 그린 브라우저가 받은 응답에서 읽는다.
+
+    `list.observe_on` 을 적은 크롤러다. 정적 요청이 봇 확인에 전부 막히는 사이트라 이 목록
+    때문에 브라우저가 뜬다 (`app/crawler/api_source.py` 의 `ObservedResponses`).
+    """
+
+    def __init__(self, renderer: Renderer, config: ApiConfig) -> None:
+        self._renderer = renderer
+        self._config = config.list_config()
+
+    async def collect(self) -> ListParseResult:
+        return await observe_list(self._renderer, self._config)
+
+
 class ApiDetailCollector:
     """JSON 상세. 공고 id 로 한 건을 지목해 가져온다.
 
@@ -197,23 +212,28 @@ async def open_collectors(
     build = renderer or (lambda client: render_module.Renderer(client))
     instance: Renderer | None = None
 
-    def source_for(mode: str) -> PageSource:
+    def browser() -> Renderer:
         nonlocal instance
-        if mode != PLAYWRIGHT:
-            return fetcher
         if instance is None:
             # 여기까지 와야 브라우저가 뜬다. 목록이 api 면 목록 때문에 뜨는 일은 없다
             instance = build(fetcher)
             logger.info("렌더러를 띄운다 list_mode=%s detail_mode=%s", list_mode, detail_mode)
         return instance
 
+    def source_for(mode: str) -> PageSource:
+        return browser() if mode == PLAYWRIGHT else fetcher
+
     config = api_config or ApiConfig()
     try:
-        list_collector: ListCollector = (
-            ApiListCollector(fetcher, config, known)
-            if list_mode == API
-            else HtmlListCollector(source_for(list_mode), list_url, selectors.list, list_mode)
-        )
+        list_collector: ListCollector
+        if list_mode == API and config.list is not None and config.list.observe_on:
+            list_collector = ObservedApiListCollector(browser(), config)
+        elif list_mode == API:
+            list_collector = ApiListCollector(fetcher, config, known)
+        else:
+            list_collector = HtmlListCollector(
+                source_for(list_mode), list_url, selectors.list, list_mode
+            )
         detail_collector: DetailCollector = (
             ApiDetailCollector(fetcher, config)
             if detail_mode == API
