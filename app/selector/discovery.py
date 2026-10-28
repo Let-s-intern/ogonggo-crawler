@@ -36,6 +36,7 @@ from urllib.parse import urljoin, urlsplit
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
+from app.crawler.api_source import ObservedResponses
 from app.crawler.click_probe import DETAIL_UNREACHABLE, ClickOutcome, probe_click
 from app.crawler.collect import API
 from app.crawler.failures import LIST_EMPTY
@@ -522,6 +523,21 @@ async def _adopt_list_api(
 
     confirmation = await confirm_list_path(fetcher, proposed, items)
     path = proposed
+    if confirmation.challenged:
+        # 봇 확인이 정적 요청을 막았다. referer 를 넣어 다시 불러도 같은 문이다. 브라우저가 이미
+        # 받은 응답으로 같은 확인을 하고, 실행도 그 응답을 읽게 한다 — 클래스101(2026-10-28)
+        path = proposed.observed_on(probed.url)
+        confirmation = await confirm_list_path(ObservedResponses(requests), path, items)
+        if not confirmation.adopted:
+            return None, (
+                f"목록 API 후보 {proposed.url} 는 봇 확인에 막혀 다시 부르지 못했고, 관찰한 "
+                f"응답으로도 확인되지 않았다: {confirmation.reason}"
+            )
+        return path, (
+            f"목록은 {path.url} 의 `{path.items_path}` 로 온다. 봇 확인이 정적 요청을 막아 목록 "
+            f"페이지를 브라우저로 그리며 받은 응답을 읽는다(첫 쪽만). 관찰한 응답 "
+            f"{confirmation.count}건 중 제목 {confirmation.matched}건이 같아 채택했다"
+        )
     if not confirmation.adopted:
         path = proposed.with_referer(probed.url)
         confirmation = await confirm_list_path(fetcher, path, items)

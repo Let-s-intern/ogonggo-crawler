@@ -202,6 +202,10 @@ class ApiListConfig(BaseModel):
     # 목록에서 읽은 `date` 가 그 공고의 마감일인가. 참이면 마감이 지난 공고는 상세를 열지 않고
     # 건너뛴다. 게시일을 적어 두는 사이트에서 참으로 두면 어제 올라온 새 공고가 버려진다
     date_is_deadline: bool = False
+    # 이 페이지를 브라우저로 그리며 받은 응답을 읽는다. 비어 있으면 `url` 을 직접 부른다.
+    # 봇 확인이 정적 요청을 전부 막는 사이트가 쓴다 (`app/crawler/api_source.py` 의
+    # `ObservedResponses`). 쪽 넘김은 하지 않는다 — 페이지가 처음 부른 쪽만 본다
+    observe_on: str = ""
 
     @property
     def is_html(self) -> bool:
@@ -288,6 +292,7 @@ def _list_section(value: Any) -> ApiListConfig | None:
         response=_choice(section, "list", "response", RESPONSE_FORMATS, JSON_RESPONSE),
         pagination=_pagination(section.get("pagination")),
         date_is_deadline=_flag(section, "list", "date_is_deadline"),
+        observe_on=_observe_on(section),
     )
     if ID_PLACEHOLDER not in config.link_template:
         # 이 값이 `raw_jobs.source_url` 이 된다. 공고마다 같으면 중복 판정도 링크도 무너진다
@@ -345,6 +350,16 @@ def _url(section: Mapping[str, Any], where: str) -> str:
     if not url.startswith(("http://", "https://")):
         raise ApiConfigError("missing_field", f"`{where}.url` 이 http 주소가 아니다: {url}")
     return url
+
+
+def _observe_on(section: Mapping[str, Any]) -> str:
+    """`list.observe_on`. 안 적었으면 빈 값이고, 적었으면 http 주소여야 한다."""
+    value = section.get("observe_on")
+    if value is None or value == "":
+        return ""
+    if not isinstance(value, str) or not value.startswith(("http://", "https://")):
+        raise ApiConfigError("missing_field", f"`list.observe_on` 이 http 주소가 아니다: {value}")
+    return value.strip()
 
 
 def _method(section: Mapping[str, Any], where: str) -> str:

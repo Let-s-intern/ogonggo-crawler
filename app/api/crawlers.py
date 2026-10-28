@@ -60,7 +60,13 @@ from app import db
 from app.config import Settings
 from app.crawler.collect import API, COLLECT_MODES, open_collectors
 from app.crawler.failures import SUCCESS
-from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError, get_fetcher
+from app.crawler.fetcher import (
+    BotChallengeError,
+    FetchError,
+    FetchPolicy,
+    RobotsDisallowedError,
+    get_fetcher,
+)
 from app.crawler.images import LlmImageReader
 from app.crawler.playwright import PLAYWRIGHT, RENDER_MODES, STATIC, Renderer, open_source
 from app.crawler.runner import TEST, RunTarget, collect_selectors, run_once
@@ -415,7 +421,22 @@ def get_generator(
                 render_mode=render_mode,
             )
 
-        static_result = await _generate(list_url, detail_url, STATIC, settings)
+        try:
+            static_result = await _generate(list_url, detail_url, STATIC, settings)
+        except BotChallengeError:
+            # 사이트 앞단의 봇 확인이 정적 요청을 막았다. 몇 번을 물어도 같은 답이라 정적 결과
+            # 없이 브라우저로 만든다. 렌더러가 챌린지를 보고 기본 User-Agent 로 다시 연다
+            # (`app/crawler/playwright.py`). 클래스101 실측(2026-10-28)
+            logger.info("정적 요청이 봇 확인에 막혀 렌더로 만든다 url=%s", list_url)
+            rendered = await _generate(list_url, detail_url, PLAYWRIGHT, settings)
+            return replace(
+                rendered,
+                render_mode=PLAYWRIGHT,
+                notes=[
+                    *rendered.notes,
+                    "사이트가 봇 확인으로 바로 읽기를 막아 브라우저로 열어 셀렉터를 만들었다",
+                ],
+            )
         static_weak = _weak_list(static_result)
         if not static_result.verification.list_missing and not static_weak:
             return replace(static_result, render_mode=STATIC)
@@ -640,6 +661,10 @@ async def create_crawler(
         # robots 가 막은 URL 은 등록 자체를 거절한다 (`.claude/rules/crawling.md`).
         raise HTTPException(
             status_code=400, detail={"reason": "robots", "message": str(exc)}
+        ) from exc
+    except BotChallengeError as exc:
+        raise HTTPException(
+            status_code=502, detail={"reason": "bot_challenge", "message": str(exc)}
         ) from exc
     except FetchError as exc:
         raise HTTPException(

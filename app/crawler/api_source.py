@@ -6,7 +6,8 @@ HTML 을 셀렉터로 읽는 자리(`app/crawler/parser.py`)와 하는 일이 �
 어느 경로로 왔는지 모른다.
 
 요청은 공용 fetch 클라이언트의 `request()` 로 나간다. 이 모듈은 `httpx` 를 모른다
-(`.claude/rules/crawling.md`).
+(`.claude/rules/crawling.md`). 예외는 `observe_on` 을 적은 목록이다 — 요청을 보내지 않고
+목록 페이지를 그린 브라우저가 받은 응답을 읽는다 (`ObservedResponses`).
 
 ## 실패는 셋으로 갈린다
 
@@ -39,10 +40,12 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import AbstractAsyncContextManager, nullcontext
 from dataclasses import replace
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
@@ -59,6 +62,7 @@ from app.crawler.parser import (
     field_text,
     select_nodes,
 )
+from app.crawler.playwright import OBSERVED_BODY_LIMIT, ObservedRequest, Renderer
 from app.normalize.engine import flatten_html
 from app.selector.api_schema import (
     DIGITS_FILTER,
@@ -129,6 +133,68 @@ async def fetch_list(
         result = await _send(client, config.url, config.method, dict(config.body), config)
         return _read_page(result, config)
     return await _fetch_pages(client, config, known=known)
+
+
+async def observe_list(renderer: Renderer, config: ApiListConfig) -> ListParseResult:
+    """목록 페이지를 브라우저로 그리고, 그때 페이지가 부른 목록 API 의 응답을 읽는다.
+
+    쪽 넘김 설정은 버린다. 요청을 보내지 않으니 다음 쪽을 받을 수단이 없다 — 렌더한 HTML
+    목록(`playwright`)도 첫 쪽만 보는 것과 같다.
+    """
+    _, requests = await renderer.fetch_observed(config.observe_on)
+    return await fetch_list(
+        ObservedResponses(requests), config.model_copy(update={"pagination": None})
+    )
+
+
+class ObservedResponses:
+    """브라우저가 이미 받은 응답을 목록 API 의 답으로 내주는 `FetchPolicy`.
+
+    봇 확인이 정적 요청을 전부 막는 사이트는 목록 API 를 직접 부를 수 없다. 클래스101
+    실측(2026-10-28): 목록 페이지, 목록 API, 상세 페이지가 모두 `429` 챌린지였다. 목록 페이지를
+    그리는 브라우저는 그 API 를 스스로 부르므로 그 응답을 읽는다. **여기서는 요청을 하나도 보내지
+    않는다** — 주소(쿼리 빼고)와 메서드가 같은 관찰 응답을 돌려줄 뿐이다.
+    """
+
+    def __init__(self, requests: Sequence[ObservedRequest]) -> None:
+        self._requests = list(requests)
+
+    @property
+    def user_agent(self) -> str:
+        return ""
+
+    def guard(self, url: str) -> AbstractAsyncContextManager[None]:
+        return nullcontext()
+
+    async def fetch(self, url: str) -> FetchResult:
+        return await self.request(url)
+
+    async def request(
+        self,
+        url: str,
+        *,
+        method: str = "GET",
+        json_body: Mapping[str, Any] | None = None,
+        form_body: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> FetchResult:
+        for observed in self._requests:
+            if observed.method.upper() != method.upper() or observed.status >= 400:
+                continue
+            if not _same_endpoint(observed.url, url):
+                continue
+            if observed.truncated:
+                raise FieldParseError(
+                    f"관찰한 목록 응답이 {OBSERVED_BODY_LIMIT}자 상한에서 잘렸다: {url}"
+                )
+            return FetchResult(url=observed.url, status_code=observed.status, text=observed.body)
+        raise SelectorMissError(f"목록 페이지가 그 목록 API 를 부르지 않았다: {url}")
+
+
+def _same_endpoint(left: str, right: str) -> bool:
+    """쿼리를 빼고 같은 주소인가. 페이지가 붙이는 쿼리는 실행마다 조금씩 다를 수 있다."""
+    a, b = urlsplit(left), urlsplit(right)
+    return (a.netloc.lower(), a.path.rstrip("/")) == (b.netloc.lower(), b.path.rstrip("/"))
 
 
 async def _fetch_pages(

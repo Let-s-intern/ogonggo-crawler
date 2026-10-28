@@ -65,7 +65,7 @@ from typing import Any
 from urllib.parse import parse_qsl
 
 from app.crawler.api_source import fetch_list
-from app.crawler.fetcher import FetchError, FetchPolicy, RobotsDisallowedError
+from app.crawler.fetcher import BotChallengeError, FetchError, FetchPolicy, RobotsDisallowedError
 from app.crawler.parser import CrawlDataError, ListItem
 from app.crawler.playwright import ObservedRequest
 from app.selector.api_schema import (
@@ -123,6 +123,17 @@ class ListPath:
         assert self.api is not None and self.api.list is not None
         return self.api.list
 
+    def observed_on(self, list_url: str) -> ListPath:
+        """같은 설정을 직접 부르지 않고 `list_url` 을 그리며 받은 응답으로 읽게 바꾼다."""
+        if not self.ok or not list_url.strip():
+            return self
+        config = self.config().model_copy(update={"observe_on": list_url, "pagination": None})
+        return replace(
+            self,
+            api=ApiConfig(list=config),
+            notes=(*self.notes, f"목록 페이지를 그리며 받은 응답을 읽는다: {list_url}"),
+        )
+
     def with_referer(self, list_url: str) -> ListPath:
         """`referer` 를 넣어 같은 설정을 다시 만든다. 그것 없이는 답하지 않는 API 가 있다."""
         if not self.ok or not list_url.strip():
@@ -148,6 +159,8 @@ class ListConfirmation:
     reason: str = ""
     matched: int = 0
     count: int = 0
+    # 봇 확인이 막아 다시 부르지 못했다. 헤더로 풀리는 문제가 아니다
+    challenged: bool = False
 
 
 def propose_list_config(
@@ -372,6 +385,12 @@ async def confirm_list_path(
                 f"{exc}. 헤더 문제가 아니다 — 막히지 않은 다른 "
                 "주소로 같은 목록을 받을 수 있는지 봐야 한다"
             ),
+        )
+    except BotChallengeError as exc:
+        return ListConfirmation(
+            adopted=False,
+            reason=f"공용 fetch 클라이언트로 부르지 못했다: {exc}",
+            challenged=True,
         )
     except FetchError as exc:
         return ListConfirmation(
