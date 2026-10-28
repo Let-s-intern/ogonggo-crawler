@@ -37,6 +37,12 @@
   더 막는다. 골라 보내기는 사람이 고른 것이라 좁히지 않는다
 - 오공고에서 지운 직무(방송작가, 웹디자인 등 41개, 2026-10-15 LC-3472)의 공고. 오공고도 더 모으지
   않는다 (`EXCLUDED_ROLES_SQL`). 골라 보내면 같은 직군의 "기타" 직무로 간다
+- **이미 보낸 공고와 같은 공고** (2026-10-28, LC-3504). 주소가 달라도 회사·제목·마감 일시·나눈 직무
+  이름이 모두 같으면 보내지 않는다 (`DUPLICATE_SQL`). 롯데는 목록 위치가 주소에 들어 같은 공고가
+  주소만 바꿔 다시 들어왔고, 현대백화점은 권역 공고와 통합 공고가 같은 직무를 따로 실었고, AI 가
+  공고를 나누며 같은 직무를 두 번 낸 일도 있었다. 나눈 직무 이름을 함께 보는 것은 한 공고에서 제목과
+  직무 분류가 같고 직무 이름만 다른 공고(응급의학과·안과)를 살리려는 것이다. 골라 보내기는 막지
+  않는다
 
 ## 원문 HTML 도 보낸다 (2026-10-13, LC-3456)
 
@@ -141,6 +147,8 @@ class DeliveryResult:
     failed: int = 0
     # 이미 보낸 공고를 지금 값으로 바꾼 수. 골라 보내기만 교체한다
     replaced: int = 0
+    # 이미 보낸 공고와 같아 건너뛴 수 (`DUPLICATE_SQL`). 한 번에 함께 골라진 같은 공고만 여기 든다
+    duplicates: int = 0
     reason: str = ""
     errors: list[str] = field(default_factory=list)
 
@@ -242,6 +250,23 @@ READY_SQL = """(trim(coalesce(n.title, '')) != ''
            AND n.education_level IS NOT NULL
            AND n.recruitment_type IS NOT NULL)"""
 _READY = READY_SQL
+
+# 이미 보낸 다른 주소의 공고와 회사·제목·마감 일시·나눈 직무 이름이 모두 같다 (2026-10-28, LC-3504).
+# 정규화 행 `n` 을 본다. 제목 비교가 인덱스를 타게 `normalized_jobs.title` 을 그대로 견준다
+# (`migrations/0064_normalized_title_index.sql`)
+_PART_ROLE = (
+    "coalesce((SELECT c.part_role FROM job_classifications c"
+    " WHERE c.raw_job_id = {alias}.raw_job_id AND c.part = {alias}.part), '')"
+)
+DUPLICATE_SQL = f"""EXISTS (
+    SELECT 1 FROM normalized_jobs s
+      JOIN spring_deliveries sd ON sd.source_url = s.source_url AND sd.status = 'sent'
+     WHERE s.title = n.title
+       AND s.source_url != n.source_url
+       AND coalesce(s.company_name, '') = coalesce(n.company_name, '')
+       AND coalesce(s.parent_company_name, '') = coalesce(n.parent_company_name, '')
+       AND coalesce(s.recruitment_end_at, '') = coalesce(n.recruitment_end_at, '')
+       AND {_PART_ROLE.format(alias="s")} = {_PART_ROLE.format(alias="n")})"""
 
 # 자동 전송이 차 있기를 바라는 칸. 공고 화면(`app/api/job_detail.py`)의 기본 정보·모집 조건에서
 # 최소 경력 연수·모집 인원·모회사를 뺀 것이다. 회사는 자회사나 모회사 중 하나, 모집 마감은 기간
@@ -353,7 +378,7 @@ def pending(
         SELECT n.*, {SOURCE_SQL} FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
          WHERE {_UNSENT} AND {_OPEN} AND {target_sql(conn)}
-           AND {_auto_sql() if complete else _READY}
+           AND {_auto_sql() if complete else _READY} AND NOT {DUPLICATE_SQL}
          ORDER BY d.source_url IS NOT NULL, n.id
          LIMIT ?
         """,
@@ -368,6 +393,7 @@ def pending_count(conn: sqlite3.Connection, now: str) -> int:
         SELECT count(*) AS n FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
          WHERE {_UNSENT} AND {_OPEN} AND {target_sql(conn)} AND {_auto_sql()}
+           AND NOT {DUPLICATE_SQL}
         """,
         (MAX_ATTEMPTS, now),
     ).fetchone()
@@ -422,8 +448,17 @@ async def deliver_pending(
             transport=transport,
         ) as client:
             for row in rows:
+                # 같은 공고 둘이 한 번에 골라졌으면 앞의 것이 보내진 뒤 뒤의 것이 중복이 된다
+                if _duplicate(conn, int(row["id"])):
+                    result.duplicates += 1
+                    continue
                 await _deliver_one(conn, client, row, result)
-        logger.info("오공고 전송: 등록 %s건, 실패 %s건", result.sent, result.failed)
+        logger.info(
+            "오공고 전송: 등록 %s건, 실패 %s건, 중복 %s건",
+            result.sent,
+            result.failed,
+            result.duplicates,
+        )
         return result
     finally:
         _running.release()
@@ -668,6 +703,14 @@ async def _replace(
     logger.warning("오공고 공고 %s 를 교체하지 못했다 %s: %s", job_id, source_url, error)
     result.failed += 1
     result.errors.append(f"{source_url}: {error}")
+
+
+def _duplicate(conn: sqlite3.Connection, normalized_id: int) -> bool:
+    row = conn.execute(
+        f"SELECT {DUPLICATE_SQL} AS duplicate FROM normalized_jobs n WHERE n.id = ?",
+        (normalized_id,),
+    ).fetchone()
+    return bool(row and row["duplicate"])
 
 
 def _fail(conn: sqlite3.Connection, source_url: str, error: str, result: DeliveryResult) -> None:

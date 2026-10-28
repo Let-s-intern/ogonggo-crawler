@@ -95,4 +95,4 @@ def test_the_sent_delivery_survives_the_merge(conn: sqlite3.Connection) -> None:
 def test_an_empty_database_migrates(conn: sqlite3.Connection) -> None:
     db.migrate_up(conn)
 
-    assert db.applied_versions(conn)[-1] == "0063"
+    assert "0063" in db.applied_versions(conn)

@@ -13,6 +13,7 @@
 | 분류 배치가 끝나면 보낸다 | 켜 두어도 아무것도 가지 않는다 |
 | 본문 HTML 을 정리해 보내고, 없으면 본문 글자를 문단으로 보낸다 | 원문에 다른 공고가 섞인다 |
 | 이미 보낸 공고에 원문만 채운다 | 원문 저장 전에 보낸 공고는 원문이 영영 비어 있다 |
+| 주소가 달라도 이미 보낸 공고와 같은 공고는 보내지 않는다 | 같은 공고가 오공고에 여러 번 들어간다 |
 """
 
 from __future__ import annotations
@@ -575,3 +576,98 @@ async def test_품질_검사에_걸린_공고는_자동으로_보내지_않고_�
     assert automatic.sent == 0
     assert picked.sent == 2
     assert {json.loads(request.content)["sourceUrl"] for request in seen} == {thin, no_cap}
+
+
+def split_role(conn: sqlite3.Connection, raw_job_id: int, part: int, role: str) -> None:
+    """나눈 공고의 번호와 직무 이름. 분류가 적는 자리다."""
+    conn.execute("UPDATE normalized_jobs SET part = ? WHERE raw_job_id = ?", (part, raw_job_id))
+    conn.execute(
+        "INSERT INTO job_classifications (raw_job_id, part, part_role, model, evidence_json,"
+        " dropped_fields) VALUES (?, ?, ?, 'm', '{}', '')",
+        (raw_job_id, part, role),
+    )
+
+
+async def test_주소가_달라도_이미_보낸_공고와_같은_공고는_보내지_않는다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """롯데처럼 같은 공고가 주소만 바꿔 다시 들어왔다 (2026-10-28, LC-3504)."""
+    add_job(conn, 1, title="영업 신입")
+    seen = mock(lambda request: created(1), monkeypatch)
+    await spring.deliver_pending(conn, settings=SETTINGS)
+    again = add_job(conn, 2, title="영업 신입")
+
+    result = await spring.deliver_pending(conn, settings=SETTINGS)
+
+    assert (result.sent, result.failed) == (0, 0)
+    assert len(seen) == 1
+    assert delivery(conn, again) is None
+    assert spring.pending_count(conn, spring.local_now(SETTINGS)) == 0
+
+
+async def test_한_번에_고른_같은_공고는_하나만_보낸다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    add_job(conn, 1, title="영업 신입")
+    add_job(conn, 2, title="영업 신입")
+    seen = mock(lambda request: created(1), monkeypatch)
+
+    result = await spring.deliver_pending(conn, settings=SETTINGS)
+
+    assert (result.sent, result.duplicates) == (1, 1)
+    assert len(seen) == 1
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        {"company_name": "다른 회사"},
+        {"recruitment_end_at": "2099-11-30 23:59:59"},
+        {"title": "영업 경력"},
+    ],
+)
+async def test_회사_마감_제목_중_하나라도_다르면_다른_공고다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch, changed: dict[str, str]
+) -> None:
+    add_job(conn, 1, title="영업 신입")
+    mock(lambda request: created(1), monkeypatch)
+    await spring.deliver_pending(conn, settings=SETTINGS)
+    add_job(conn, 2, **{"title": "영업 신입", **changed})
+
+    result = await spring.deliver_pending(conn, settings=SETTINGS)
+
+    assert result.sent == 1
+
+
+async def test_나눈_직무_이름이_다르면_제목이_같아도_다른_공고다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """한 공고를 응급의학과·안과로 나눴는데 제목과 직무 분류가 같았다 (SK hynix)."""
+    add_job(conn, 1, title="부속의원 전문의")
+    split_role(conn, 1, 1, "응급의학과")
+    mock(lambda request: created(1), monkeypatch)
+    await spring.deliver_pending(conn, settings=SETTINGS)
+    add_job(conn, 2, title="부속의원 전문의")
+    split_role(conn, 2, 2, "안과")
+    add_job(conn, 3, title="부속의원 전문의")
+    split_role(conn, 3, 1, "응급의학과")
+
+    result = await spring.deliver_pending(conn, settings=SETTINGS)
+
+    assert (result.sent, result.duplicates) == (1, 0)
+    assert delivery(conn, "https://x/2")["status"] == "sent"
+    assert delivery(conn, "https://x/3") is None
+
+
+async def test_골라_보내기는_같은_공고여도_보낸다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    add_job(conn, 1, title="영업 신입")
+    mock(lambda request: created(1), monkeypatch)
+    await spring.deliver_pending(conn, settings=SETTINGS)
+    add_job(conn, 2, title="영업 신입")
+    job_id = conn.execute("SELECT id FROM normalized_jobs WHERE raw_job_id = 2").fetchone()["id"]
+
+    result = await spring.deliver_ids(conn, [job_id], settings=SETTINGS)
+
+    assert result.sent == 1
