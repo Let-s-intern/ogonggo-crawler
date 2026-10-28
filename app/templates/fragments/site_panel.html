@@ -67,6 +67,20 @@
       <button type="submit" class="mt-0">저장</button>
     </form>
 
+    {# 목록 한 장에 진행 중인 공고가 다 나오는가 (0063). 켜면 상시 채용 공고가 목록에서 사라졌는지 본다 #}
+    <form class="space-y-2 rounded-md border border-slate-200 p-3 text-sm" hx-post="/ui/sites/{{ item.id }}/list-complete"
+          hx-target="#app-panel-body" hx-swap="innerHTML" hx-disabled-elt="find button">
+      <h4 class="mb-0 mt-0 text-sm font-semibold text-slate-900">상시 채용 마감 확인</h4>
+      <label class="flex items-center gap-2 font-normal">
+        <input type="checkbox" name="list_complete" value="1" class="mt-0"{% if list_complete %} checked{% endif %}>
+        <span>목록 한 장에 진행 중인 공고가 다 나오는 사이트</span>
+      </label>
+      <p class="text-xs text-slate-500">{% if list_complete %}매일 수집 때 상시 채용 공고가 목록에 있는지 봅니다. 사흘 연달아 안 보이면 마감으로 봅니다{% else %}목록이 여러 쪽으로 나뉘면 켜지 마세요. 다음 쪽으로 밀린 공고를 마감으로 잘못 봅니다. 아래 최근 수집의 목록 수가 매번 같은 수에 붙어 있으면 나뉘는 사이트일 수 있어요{% endif %}</p>
+      {% if sightings.missing or sightings.closed %}<p class="text-xs text-slate-500">지금 목록에서 안 보이는 상시 채용 공고 {{ sightings.missing }}건, 마감으로 본 공고 {{ sightings.closed }}건</p>{% endif %}
+      {% if list_message %}{{ notice_box(list_message) }}{% endif %}
+      <button type="submit" class="mt-0">저장</button>
+    </form>
+
     {# 회사 로고. 사이트 추가 창과 같은 길로 올린다 (`app/api/ui_companies.py` 의 `save_logo_file`) #}
     <form class="space-y-2 rounded-md border border-slate-200 p-3 text-sm" hx-post="/ui/sites/{{ item.id }}/logo"
           hx-target="#app-panel-body" hx-swap="innerHTML" hx-encoding="multipart/form-data" hx-disabled-elt="find button">
@@ -136,7 +150,7 @@
       {% if runs %}
       <div class="table-scroll bg-white">
       <table class="data-table">
-        <thead><tr><th scope="col">시작</th><th scope="col">결과</th><th scope="col" class="num">새 공고</th><th scope="col" class="num">실패</th><th scope="col">어떻게</th></tr></thead>
+        <thead><tr><th scope="col">시작</th><th scope="col">결과</th><th scope="col" class="num">목록</th><th scope="col" class="num">새 공고</th><th scope="col" class="num">실패</th><th scope="col">어떻게</th></tr></thead>
         <tbody>
           {% for run in runs %}
           <tr>
@@ -146,6 +160,7 @@
               {% elif run.status == "success" %}<span class="state-ok">성공</span>
               {% else %}<span class="state-bad">실패</span>{% if run.problem %} <span class="text-xs text-slate-500">{{ run.problem }}</span>{% endif %}{% endif %}
             </td>
+            <td class="num">{{ run.matched if run.matched is not none else "-" }}</td>
             <td class="num">{{ run.new }}</td>
             <td class="num">{{ run.failed }}</td>
             <td class="text-xs text-slate-500">{{ run.trigger }}</td>

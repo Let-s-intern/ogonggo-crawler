@@ -39,6 +39,7 @@ def _form(
         config=store.read_config(conn),
         key_configured=bool(settings.ogonggo_internal_api_key.strip()),
         overview=spring.overview(conn),
+        closes=spring.close_overview(conn),
         max_attempts=spring.MAX_ATTEMPTS,
         message=message,
         error=error,
@@ -63,6 +64,7 @@ def update_deliver_fragment(
     url: Annotated[str, Form()] = "",
     enabled: Annotated[str, Form()] = "",
     batch_size: Annotated[str, Form()] = "",
+    close_send: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     """설정 한 벌을 저장한다. 하나라도 거절되면 아무것도 저장되지 않는다."""
     try:
@@ -77,7 +79,9 @@ def update_deliver_fragment(
                 "message": f"한 번에 보내는 건수가 정수가 아니다: {batch_size!r}",
             },
         )
-    config = store.DeliverConfig(url=url.strip(), enabled=enabled == "1", batch_size=size)
+    config = store.DeliverConfig(
+        url=url.strip(), enabled=enabled == "1", batch_size=size, close_send=close_send == "1"
+    )
     try:
         saved = store.write_config(conn, config)
     except store.DeliverSettingError as exc:
@@ -85,7 +89,13 @@ def update_deliver_fragment(
             request, conn, settings, error={"reason": "invalid_value", "message": str(exc)}
         )
     word = "켜졌다" if saved.enabled else "꺼져 있다"
-    return _form(request, conn, settings, message=f"저장했다. 분류 뒤 전송은 {word}")
+    close_word = "켜졌다" if saved.close_send else "꺼져 있다"
+    return _form(
+        request,
+        conn,
+        settings,
+        message=f"저장했다. 분류 뒤 전송은 {word}, 사라진 공고 마감 보내기는 {close_word}",
+    )
 
 
 @router.post("/ui/deliver/send", response_class=HTMLResponse)

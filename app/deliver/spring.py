@@ -52,6 +52,17 @@ HTML 이 없으면(이 결정 전에 모은 공고, 상세가 API 인 사이트)
 (`backfill_source_html`). 교체(PUT)는 운영자가 고친 칸까지 덮으므로 원문만 바꾸는 API 를 쓴다.
 HTML 이 없는 공고는 원문 다시 수집으로 HTML 을 담은 뒤 다시 돌리면 HTML 로 바뀐다.
 
+## 목록에서 사라진 상시 채용 공고는 오공고에서 마감한다 (2026-10-28 결정)
+
+목록이 다 보이는 사이트에서 사흘 연달아 사라진 상시 채용 공고는 마감으로 본다
+(`app/crawler/sightings.py`). 설정의 `마감 보내기` 가 켜져 있으면 그 공고를 오공고
+`POST /api/v1/internal/jobs/{jobId}/close` 로 마감한다 (`deliver_closes`). 직무마다 나뉘어 등록된
+공고는 번호마다 보낸다. 오공고에서 지워져 404 가 오면 마감할 것이 없는 것이라 끝난 것으로 적는다.
+꺼져 있으면 판정만 남는다 — 판정이 맞는지 먼저 지켜보는 자리다.
+
+마감으로 본 공고는 켜기·끄기와 상관없이 자동 전송하지 않는다. 사이트에서 내려간 공고를 새로
+등록하지 않는다. 골라 보내기는 사람이 고른 것이라 막지 않는다.
+
 ## 시각
 
 크롤러의 모집 일시는 수집한 사이트의 한국 시각 그대로이고, 오공고도 서울 시각 `LocalDateTime` 이다.
@@ -83,6 +94,7 @@ logger = logging.getLogger(__name__)
 
 JOBS_PATH = "/api/v1/internal/jobs"
 SOURCE_HTML_PATH = JOBS_PATH + "/{job_id}/source-html"
+CLOSE_PATH = JOBS_PATH + "/{job_id}/close"
 API_KEY_HEADER = "X-Internal-Api-Key"
 TIMEOUT_SECONDS = 20.0
 # 이만큼 실패한 공고는 더 보내지 않는다. 같은 거절을 분류 때마다 되풀이하지 않는다
@@ -233,6 +245,10 @@ _UNSENT = "(d.source_url IS NULL OR (d.status = 'failed' AND d.attempts < ?))"
 # 마감 일시가 아직 지나지 않은 공고. 공고 목록의 `확인 필요` 도 같은 조건을 쓴다
 OPEN_SQL = "(n.recruitment_end_at IS NULL OR n.recruitment_end_at >= ?)"
 _OPEN = OPEN_SQL
+# 목록에서 사라져 마감으로 본 상시 채용 공고 (`app/crawler/sightings.py`). 자동 전송에서 뺀다
+GONE_SQL = """EXISTS (SELECT 1 FROM job_sightings s JOIN raw_jobs r
+                       ON r.workflow_id = s.workflow_id AND r.source_url = s.source_url
+                     WHERE r.id = n.raw_job_id AND s.closed_at IS NOT NULL)"""
 # 오공고가 반드시 받는 칸이 SQL 로 보기에 차 있다. 목록 밖 값은 보내기 직전에 `missing` 이 거른다.
 # 공고 목록의 `필수 칸 빔` 표시도 이 조건을 뒤집어 쓴다
 READY_SQL = """(trim(coalesce(n.title, '')) != ''
@@ -352,7 +368,7 @@ def pending(
         f"""
         SELECT n.*, {SOURCE_SQL} FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
-         WHERE {_UNSENT} AND {_OPEN} AND {target_sql(conn)}
+         WHERE {_UNSENT} AND {_OPEN} AND NOT {GONE_SQL} AND {target_sql(conn)}
            AND {_auto_sql() if complete else _READY}
          ORDER BY d.source_url IS NOT NULL, n.id
          LIMIT ?
@@ -367,7 +383,8 @@ def pending_count(conn: sqlite3.Connection, now: str) -> int:
         f"""
         SELECT count(*) AS n FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
-         WHERE {_UNSENT} AND {_OPEN} AND {target_sql(conn)} AND {_auto_sql()}
+         WHERE {_UNSENT} AND {_OPEN} AND NOT {GONE_SQL} AND {target_sql(conn)}
+           AND {_auto_sql()}
         """,
         (MAX_ATTEMPTS, now),
     ).fetchone()
@@ -383,7 +400,8 @@ def unready_count(conn: sqlite3.Connection, now: str) -> int:
         f"""
         SELECT count(*) AS n FROM normalized_jobs n
           LEFT JOIN spring_deliveries d ON d.source_url = n.source_url
-         WHERE d.source_url IS NULL AND {_OPEN} AND {target_sql(conn)} AND NOT {_READY}
+         WHERE d.source_url IS NULL AND {_OPEN} AND NOT {GONE_SQL} AND {target_sql(conn)}
+           AND NOT {_READY}
            AND EXISTS (SELECT 1 FROM job_classifications c WHERE c.raw_job_id = n.raw_job_id)
         """,
         (now,),
@@ -573,6 +591,184 @@ async def backfill_source_html(
         result.failed,
     )
     return result
+
+
+@dataclass
+class CloseResult:
+    """마감 보내기 한 번의 결과. 건수는 크롤러 공고 단위이고, 나뉜 공고도 한 건이다.
+
+    `unsent` 는 오공고에 등록한 적이 없어 마감할 것이 없던 공고, `missing` 은 오공고에서 지워져
+    404 가 온 공고다. 둘 다 끝난 것으로 적고 다시 보내지 않는다.
+    """
+
+    closed: int = 0
+    unsent: int = 0
+    missing: int = 0
+    failed: int = 0
+    reason: str = ""
+    errors: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class CloseOverview:
+    """전달 화면의 마감 보내기 숫자."""
+
+    judged: int
+    sent: int
+    waiting: int
+    failed: int
+
+
+async def deliver_closes(
+    conn: sqlite3.Connection, *, settings: Settings | None = None
+) -> CloseResult:
+    """마감으로 본 상시 채용 공고를 오공고에서 마감한다. `마감 보내기` 가 꺼져 있으면 보내지 않는다.
+
+    보내지 못한 공고는 `MAX_ATTEMPTS` 번까지 다음 부름에 다시 고른다. 오공고의 마감은 반복해도 처음
+    마감 일시를 지키므로 다시 보내도 결과가 같다.
+    """
+    resolved = settings or get_settings()
+    config = store.read_config(conn)
+    key = resolved.ogonggo_internal_api_key.strip()
+    if not config.close_send:
+        return CloseResult(reason="마감 보내기가 꺼져 있다")
+    if not config.configured:
+        return CloseResult(reason="오공고 주소가 비어 있다")
+    if not key:
+        return CloseResult(reason="OGONGGO_INTERNAL_API_KEY 가 비어 있다. 크롤러 .env 에 넣는다")
+    rows = conn.execute(
+        """
+        SELECT workflow_id, source_url FROM job_sightings
+         WHERE closed_at IS NOT NULL AND close_sent_at IS NULL AND close_attempts < ?
+         ORDER BY closed_at, source_url
+        """,
+        (MAX_ATTEMPTS,),
+    ).fetchall()
+    result = CloseResult()
+    if not rows:
+        return result
+    async with httpx.AsyncClient(
+        base_url=config.url.strip().rstrip("/"),
+        headers={API_KEY_HEADER: key},
+        timeout=TIMEOUT_SECONDS,
+        transport=transport,
+    ) as client:
+        for row in rows:
+            await _close_one(conn, client, int(row["workflow_id"]), str(row["source_url"]), result)
+    logger.info(
+        "오공고 마감: 마감 %s건, 보낸 적 없음 %s건, 오공고에 없음 %s건, 실패 %s건",
+        result.closed,
+        result.unsent,
+        result.missing,
+        result.failed,
+    )
+    return result
+
+
+async def _close_one(
+    conn: sqlite3.Connection,
+    client: httpx.AsyncClient,
+    workflow_id: int,
+    source_url: str,
+    result: CloseResult,
+) -> None:
+    """공고 하나를 마감한다. 직무마다 나뉜 공고는 `원문 주소#번호` 로 등록돼 번호마다 보낸다."""
+    job_ids = [
+        int(row["spring_job_id"])
+        for row in conn.execute(
+            """
+            SELECT spring_job_id FROM spring_deliveries
+             WHERE status = 'sent' AND spring_job_id IS NOT NULL
+               AND (source_url = ? OR substr(source_url, 1, ?) = ?)
+             ORDER BY spring_job_id
+            """,
+            (source_url, len(source_url) + 1, source_url + "#"),
+        )
+    ]
+    if not job_ids:
+        result.unsent += 1
+        _close_done(conn, workflow_id, source_url, "오공고에 보낸 적이 없어 마감할 것이 없다")
+        return
+
+    missing = False
+    error = ""
+    for job_id in job_ids:
+        try:
+            response = await client.post(CLOSE_PATH.format(job_id=job_id))
+        except httpx.HTTPError as exc:
+            error = f"{job_id}: {type(exc).__name__}: {exc}"
+            continue
+        if response.status_code == 200:
+            continue
+        if response.status_code == 404:
+            missing = True
+            continue
+        error = f"{job_id}: {response.status_code} {_message(response)}"
+
+    if error:
+        logger.warning("오공고에서 공고를 마감하지 못했다 %s: %s", source_url, error)
+        result.failed += 1
+        result.errors.append(f"{source_url}: {error}")
+        conn.execute(
+            """
+            UPDATE job_sightings
+               SET close_attempts = close_attempts + 1, close_error = ?,
+                   updated_at = datetime('now')
+             WHERE workflow_id = ? AND source_url = ?
+            """,
+            (error[:500], workflow_id, source_url),
+        )
+        return
+    if missing:
+        result.missing += 1
+        _close_done(conn, workflow_id, source_url, "오공고에서 지워진 공고가 있었다")
+        return
+    result.closed += 1
+    _close_done(conn, workflow_id, source_url, None)
+
+
+def _close_done(
+    conn: sqlite3.Connection, workflow_id: int, source_url: str, note: str | None
+) -> None:
+    conn.execute(
+        """
+        UPDATE job_sightings
+           SET close_sent_at = datetime('now'), close_error = ?, updated_at = datetime('now')
+         WHERE workflow_id = ? AND source_url = ?
+        """,
+        (note, workflow_id, source_url),
+    )
+
+
+async def deliver_closes_after_run(conn: sqlite3.Connection, settings: Settings | None) -> None:
+    """수집 실행 뒤 마감을 보낸다. 보내기가 실패해도 수집은 성공이다 — 예외를 올리지 않는다."""
+    try:
+        result = await deliver_closes(conn, settings=settings)
+    except Exception:
+        logger.exception("수집 뒤 오공고 마감 보내기가 예외로 끝났다")
+        return
+    if result.reason and result.reason != "마감 보내기가 꺼져 있다":
+        logger.info("수집 뒤 오공고 마감을 보내지 않았다: %s", result.reason)
+
+
+def close_overview(conn: sqlite3.Connection) -> CloseOverview:
+    """마감으로 본 공고 수와 보낸 수·기다리는 수·더 보내지 않는 실패 수. 읽기 전용이다."""
+    row = conn.execute(
+        """
+        SELECT count(*) AS judged,
+               coalesce(sum(close_sent_at IS NOT NULL), 0) AS sent,
+               coalesce(sum(close_sent_at IS NULL AND close_attempts < ?), 0) AS waiting,
+               coalesce(sum(close_sent_at IS NULL AND close_attempts >= ?), 0) AS failed
+          FROM job_sightings WHERE closed_at IS NOT NULL
+        """,
+        (MAX_ATTEMPTS, MAX_ATTEMPTS),
+    ).fetchone()
+    return CloseOverview(
+        judged=int(row["judged"]),
+        sent=int(row["sent"]),
+        waiting=int(row["waiting"]),
+        failed=int(row["failed"]),
+    )
 
 
 async def deliver_after_classify(conn: sqlite3.Connection, settings: Settings | None) -> None:

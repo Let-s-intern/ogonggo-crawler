@@ -20,8 +20,10 @@ logger = logging.getLogger(__name__)
 URL = "deliver_url"
 ENABLED = "deliver_enabled"
 BATCH_SIZE = "deliver_batch_size"
+# 목록에서 사라져 마감으로 본 상시 채용 공고를 오공고에서도 마감할지 (2026-10-28, 0064)
+CLOSE_SEND = "deliver_close_send"
 
-KEYS: tuple[str, ...] = (URL, ENABLED, BATCH_SIZE)
+KEYS: tuple[str, ...] = (URL, ENABLED, BATCH_SIZE, CLOSE_SEND)
 
 DEFAULT_BATCH_SIZE = 100
 
@@ -42,6 +44,8 @@ class DeliverConfig:
     url: str = ""
     enabled: bool = False
     batch_size: int = DEFAULT_BATCH_SIZE
+    # 꺼져 있으면 마감 판정만 남기고 오공고는 부르지 않는다. 판정이 맞는지 먼저 지켜보는 자리다
+    close_send: bool = False
 
     @property
     def configured(self) -> bool:
@@ -56,6 +60,8 @@ class DeliverConfig:
             )
         if self.enabled and not cleaned:
             raise DeliverSettingError("주소가 비어 있으면 켤 수 없다")
+        if self.close_send and not cleaned:
+            raise DeliverSettingError("주소가 비어 있으면 마감 보내기를 켤 수 없다")
         if self.batch_size < 1:
             raise DeliverSettingError(f"한 번에 보내는 건수는 1 이상이어야 한다: {self.batch_size}")
 
@@ -74,6 +80,7 @@ def read_config(conn: sqlite3.Connection) -> DeliverConfig:
         url=stored.get(URL, default.url),
         enabled=stored.get(ENABLED, "0") == "1",
         batch_size=_as_int(stored.get(BATCH_SIZE), default.batch_size),
+        close_send=stored.get(CLOSE_SEND, "0") == "1",
     )
 
 
@@ -84,6 +91,7 @@ def write_config(conn: sqlite3.Connection, config: DeliverConfig) -> DeliverConf
         URL: config.url.strip(),
         ENABLED: "1" if config.enabled else "0",
         BATCH_SIZE: str(config.batch_size),
+        CLOSE_SEND: "1" if config.close_send else "0",
     }
     conn.executemany(
         """

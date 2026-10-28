@@ -167,6 +167,11 @@ class RunResult:
     error_message: str = ""
     items: list[ItemResult] = field(default_factory=list)
     failures: list[ItemFailure] = field(default_factory=list)
+    # 목록에서 읽은 링크 전부. 건너뛴 공고도 든다 — 상시 채용 공고가 목록에 아직 있는지 본다
+    # (`app/crawler/sightings.py`). 첫 실행 상한에 잘리기 전의 목록이다
+    seen_links: list[str] = field(default_factory=list)
+    # 목록 단계에서 값을 읽지 못한 항목 수. 하나라도 있으면 목록을 다 읽었다고 볼 수 없다
+    list_misses: int = 0
 
 
 class WorkflowMissingError(LookupError):
@@ -267,6 +272,16 @@ async def run_workflow(
             screener=make_screener(conn),
         )
     _record_outcome(conn, workflow_id, result)
+    # 상시 채용 공고가 목록에 아직 있는지 적는다. 판정할 수 없는 실행이면 아무것도 바꾸지 않는다
+    # (`app/crawler/sightings.py`). 이 모듈을 읽는 쪽이라 여기서 읽는다
+    from app.crawler import sightings
+
+    sightings.record(conn, workflow_id, result, trigger=trigger, capped=limit is not None)
+    # 마감으로 본 공고를 오공고에서 마감한다. 설정에서 켜야 보내고, 실패해도 실행 결과는 그대로다.
+    # 이번에 못 보낸 공고는 다음 실행이 다시 고른다 (`app/deliver/spring.py` 의 `deliver_closes`)
+    from app.deliver import spring
+
+    await spring.deliver_closes_after_run(conn, None)
     # 새 공고가 들어왔으면 알린다. 보내기가 실패해도 실행 결과는 그대로다 —
     # 알림이 안 갔다고 수집이 실패한 것은 아니다 (`app/notify/new_jobs.py`)
     await notify_new_jobs(
@@ -490,6 +505,8 @@ async def _crawl(
     parsed = await collectors.list.collect()
 
     result.matched = parsed.matched
+    result.seen_links = [item.link for item in parsed.items]
+    result.list_misses = len(parsed.failures)
     for miss in parsed.failures:
         result.fail_count += 1
         result.failures.append(
@@ -940,12 +957,14 @@ def _finish_run(
         conn.execute(
             """
             UPDATE crawl_runs
-               SET finished_at = datetime('now'), status = ?, success_count = ?, new_count = ?,
-                   fail_count = ?, skipped_count = ?, error_class = ?, error_message = ?
+               SET finished_at = datetime('now'), status = ?, matched = ?, success_count = ?,
+                   new_count = ?, fail_count = ?, skipped_count = ?, error_class = ?,
+                   error_message = ?
              WHERE id = ?
             """,
             (
                 result.status,
+                result.matched,
                 result.success_count,
                 result.new_count,
                 result.fail_count,
