@@ -49,6 +49,8 @@ DEADLINE_STATES: dict[str, str] = {
     "open": "모집 중",
     "closed": "마감",
     "none": "마감일 없음",
+    # 상시 채용인데 사이트 목록에서 연달아 안 보여 마감으로 본 공고 (`app/crawler/sightings.py`)
+    "gone": "목록에서 사라짐",
 }
 
 # 오공고로 보냈는지. 오공고에 들어간 뒤의 상태는 크롤러가 알 수 없어 보냈는지만 가른다
@@ -425,6 +427,11 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
         params.append(_today())
     elif picked.status == "none":
         clauses.append("date(n.recruitment_end_at) IS NULL")
+    elif picked.status == "gone":
+        clauses.append(
+            "EXISTS (SELECT 1 FROM job_sightings s WHERE s.workflow_id = r.workflow_id"
+            " AND s.source_url = r.source_url AND s.closed_at IS NOT NULL)"
+        )
 
     if picked.delivered == "yes":
         clauses.append(SENT_SQL)

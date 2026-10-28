@@ -1,6 +1,6 @@
-"""0063 이 쌓인 롯데 주소에서 목록 위치를 뗀다 (LC-3504, 2026-10-23).
+"""0065 가 쌓인 롯데 주소에서 목록 위치를 뗀다 (LC-3504, 2026-10-23).
 
-실제 `migrations/` 를 0062 까지 적용한 DB 에 같은 공고를 목록 위치만 다른 주소로 두 번 넣고 0063 을
+실제 `migrations/` 를 0064 까지 적용한 DB 에 같은 공고를 목록 위치만 다른 주소로 두 번 넣고 0065 를
 올린다.
 
 | 확인 | 깨지면 |
@@ -31,8 +31,8 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
     connection = db.connect(tmp_path / "lotte.db")
     db.migrate_up(connection)
     applied = db.applied_versions(connection)
-    db.migrate_down(connection, steps=len(applied) - applied.index("0063"))
-    assert db.applied_versions(connection)[-1] == "0062"
+    db.migrate_down(connection, steps=len(applied) - applied.index("0065"))
+    assert db.applied_versions(connection)[-1] == "0064"
     yield connection
     connection.close()
 
@@ -95,4 +95,4 @@ def test_the_sent_delivery_survives_the_merge(conn: sqlite3.Connection) -> None:
 def test_an_empty_database_migrates(conn: sqlite3.Connection) -> None:
     db.migrate_up(conn)
 
-    assert "0063" in db.applied_versions(conn)
+    assert "0065" in db.applied_versions(conn)

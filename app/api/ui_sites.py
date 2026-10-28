@@ -28,6 +28,13 @@
 (`crawlers.default_company`) 행에 적고, 그 이름은 이 사이트 공고의 모회사로 들어가므로 앞으로
 수집하는 공고는 이 로고로 나간다. 이미 쌓인 공고도 다시 정규화해 로고를 바꾼다.
 
+## 목록 전부 보임
+
+목록 한 장에 진행 중인 공고가 다 나오는 사이트면 켠다 (2026-10-28 결정, 0063). 켠 사이트는 매일
+수집이 상시 채용 공고가 목록에 있는지 적고, 연달아 안 보이면 마감으로 본다
+(`app/crawler/sightings.py`). 최근 수집 표의 목록 수가 매번 같은 수(8·10·20 같은)에 붙어 있으면 첫
+쪽만 읽는 사이트일 수 있어 켜지 않는다.
+
 ## 지우기
 
 패널 맨 아래에서 사이트를 지운다 (2026-10-15 결정). 사이트 목록·매일 수집에서 빠지고 스케줄러 잡도
@@ -119,7 +126,7 @@ def site_list_fragment(
 def _recent_runs(conn: sqlite3.Connection, workflow_id: int) -> list[dict[str, object]]:
     rows = conn.execute(
         """
-        SELECT id, started_at, status, new_count, fail_count, error_class, trigger
+        SELECT id, started_at, status, matched, new_count, fail_count, error_class, trigger
           FROM crawl_runs WHERE workflow_id = ? ORDER BY id DESC LIMIT ?
         """,
         (workflow_id, RECENT_RUNS),
@@ -129,6 +136,9 @@ def _recent_runs(conn: sqlite3.Connection, workflow_id: int) -> list[dict[str, o
             "id": int(row["id"]),
             "started_at": str(row["started_at"]),
             "status": row["status"],
+            # 목록에서 읽은 항목 수. 0063 전 실행은 없다. 매번 같은 수에 붙어 있으면 첫 쪽만 읽는
+            # 사이트일 수 있다 — 목록 전부 보임을 켜기 전에 본다
+            "matched": row["matched"],
             "new": int(row["new_count"]),
             "failed": int(row["fail_count"]),
             "problem": (
@@ -167,9 +177,11 @@ def _panel(
     logo_message: str = "",
     logo_error: str = "",
     company_message: str = "",
+    list_message: str = "",
 ) -> HTMLResponse:
     row = conn.execute(
-        "SELECT detail_url, default_company, has_affiliates FROM crawlers WHERE id = ?",
+        "SELECT detail_url, default_company, has_affiliates, list_complete FROM crawlers"
+        " WHERE id = ?",
         (card.item.crawler_id,),
     ).fetchone()
     company = str(row["default_company"] or "").strip() if row else ""
@@ -187,6 +199,9 @@ def _panel(
         company=company,
         has_affiliates=bool(row["has_affiliates"]) if row else False,
         company_message=company_message,
+        list_complete=bool(row["list_complete"]) if row else False,
+        sightings=_sighting_counts(conn, workflow_id),
+        list_message=list_message,
         logo_url=saved.logo_url if saved else None,
         logo_message=logo_message,
         logo_error=logo_error,
@@ -277,6 +292,50 @@ def affiliates_fragment(
     if failed:
         message += f" — {failed}건은 실패해 그대로예요"
     return _panel(request, conn, card, workflow_id, company_message=message)
+
+
+@router.post("/ui/sites/{workflow_id}/list-complete", response_class=HTMLResponse)
+def list_complete_fragment(
+    request: Request,
+    workflow_id: int,
+    conn: Annotated[sqlite3.Connection, Depends(workflows.get_connection)],
+    scheduler: Annotated[WorkflowScheduler, Depends(workflows.get_workflow_scheduler)],
+    list_complete: Annotated[str, Form()] = "",
+) -> HTMLResponse:
+    """목록 한 장에 진행 중인 공고가 다 나오는 사이트인지 저장한다 (0063).
+
+    켜면 매일 수집이 상시 채용 공고가 목록에 있는지 적고, 연달아 안 보이면 마감으로 본다
+    (`app/crawler/sightings.py`). 끄면 적지 않는다. 이미 적은 기록은 지우지 않는다.
+    """
+    card = next((card for card in _cards(conn, scheduler) if card.item.id == workflow_id), None)
+    if card is None:
+        return render(request, "fragments/site_panel.html", card=None, workflow_id=workflow_id)
+    on = bool(list_complete)
+    conn.execute(
+        "UPDATE crawlers SET list_complete = ? WHERE id = ?",
+        (1 if on else 0, card.item.crawler_id),
+    )
+    conn.commit()
+    logger.info("사이트 %s: 목록 전부 보임을 %s 로 바꿨다", workflow_id, on)
+    message = (
+        "켰어요. 다음 매일 수집부터 상시 채용 공고가 목록에 있는지 적습니다"
+        if on
+        else "껐어요. 이 사이트는 목록에서 사라진 공고를 마감으로 보지 않습니다"
+    )
+    return _panel(request, conn, card, workflow_id, list_message=message)
+
+
+def _sighting_counts(conn: sqlite3.Connection, workflow_id: int) -> dict[str, int]:
+    """이 사이트의 상시 채용 공고 중 지금 안 보이는 것과 마감으로 본 것."""
+    row = conn.execute(
+        """
+        SELECT coalesce(sum(missed_runs > 0 AND closed_at IS NULL), 0) AS missing,
+               coalesce(sum(closed_at IS NOT NULL), 0) AS closed
+          FROM job_sightings WHERE workflow_id = ?
+        """,
+        (workflow_id,),
+    ).fetchone()
+    return {"missing": int(row["missing"]), "closed": int(row["closed"])}
 
 
 def _renormalize_site(conn: sqlite3.Connection, crawler_id: int) -> tuple[int, int]:

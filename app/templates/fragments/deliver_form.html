@@ -40,6 +40,19 @@
         <input id="deliver-batch" name="batch_size" type="number" min="1"
                value="{{ config.batch_size }}" class="w-24">
       </p>
+      {# 목록에서 사라져 마감으로 본 상시 채용 공고를 오공고에서도 마감할지 (0064, `deliver_closes`) #}
+      <p>
+        <label for="deliver-close-send" class="inline-flex items-center gap-2">
+          <input id="deliver-close-send" name="close_send" type="checkbox" value="1"
+                 {% if config.close_send %}checked{% endif %}>
+          목록에서 사라진 상시 채용 공고를 오공고에서 마감한다
+        </label>
+        <span class="ml-2 text-sm">{{ state("켜짐") if config.close_send else state("꺼짐") }}</span>
+        <span class="block text-xs text-slate-500">
+          사흘 연달아 목록에 없던 공고를 매일 수집 뒤 마감한다. 끄면 마감으로 본 기록만 남는다.
+          마감으로 본 공고 {{ closes.judged }}건 · 마감함 {{ closes.sent }}건 · 기다림 {{ closes.waiting }}건{% if closes.failed %} · {{ max_attempts }}번 실패 {{ closes.failed }}건{% endif %}
+        </span>
+      </p>
       <p class="flex items-center gap-2">
         <button type="submit">저장</button>
         {{ wait("저장하는 중") }}
