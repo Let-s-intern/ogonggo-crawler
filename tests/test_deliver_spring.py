@@ -14,6 +14,7 @@
 | 본문 HTML 을 정리해 보내고, 없으면 본문 글자를 문단으로 보낸다 | 원문에 다른 공고가 섞인다 |
 | 이미 보낸 공고에 원문만 채운다 | 원문 저장 전에 보낸 공고는 원문이 영영 비어 있다 |
 | 주소가 달라도 이미 보낸 공고와 같은 공고는 보내지 않는다 | 같은 공고가 오공고에 여러 번 들어간다 |
+| 같은 공고인지는 AI 제목이 아니라 사이트 제목으로 본다 | 다시 분류하면 같은 공고가 새 공고가 된다 |
 """
 
 from __future__ import annotations
@@ -55,13 +56,19 @@ def conn(tmp_path: pathlib.Path) -> Iterator[sqlite3.Connection]:
         connection.close()
 
 
-def add_job(conn: sqlite3.Connection, seq: int, **values: Any) -> str:
-    """자동 전송할 수 있는 정규화 행 하나. 기본 정보·모집 조건이 다 차 있다. 원문 주소를 준다."""
+def add_job(
+    conn: sqlite3.Connection, seq: int, *, site_title: str | None = None, **values: Any
+) -> str:
+    """자동 전송할 수 있는 정규화 행 하나. 기본 정보·모집 조건이 다 차 있다. 원문 주소를 준다.
+
+    `site_title` 은 사이트에서 읽은 제목이다. 주지 않으면 정규화 제목과 같다.
+    """
     source_url = f"https://x/{seq}"
+    title = site_title or values.get("title") or f"공고 {seq}"
     conn.execute(
         "INSERT INTO raw_jobs (id, workflow_id, source_url, raw_data_json, content_hash)"
-        " VALUES (?, 1, ?, '{}', ?)",
-        (seq, source_url, f"hash-{seq}"),
+        " VALUES (?, 1, ?, ?, ?)",
+        (seq, source_url, json.dumps({"title": title}, ensure_ascii=False), f"hash-{seq}"),
     )
     row = {
         "raw_job_id": seq,
@@ -618,6 +625,21 @@ async def test_한_번에_고른_같은_공고는_하나만_보낸다(
     assert len(seen) == 1
 
 
+async def test_AI_제목이_달라도_사이트_제목이_같으면_같은_공고다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AI 가 지은 제목은 분류할 때마다 달라질 수 있다. 사이트에서 읽은 제목으로 견준다."""
+    add_job(conn, 1, title="롯데e커머스 영업 신입", site_title="2026년 10월 롯데e커머스 채용")
+    seen = mock(lambda request: created(1), monkeypatch)
+    await spring.deliver_pending(conn, settings=SETTINGS)
+    add_job(conn, 2, title="롯데e커머스 영업 신입사원", site_title="2026년 10월 롯데e커머스 채용")
+
+    result = await spring.deliver_pending(conn, settings=SETTINGS)
+
+    assert result.sent == 0
+    assert len(seen) == 1
+
+
 @pytest.mark.parametrize(
     "changed",
     [
@@ -626,7 +648,7 @@ async def test_한_번에_고른_같은_공고는_하나만_보낸다(
         {"title": "영업 경력"},
     ],
 )
-async def test_회사_마감_제목_중_하나라도_다르면_다른_공고다(
+async def test_회사_마감_사이트_제목_중_하나라도_다르면_다른_공고다(
     conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch, changed: dict[str, str]
 ) -> None:
     add_job(conn, 1, title="영업 신입")
