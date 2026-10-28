@@ -9,9 +9,11 @@ robots 확인과 호스트별 딜레이는 `app/crawler/fetcher.py` 의 `Fetcher
 적용한다. 이 모듈은 그 안에서 페이지를 그릴 뿐이다. 렌더 경로가 robots 를 건너뛰면
 "모든 외부 요청은 공용 클라이언트를 지난다" 가 사실이 아니게 된다.
 
-User-Agent 도 `Fetcher` 가 들고 있는 값(`CRAWL_USER_AGENT`)을 그대로 쓴다. 브라우저 기본
-User-Agent 로 나가면 차단을 우회하는 것이 되고, 그것은 하지 않는다. 로그인·CAPTCHA 우회도
-PRD 비목표다 — 여기서 하는 것은 렌더링뿐이다.
+User-Agent 도 `Fetcher` 가 들고 있는 값(`CRAWL_USER_AGENT`)을 그대로 쓴다. 예외는 하나다 —
+첫 응답이 봇 확인 챌린지(`fetcher.is_challenge`)면 그 호스트만 브라우저 기본 User-Agent 로
+다시 연다. 클래스101(Vercel) 실측(2026-10-28): 우리 이름으로는 브라우저도 `429` 챌린지 화면에서
+넘어가지 못했고, 기본 User-Agent 로는 바로 `200` 이었다. 공개된 채용공고를 읽으려고 운영자가
+정한 예외다. 로그인·CAPTCHA 우회는 여전히 PRD 비목표다 — 사람이 풀어야 하는 문은 열지 않는다.
 
 ## 재시도하지 않는다
 
@@ -59,11 +61,13 @@ from urllib.parse import urlsplit
 
 from app.config import Settings, get_settings
 from app.crawler.fetcher import (
+    BotChallengeError,
     FetchError,
     FetchPolicy,
     FetchResult,
     PageSource,
     ResponseStatusError,
+    is_challenge,
 )
 
 logger = logging.getLogger(__name__)
@@ -430,6 +434,8 @@ class Renderer:
         self._launch = launch or _launch_chromium
         self._playwright: Any | None = None
         self._browser: Any | None = None
+        # 우리 User-Agent 로 챌린지를 받은 호스트. 같은 실행의 다음 페이지는 기본값으로 바로 연다
+        self._challenged_hosts: set[str] = set()
 
     async def fetch(self, url: str) -> FetchResult:
         """robots 와 딜레이를 통과한 URL 만 렌더한다.
@@ -465,17 +471,8 @@ class Renderer:
         browser = await self._browser_instance()
         timeout_ms = int(self._timeout * 1000)
         async with self._fetcher.guard(url):
-            context = await browser.new_context(user_agent=self._fetcher.user_agent)
-            log = RequestLog()
+            context, page, log = await self._open_probe_page(browser, url, timeout_ms)
             try:
-                page = await context.new_page()
-                log.attach(page)
-                context.on("page", log.attach)
-                log.watch_navigations(context)
-                inflight = InFlight()
-                inflight.attach(page)
-                await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
-                await _settle(page, inflight)
                 await log.drain()
                 yield ProbeSession(
                     page=page, context=context, log=log, html=await page.content(), url=page.url
@@ -485,6 +482,47 @@ class Renderer:
                     await log.drain()
                 with suppress(Exception):
                     await context.close()
+
+    async def _open_probe_page(
+        self, browser: Any, url: str, timeout_ms: int
+    ) -> tuple[Any, Any, RequestLog]:
+        """눌러 볼 페이지를 연다. 챌린지를 받으면 그 컨텍스트를 닫고 기본 User-Agent 로 한 번 더."""
+        while True:
+            user_agent = self._user_agent_for(url)
+            context = await browser.new_context(user_agent=user_agent)
+            log = RequestLog()
+            try:
+                page = await context.new_page()
+                log.attach(page)
+                context.on("page", log.attach)
+                log.watch_navigations(context)
+                inflight = InFlight()
+                inflight.attach(page)
+                response = await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                if user_agent is not None and self._challenged(url, response):
+                    await context.close()
+                    continue
+                await _settle(page, inflight)
+            except BaseException:
+                with suppress(Exception):
+                    await context.close()
+                raise
+            return context, page, log
+
+    def _user_agent_for(self, url: str) -> str | None:
+        """이 주소를 열 User-Agent. 챌린지를 받은 호스트는 `None`(브라우저 기본값)이다."""
+        if urlsplit(url).netloc.lower() in self._challenged_hosts:
+            return None
+        return self._fetcher.user_agent
+
+    def _challenged(self, url: str, response: Any) -> bool:
+        """우리 User-Agent 로 받은 첫 응답이 챌린지인가. 맞으면 그 호스트를 기억한다."""
+        if response is None or not is_challenge(getattr(response, "headers", None) or {}):
+            return False
+        host = urlsplit(url).netloc.lower()
+        self._challenged_hosts.add(host)
+        logger.info("봇 확인에 걸려 브라우저 기본 User-Agent 로 다시 연다 host=%s", host)
+        return True
 
     async def aclose(self) -> None:
         """브라우저를 닫는다. 두 번 불러도 안전하다."""
@@ -502,16 +540,26 @@ class Renderer:
         timeout_ms = int(self._timeout * 1000)
         try:
             async with asyncio.timeout(self._timeout):
-                context = await browser.new_context(user_agent=self._fetcher.user_agent)
+                while True:
+                    user_agent = self._user_agent_for(url)
+                    context = await browser.new_context(user_agent=user_agent)
+                    try:
+                        page = await context.new_page()
+                        if log is not None:
+                            log.attach(page)
+                        inflight = InFlight()
+                        inflight.attach(page)
+                        response = await page.goto(
+                            url, wait_until="domcontentloaded", timeout=timeout_ms
+                        )
+                        if user_agent is None or not self._challenged(url, response):
+                            break
+                    except BaseException:
+                        with suppress(Exception):
+                            await context.close()
+                        raise
+                    await context.close()
                 try:
-                    page = await context.new_page()
-                    if log is not None:
-                        log.attach(page)
-                    inflight = InFlight()
-                    inflight.attach(page)
-                    response = await page.goto(
-                        url, wait_until="domcontentloaded", timeout=timeout_ms
-                    )
                     await _settle(page, inflight)
                     await _inline_frames(page)
                     html = await page.content()
@@ -533,6 +581,9 @@ class Renderer:
             raise RenderError(f"렌더 실패({type(exc).__name__}): {url}") from exc
 
         status = _status(response)
+        if status >= 400 and is_challenge(getattr(response, "headers", None) or {}):
+            # 기본 User-Agent 로도 챌린지다. 사람이 풀어야 하는 문이라 더 열지 않는다
+            raise BotChallengeError(f"브라우저로도 봇 확인에 막힘 {status}: {url}", status)
         if status >= 400:
             # 정적 경로와 같은 판정이다. 4xx·5xx 는 렌더된 껍데기가 아니라 실패다
             raise ResponseStatusError(f"응답 {status}: {url}", status)

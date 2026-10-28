@@ -2,7 +2,9 @@
 
 `.claude/rules/crawling.md` 가 정한 것을 그대로 담는다.
 
-- User-Agent 는 설정값 그대로 쓴다. 브라우저 위장은 하지 않는다
+- User-Agent 는 설정값 그대로 쓴다. 브라우저 위장은 하지 않는다. 사이트 앞단의 봇 확인에
+  막히면 `BotChallengeError` 로 알리고, 그 사이트는 렌더 경로가 브라우저로 연다
+  (`app/crawler/playwright.py`)
 - 같은 호스트로 가는 요청 사이에 최소 딜레이를 실제로 기다린다
 - 첫 요청 전에 robots.txt 를 확인하고, disallow 면 대상 요청을 보내지 않고 실패한다
 - transport 실패(타임아웃, 연결 끊김, 5xx)만 백오프 재시도한다. 4xx 는 재시도하지 않는다
@@ -57,6 +59,26 @@ class ResponseStatusError(FetchError):
     def __init__(self, message: str, status_code: int) -> None:
         super().__init__(message)
         self.status_code = status_code
+
+
+class BotChallengeError(ResponseStatusError):
+    """사이트 앞단의 봇 확인(Vercel·Cloudflare 챌린지)이 막았다.
+
+    주소가 틀린 것도, 사이트가 멈춘 것도 아니다. JS 를 돌리는 브라우저만 지나가는 문이라
+    정적 요청은 몇 번을 다시 해도 같은 답을 받는다. 클래스101 실측(2026-10-28): 목록과
+    robots.txt 가 모두 `429` 에 `x-vercel-mitigated: challenge` 였다.
+    """
+
+
+# 챌린지를 걸었다고 알리는 응답 헤더. 값이 `challenge` 일 때만 본다
+_CHALLENGE_HEADERS = ("x-vercel-mitigated", "cf-mitigated")
+
+
+def is_challenge(headers: Mapping[str, str]) -> bool:
+    """봇 확인 화면을 돌려준 응답인가. httpx 와 Playwright 응답 헤더를 둘 다 받는다."""
+    return any(
+        str(headers.get(name, "")).strip().lower() == "challenge" for name in _CHALLENGE_HEADERS
+    )
 
 
 class RobotsDisallowedError(FetchError):
@@ -276,6 +298,10 @@ class Fetcher:
                         status_code=response.status_code,
                         text=_decoded(response),
                         content=response.content,
+                    )
+                if is_challenge(response.headers):
+                    raise BotChallengeError(
+                        f"봇 확인에 막힘 {response.status_code}: {url}", response.status_code
                     )
                 if response.status_code < 500:
                     raise ResponseStatusError(

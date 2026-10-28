@@ -13,6 +13,7 @@ import pytest
 
 from app.config import Settings
 from app.crawler.fetcher import (
+    BotChallengeError,
     Fetcher,
     ResponseStatusError,
     RobotsDisallowedError,
@@ -185,6 +186,21 @@ async def test_client_error_is_not_retried() -> None:
     await fetcher.aclose()
 
     assert caught.value.status_code == 404
+    assert site.urls(exclude_robots=True) == [LIST_URL]
+
+
+async def test_bot_challenge_is_its_own_error() -> None:
+    """봇 확인 챌린지는 주소 문제와 갈라 알린다. 재시도하지 않는 4xx 인 것은 같다."""
+    clock = FakeClock()
+    challenge = httpx.Response(429, headers={"x-vercel-mitigated": "challenge"})
+    site = StubSite(clock, robots_then(ROBOTS_ALLOW_ALL, lambda _: challenge))
+    fetcher = make_fetcher(site, clock)
+
+    with pytest.raises(BotChallengeError) as caught:
+        await fetcher.fetch(LIST_URL)
+    await fetcher.aclose()
+
+    assert caught.value.status_code == 429
     assert site.urls(exclude_robots=True) == [LIST_URL]
 
 

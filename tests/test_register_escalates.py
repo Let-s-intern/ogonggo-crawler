@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from app.api import crawlers as crawlers_api
-from app.crawler.fetcher import FetchResult
+from app.crawler.fetcher import BotChallengeError, FetchResult
 from app.crawler.playwright import PLAYWRIGHT, STATIC, RenderUnavailableError
 from app.selector.generator import GenerationResult, Usage
 from app.selector.schema import SelectorSet, validate_selectors
@@ -116,6 +116,30 @@ async def test_정적_껍데기면_렌더로_다시_만든다(modes: list[str]) 
     assert result.render_mode == PLAYWRIGHT
     assert result.verification.list_missing is False
     assert "정적 HTML 에는 목록이 없어 렌더한 HTML 로 셀렉터를 만들었다" in result.notes
+
+
+@pytest.mark.asyncio
+async def test_정적_요청이_봇_확인에_막히면_렌더로_만든다(
+    monkeypatch: pytest.MonkeyPatch, modes: list[str]
+) -> None:
+    """클래스101: 정적 요청은 429 챌린지라 "접속하지 못했어요" 로 끝났다. 브라우저로 넘어간다."""
+
+    async def generate_for_urls(
+        list_url: str, detail_url: str, *, source: Any, **kwargs: Any
+    ) -> GenerationResult:
+        page = await source.fetch(list_url)
+        if page.text == SHELL:
+            raise BotChallengeError(f"봇 확인에 막힘 429: {list_url}", 429)
+        return result_for(page.text)
+
+    monkeypatch.setattr(crawlers_api, "generate_for_urls", generate_for_urls)
+    generate = crawlers_api.get_generator(None)
+
+    result = await generate(LIST_URL, DETAIL_URL, "")
+
+    assert modes == [STATIC, PLAYWRIGHT]
+    assert result.render_mode == PLAYWRIGHT
+    assert "사이트가 봇 확인으로 바로 읽기를 막아 브라우저로 열어 셀렉터를 만들었다" in result.notes
 
 
 @pytest.mark.asyncio

@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from app.config import Settings
-from app.crawler.fetcher import Fetcher, RobotsDisallowedError
+from app.crawler.fetcher import BotChallengeError, Fetcher, RobotsDisallowedError
 from app.crawler.playwright import (
     PLAYWRIGHT,
     STATIC,
@@ -27,6 +27,7 @@ from app.crawler.playwright import (
 
 USER_AGENT = "ogonggo-ai (contact: test@example.test)"
 DELAY_SECONDS = 3.0
+CHALLENGE_HEADERS = {"x-vercel-mitigated": "challenge"}
 
 LIST_URL = "https://example.test/jobs"
 OTHER_URL = "https://example.test/jobs/2"
@@ -48,8 +49,9 @@ class FakeClock:
 
 
 class StubPage:
-    def __init__(self, browser: StubBrowser) -> None:
+    def __init__(self, browser: StubBrowser, user_agent: str | None) -> None:
         self._browser = browser
+        self._user_agent = user_agent
         self.url = ""
 
     async def goto(self, url: str, **kwargs: Any) -> Any:
@@ -57,7 +59,10 @@ class StubPage:
         self.url = url
         if self._browser.hang:
             await asyncio.sleep(3600)
-        return type("Response", (), {"status": self._browser.status})()
+        user_agent = self._user_agent
+        if user_agent in self._browser.challenged:
+            return type("Response", (), {"status": 429, "headers": CHALLENGE_HEADERS})()
+        return type("Response", (), {"status": self._browser.status, "headers": {}})()
 
     async def wait_for_load_state(self, state: str, **kwargs: Any) -> None:
         return None
@@ -67,13 +72,13 @@ class StubPage:
 
 
 class StubContext:
-    def __init__(self, browser: StubBrowser, user_agent: str) -> None:
+    def __init__(self, browser: StubBrowser, user_agent: str | None) -> None:
         self._browser = browser
         self.user_agent = user_agent
         self.closed = False
 
     async def new_page(self) -> StubPage:
-        return StubPage(self._browser)
+        return StubPage(self._browser, self.user_agent)
 
     async def close(self) -> None:
         self.closed = True
@@ -89,18 +94,21 @@ class StubBrowser:
         html: str = RENDERED_HTML,
         status: int = 200,
         hang: bool = False,
+        challenged: tuple[str | None, ...] = (),
     ) -> None:
         self.clock = clock
+        # 이 User-Agent 로 연 페이지는 봇 확인 챌린지(429)를 받는다
+        self.challenged = challenged
         self.html = html
         self.status = status
         self.hang = hang
         self.visited: list[tuple[float, str]] = []
-        self.user_agents: list[str] = []
+        self.user_agents: list[str | None] = []
         self.contexts: list[StubContext] = []
         self.closed = False
         self.stopped = False
 
-    async def new_context(self, *, user_agent: str) -> StubContext:
+    async def new_context(self, *, user_agent: str | None) -> StubContext:
         self.user_agents.append(user_agent)
         context = StubContext(self, user_agent)
         self.contexts.append(context)
@@ -148,6 +156,7 @@ def build(
     status: int = 200,
     hang: bool = False,
     render_timeout: float = 60.0,
+    challenged: tuple[str | None, ...] = (),
 ) -> tuple[Renderer, StubBrowser, StubLauncher, Fetcher]:
     clock = FakeClock()
     transport, _ = robots_site(clock, robots)
@@ -161,7 +170,7 @@ def build(
         clock=clock.time,
         sleep=clock.sleep,
     )
-    browser = StubBrowser(clock, html=html, status=status, hang=hang)
+    browser = StubBrowser(clock, html=html, status=status, hang=hang, challenged=challenged)
     launcher = StubLauncher(browser)
     renderer = Renderer(
         fetcher,
@@ -200,6 +209,34 @@ async def test_render_uses_the_configured_user_agent() -> None:
     await renderer.fetch(LIST_URL)
 
     assert browser.user_agents == [USER_AGENT]
+    await renderer.aclose()
+
+
+async def test_challenge_reopens_with_the_browser_user_agent() -> None:
+    """우리 이름으로 챌린지를 받은 호스트만 브라우저 기본 User-Agent 로 다시 연다.
+
+    같은 실행의 다음 페이지는 처음부터 기본값으로 연다 — 페이지마다 챌린지를 한 번씩 받지 않는다.
+    """
+    renderer, browser, _, _ = build(challenged=(USER_AGENT,))
+
+    first = await renderer.fetch(LIST_URL)
+    await renderer.fetch(LIST_URL + "/2")
+
+    assert first.status_code == 200
+    assert first.text == RENDERED_HTML
+    assert browser.user_agents == [USER_AGENT, None, None]
+    assert all(context.closed for context in browser.contexts)
+    await renderer.aclose()
+
+
+async def test_challenge_with_the_browser_user_agent_too_fails() -> None:
+    """기본 User-Agent 로도 챌린지면 더 열지 않고 봇 확인 실패로 올린다."""
+    renderer, browser, _, _ = build(challenged=(USER_AGENT, None))
+
+    with pytest.raises(BotChallengeError):
+        await renderer.fetch(LIST_URL)
+
+    assert browser.user_agents == [USER_AGENT, None]
     await renderer.aclose()
 
 
