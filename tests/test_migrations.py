@@ -26,6 +26,8 @@ EXPECTED_COLUMNS = {
         "status",
         "default_company",
         "has_affiliates",
+        # 0063. 목록 한 장에 진행 중인 공고가 다 나오는 사이트
+        "list_complete",
         "created_at",
     },
     "workflows": {
@@ -57,6 +59,8 @@ EXPECTED_COLUMNS = {
         "error_class",
         "error_message",
         "trigger",
+        # 0063. 목록에서 읽은 항목 수
+        "matched",
     },
     "raw_jobs": {
         "id",
@@ -330,6 +334,7 @@ ALL_VERSIONS = [
     "0060",
     "0061",
     "0062",
+    "0063",
 ]
 
 
