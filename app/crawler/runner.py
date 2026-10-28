@@ -277,6 +277,11 @@ async def run_workflow(
     from app.crawler import sightings
 
     sightings.record(conn, workflow_id, result, trigger=trigger, capped=limit is not None)
+    # 마감으로 본 공고를 오공고에서 마감한다. 설정에서 켜야 보내고, 실패해도 실행 결과는 그대로다.
+    # 이번에 못 보낸 공고는 다음 실행이 다시 고른다 (`app/deliver/spring.py` 의 `deliver_closes`)
+    from app.deliver import spring
+
+    await spring.deliver_closes_after_run(conn, None)
     # 새 공고가 들어왔으면 알린다. 보내기가 실패해도 실행 결과는 그대로다 —
     # 알림이 안 갔다고 수집이 실패한 것은 아니다 (`app/notify/new_jobs.py`)
     await notify_new_jobs(
