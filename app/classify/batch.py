@@ -26,8 +26,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from app import custom_fields, industries, taxonomy
-from app.classify import prompt_rules
+from app import custom_fields, discard, industries, taxonomy
+from app.classify import gate, prompt_rules
 from app.classify.basics import find_basics
 from app.classify.classifier import ClassifyError, chosen, classify_body
 from app.classify.schema import FALLBACK_FIELDS, build_classification_model
@@ -43,7 +43,7 @@ from app.classify.store import (
     save_suggestions,
 )
 from app.config import Settings
-from app.deliver.spring import deliver_after_classify
+from app.deliver.spring import deliver_after_classify, local_now
 from app.llm import settings as llm_settings
 from app.llm.base import Usage
 from app.llm.log import CLASSIFY, record_call
@@ -87,6 +87,10 @@ class ClassifyProgress:
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
+    # 품질 검사에 걸려 다시 분류한 횟수 (`app/classify/gate.py`). 처리 건수에는 한 번만 센다
+    rechecked: int = 0
+    # 분류 뒤 직군이 대상 밖이라 버린 공고 수 (`app/discard.py`)
+    discarded: int = 0
     started_at: str | None = None
     finished_at: str | None = None
     errors: list[str] = field(default_factory=list)
@@ -190,13 +194,14 @@ async def classify_pending(
     client: Any | None = None,
     settings: Settings | None = None,
 ) -> ClassifyProgress:
-    """원문이나 본문이 있고 아직 분류되지 않은 공고를 상한만큼 돈다."""
+    """원문이나 본문이 있고 아직 분류되지 않은 공고를 상한만큼 돈다. 끝에 품질 검사가 돈다."""
     return await classify_ids(
         conn,
         pending_ids(conn, bounded(limit)),
         progress,
         client=client,
         settings=settings,
+        recheck=True,
     )
 
 
@@ -208,6 +213,8 @@ async def classify_ids(
     client: Any | None = None,
     settings: Settings | None = None,
     on_job: OnJob | None = None,
+    recheck: bool = False,
+    deliver: bool = True,
 ) -> ClassifyProgress:
     """정해진 공고만 분류한다. 표본 실행이 쓰는 자리이기도 하다.
 
@@ -216,6 +223,11 @@ async def classify_ids(
 
     `on_job` 은 공고마다 시작(`JOB_RUNNING`)과 끝(`JOB_DONE`·`JOB_FAILED`)을 받는다. 공고 목록이
     행마다 AI 로 채우는 중인지 보여줄 때 쓴다.
+
+    `recheck` 면 끝난 뒤 품질 검사에 걸린 공고를 한 번 더 분류하고, 그래도 직군이 대상 밖인 공고를
+    버린 뒤(`app/discard.py`) 오공고로 보낸다
+    (`deliver`). 새 공고를 분류하는 두 길(`classify_pending`, 부가 워크플로우)만 켠다 — 운영자가
+    고른 공고를 다시 채우는 길은 이미 사람이 보고 있다. 검사가 다시 분류할 때는 둘 다 끈다.
     """
     notify: OnJob = on_job or (lambda _raw_job_id, _state: None)
     progress.total = len(raw_job_ids)
@@ -243,6 +255,7 @@ async def classify_ids(
     taxonomy_tree = taxonomy.enabled_tree(conn)
     industry_names = industries.enabled_names(conn)
     response_model = build_classification_model(conn)
+    done: list[int] = []
 
     for raw_job_id in raw_job_ids:
         notify(raw_job_id, JOB_RUNNING)
@@ -348,6 +361,7 @@ async def classify_ids(
         # 실패해도 분류는 성공이다 (`app/custom_fields.py`)
         await custom_fields.fill_job(conn, raw_job_id, settings=settings)
         progress.processed += 1
+        done.append(raw_job_id)
         notify(raw_job_id, JOB_DONE)
 
     logger.info(
@@ -359,10 +373,68 @@ async def classify_ids(
         progress.calls,
         progress.total_tokens,
     )
-    if progress.processed:
+    if recheck and done:
+        # 보내기 전에 검사한다. 보낸 공고는 다시 분류해도 오공고에 저절로 가지 않는다
+        await recheck_ids(
+            conn, done, progress, client=resolved_client, settings=settings, on_job=on_job
+        )
+        # 재분류까지 끝난 뒤에도 직군이 대상 밖이면 버린다. 다시 수집하지 않는다 (2026-10-22)
+        off_target = discard.off_target_ids(conn, done)
+        if off_target:
+            discard.discard(conn, off_target, reason=discard.OFF_TARGET)
+            progress.discarded += len(off_target)
+            logger.info("분류: 대상 직군 밖 공고 %s건을 버렸다", len(off_target))
+    if deliver and progress.processed:
         # 분류가 끝난 공고를 오공고로 보낸다 (2026-09-15 결정). 전송이 실패해도 분류는 성공이다
         await deliver_after_classify(conn, settings)
     return progress
+
+
+async def recheck_ids(
+    conn: sqlite3.Connection,
+    raw_job_ids: list[int],
+    progress: ClassifyProgress,
+    *,
+    client: Any | None = None,
+    settings: Settings | None = None,
+    on_job: OnJob | None = None,
+) -> list[int]:
+    """품질 검사에 걸린 공고를 다시 분류한다. 두 번까지 돌고, 다시 분류한 공고 id 를 돌려준다.
+
+    한 바퀴마다 검사 → 걸린 것만 재분류 → 다시 검사다. 첫 바퀴에 풀린 공고는 둘째 바퀴에 없다.
+    고른 공고는 분류 전에 한 번을 센다 — 도중에 죽어도 상한보다 더 돈을 쓰지 않는다. 호출 수와
+    토큰은 `progress` 에 더하고, 재분류 건수는 `rechecked` 로 따로 센다 (`app/classify/gate.py`).
+    """
+    touched: list[int] = []
+    current = list(raw_job_ids)
+    for _ in range(gate.MAX_RECHECKS):
+        picked = gate.pick(conn, current, local_now(settings))
+        if not picked:
+            break
+        gate.record(conn, picked)
+        current = list(picked)
+        logger.info("품질 검사: %s건을 다시 분류한다", len(current))
+        again = await classify_ids(
+            conn,
+            current,
+            ClassifyProgress(),
+            client=client,
+            settings=settings,
+            on_job=on_job,
+            recheck=False,
+            deliver=False,
+        )
+        gate.finish(conn, current, local_now(settings))
+        progress.rechecked += again.processed
+        progress.dropped += again.dropped
+        progress.calls += again.calls
+        progress.input_tokens += again.input_tokens
+        progress.output_tokens += again.output_tokens
+        progress.total_tokens += again.total_tokens
+        for message in again.errors:
+            progress.note(f"품질 검사: {message}")
+        touched.extend(raw_job_id for raw_job_id in current if raw_job_id not in touched)
+    return touched
 
 
 def remaining(conn: sqlite3.Connection) -> int:

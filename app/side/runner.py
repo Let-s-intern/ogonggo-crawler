@@ -240,7 +240,9 @@ def _classify(
         return None
 
     progress = ClassifyProgress()
-    asyncio.run(classify_ids(conn, raw_job_ids, progress, client=client, settings=settings))
+    asyncio.run(
+        classify_ids(conn, raw_job_ids, progress, client=client, settings=settings, recheck=True)
+    )
     counts.processed_count = progress.processed
     counts.failed_count = progress.failed
     if not progress.failed:

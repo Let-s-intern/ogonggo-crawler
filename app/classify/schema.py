@@ -139,6 +139,11 @@ class Posting(BaseModel):
     experience_min_years: str = ""
     experience_min_years_evidence: str = ""
 
+    # 0056. 원문이 경력 상한을 말할 때만 숫자다(`경력 1~3년` 의 3). 품질 검사가 이 칸이
+    # 비었는지 본다 (`app/classify/gate.py`)
+    experience_max_years: str = ""
+    experience_max_years_evidence: str = ""
+
     # 근무지. 오공고 enum 의 시·도 하나와 그 안의 시·군·구 하나를 고른다 (LC-3385,
     # `app/regions.py`). 모르면 빈 글자다. 목록은 응답 모델을 만들 때 enum 으로 건다
     # (`build_classification_model`) — 여기서 `Literal` 로 적으면 씨앗 파일과 두 벌이 된다.
@@ -263,7 +268,7 @@ JUDGE_FIELDS: tuple[str, ...] = (
 )
 
 # 원문에 근거가 있을 때만 숫자를 적는 칸. 판정 칸처럼 근거 문장이 따라오지만 목록이 없다
-NUMBER_FIELDS: tuple[str, ...] = ("experience_min_years",)
+NUMBER_FIELDS: tuple[str, ...] = ("experience_min_years", "experience_max_years")
 
 # 근무지. 시·군·구가 시·도 안에 있어야 해서 판정 칸과 따로 둔다 (`app/regions.py`)
 REGION: Final = "region"

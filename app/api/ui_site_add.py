@@ -18,6 +18,12 @@
   크롤러는 지운다 — 초안은 워크플로우가 없어 수집한 공고도 없다
 - 셀렉터 직접 고치기: 시험 실행 화면으로 보낸다
 
+## 시험 수집이 안 되면 한 번 고쳐 본다 (2026-10-21)
+
+시험 수집이 셀렉터 문제로 실패하면 AI 로 셀렉터를 고치고 다시 시험 수집한다
+(`app/api/auto_repair.py`). 되면 그대로 자동 수집까지 시작하고, 안 되면 원래 셀렉터로 되돌린 채
+지금처럼 `다시 찾기` 가 남는다. 고친 단계도 단계 기록에 보인다.
+
 ## 로고
 
 추가 창과 다시 찾기 창에서 회사 로고 파일을 함께 받는다 (2026-09-28 결정). 회사 화면의 파일
@@ -41,7 +47,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import HTMLResponse
 
 from app import db
-from app.api import crawlers, site_adds, workflows
+from app.api import auto_repair, crawlers, site_adds, workflows
 from app.api.ui import render
 from app.api.ui_companies import save_logo_file
 from app.api.ui_crawlers import error_detail
@@ -216,6 +222,19 @@ def _tested(run: crawlers.TestRunOut) -> site_adds.Step:
     return site_adds.Step("공고 몇 건 시험 수집", ok, lines)
 
 
+def _passed(run: crawlers.TestRunOut) -> bool:
+    return run.status == "success" and run.success_count > 0
+
+
+def _repaired(fixed: auto_repair.AutoRepair) -> site_adds.Step:
+    lines = [fixed.message]
+    if fixed.changes:
+        lines.append("고친 칸: " + ", ".join(FIELD_WORDS.get(name, name) for name in fixed.changes))
+    if fixed.test is not None and fixed.ok:
+        lines.extend(_tested(fixed.test).lines)
+    return site_adds.Step("AI 로 셀렉터 고쳐 다시 시험 수집", fixed.ok, lines)
+
+
 async def _work(
     add: site_adds.SiteAdd,
     connect: Callable[[], sqlite3.Connection],
@@ -223,6 +242,7 @@ async def _work(
     discover: crawlers.DiscoverFn,
     fetcher: FetchPolicy,
     scheduler: WorkflowScheduler,
+    repair: crawlers.RepairFn,
 ) -> None:
     """등록 → 시험 수집 → 자동 수집 시작. 단계마다 본 것과 어디서 멈췄는지를 `add` 에 남긴다."""
     async with site_adds.slot():
@@ -268,7 +288,21 @@ async def _work(
                 return
             add.matched, add.success_count = run.matched, run.success_count
             add.steps.append(_tested(run))
-            if run.status != "success" or run.success_count == 0:
+            if not _passed(run) and run.error_class in auto_repair.REPAIRABLE:
+                add.state = site_adds.REPAIRING
+                fixed = await auto_repair.repair_and_test(
+                    conn,
+                    created.id,
+                    trigger=auto_repair.REGISTER,
+                    repair=repair,
+                    fetcher=fetcher,
+                    error_class=run.error_class,
+                )
+                add.steps.append(_repaired(fixed))
+                if fixed.test is not None and fixed.ok:
+                    run = fixed.test
+                    add.matched, add.success_count = run.matched, run.success_count
+            if not _passed(run):
                 _fail(add, PROBLEMS.get(run.error_class or "", UNKNOWN_PROBLEM), run.error_message)
                 return
 
@@ -308,6 +342,7 @@ async def site_add_try(
     discover: Annotated[crawlers.DiscoverFn, Depends(crawlers.get_discoverer)],
     fetcher: Annotated[FetchPolicy, Depends(crawlers.get_crawl_fetcher)],
     scheduler: Annotated[WorkflowScheduler, Depends(workflows.get_workflow_scheduler)],
+    repair: Annotated[crawlers.RepairFn, Depends(crawlers.get_repairer)],
     launch: Annotated[Callable[[Coroutine[Any, Any, None]], None], Depends(get_add_launcher)],
     connect: Annotated[Callable[[], sqlite3.Connection], Depends(get_add_connect)],
     list_url: Annotated[str, Form()] = "",
@@ -370,7 +405,7 @@ async def site_add_try(
         interval_minutes if interval_minutes in allowed else DEFAULT_INTERVAL,
         has_affiliates=bool(has_affiliates),
     )
-    launch(_work(add, connect, generate, discover, fetcher, scheduler))
+    launch(_work(add, connect, generate, discover, fetcher, scheduler, repair))
     response = _form(request, conn, step="queued", add=add)
     response.headers["HX-Trigger"] = "site-added"
     return response

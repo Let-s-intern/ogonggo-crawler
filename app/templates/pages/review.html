@@ -90,6 +90,24 @@
   })();
 </script>
 
+{# 표 위 사유별 칩. 누르면 조회 조건의 숨은 사유 칸을 그 값으로 바꾸고 폼에 change 를 보낸다.
+   목록 보기를 바꾸면 사유를 비운다 — 칩은 확인 필요 보기에만 있어서, 남겨 두면 다른 보기에서
+   보이지 않는 조건이 걸린다. 폼보다 먼저 비우려고 캡처 단계에서 받는다.
+   표 조각은 다시 그려지므로 문서에 한 번만 건다 #}
+<script>
+  document.addEventListener('click', function (event) {
+    var chip = event.target.closest('[data-reason]');
+    var reason = document.getElementById('review-reason');
+    if (!chip || !reason) { return; }
+    reason.value = chip.getAttribute('data-reason');
+    reason.closest('form').dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  document.addEventListener('change', function (event) {
+    var reason = document.getElementById('review-reason');
+    if (reason && event.target.name === 'view') { reason.value = ''; }
+  }, true);
+</script>
+
 <script>
   (function () {
     var host = document.getElementById('review-table');

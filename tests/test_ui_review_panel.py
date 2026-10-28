@@ -132,7 +132,7 @@ def test_표에_상태가_칩으로_나온다(client: TestClient) -> None:
     html = client.get("/ui/review").text
 
     assert "오공고 보냄" in row_of(html, "AI Engineer 경력 채용")
-    assert "AI 분류 안 됨" in row_of(html, "분류 전 공고")
+    assert "AI 분류 전" in row_of(html, "분류 전 공고")
 
 
 def test_제목을_누르면_오른쪽_패널이_그_공고를_연다(client: TestClient) -> None:

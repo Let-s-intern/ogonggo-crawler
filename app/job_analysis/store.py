@@ -59,7 +59,7 @@ def save_target(
 ) -> None:
     """서버가 준 공고를 행에 적는다. 이미 있으면 공고 글과 해시만 바꾼다.
 
-    해시가 바뀌면 시도 수를 0 으로 돌린다 — 새 본문은 처음부터 다시 센다.
+    해시가 바뀌면 시도 수를 0 으로 돌리고 숨긴 시각도 비운다 — 새 본문은 처음부터 다시 센다.
     """
     conn.execute(
         """
@@ -71,6 +71,7 @@ def save_target(
                source = excluded.source, company = excluded.company, title = excluded.title,
                source_url = excluded.source_url, posting_json = excluded.posting_json,
                attempts = CASE WHEN content_hash = excluded.content_hash THEN attempts ELSE 0 END,
+               hidden_at = CASE WHEN content_hash = excluded.content_hash THEN hidden_at END,
                content_hash = excluded.content_hash, updated_at = datetime('now')
         """,
         (
@@ -127,6 +128,15 @@ def mark(
          WHERE ogonggo_job_id = ?
         """,
         (status, error[:1000], run_id, status, job_id),
+    )
+
+
+def mark_hidden(conn: sqlite3.Connection, job_id: int) -> None:
+    """오공고에서 숨겼다고 적는다. 본문이 바뀌면 `save_target` 이 비운다."""
+    conn.execute(
+        "UPDATE job_analysis_records SET hidden_at = datetime('now'), updated_at = datetime('now')"
+        " WHERE ogonggo_job_id = ?",
+        (job_id,),
     )
 
 

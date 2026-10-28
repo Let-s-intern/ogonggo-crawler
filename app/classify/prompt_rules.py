@@ -65,6 +65,7 @@ RULE_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("employment_type", "고용 형태", JUDGE),
     ("experience_type", "경력 구분", JUDGE),
     ("experience_min_years", "최소 경력 연수", JUDGE),
+    ("experience_max_years", "최대 경력 연수", JUDGE),
     ("education_level", "요구 학력", JUDGE),
     ("closes_when_filled", "채용 시 마감", JUDGE),
     ("application_method", "지원 방법", JUDGE),
@@ -285,6 +286,16 @@ DEFAULT_RULES = RuleSet(
             "때만 숫자만 적는다. 그 밖에는 빈 문자열이다. 신입·인턴 공고의 0 은 저장할 때 "
             "정해지므로 적지 않는다.",
             (Example("관련 경력 3년 이상", "3"),),
+        ),
+        "experience_max_years": FieldRule(
+            "최대 경력 연수. experience_type 이 EXPERIENCED 나 BOTH 이고 원문에 경력의 상한이 "
+            "적혀 있을 때만 숫자만 적는다. `1~3년`·`3년 이하`·`5년 미만`·`주니어(3년차 이하)` 처럼 "
+            "몇 년까지 받는지 읽히는 경우다. `미만` 은 그 수에서 1 을 뺀다. `N년 이상` 만 있거나 "
+            "상한을 말하지 않으면 빈 문자열이다 — 짐작해 넣지 않는다.",
+            (
+                Example("경력 1~3년", "3"),
+                Example("경력 5년 미만", "4"),
+            ),
         ),
         "education_level": FieldRule(
             "요구 학력. 지원 자격이 요구하는 **최소 학력**을 고른다. 우대사항에만 있는 "

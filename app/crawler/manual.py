@@ -190,7 +190,7 @@ async def add_posting(
     if text.strip() or images or image_urls:
         detail, notes = await _pasted(text, images, reader, image_urls=image_urls, fetcher=fetcher)
     else:
-        detail, notes = await _fetched_detail(cleaned, fetcher, open_renderer, reader)
+        detail, notes = await read_page(cleaned, fetcher, open_renderer, reader)
     if not detail.fields["body"].strip():
         raise ManualAddError(
             "페이지에서 공고 글자를 읽지 못했다. 공고 본문이 있는 주소인지 확인한다"
@@ -220,7 +220,7 @@ async def add_posting(
     return ManualAdd(raw_job_id=raw_job_id, workflow_id=workflow_id, notes=(*notes, *detail.notes))
 
 
-async def _fetched_detail(
+async def read_page(
     url: str,
     fetcher: FetchPolicy,
     open_renderer: RenderOpener | None,

@@ -332,10 +332,12 @@ async def test_every_call_is_recorded_with_its_tokens(conn: sqlite3.Connection) 
     progress = await run(conn, "깨진 응답", GOOD)
 
     rows = conn.execute("SELECT feature, total_tokens, ok FROM llm_calls ORDER BY id").fetchall()
-    # 공고 3건 중 첫 건은 두 번 불렀고, 공고마다 회사·모집 기간을 묻는 호출이 하나 더 있다
-    assert len(rows) == 7
+    # 공고 3건 중 첫 건은 두 번 불렀고, 공고마다 회사·모집 기간을 묻는 호출이 하나 더 있다.
+    # 셋 다 품질 검사에 걸려 공고마다 두 호출씩 두 번 더 분류한다
+    assert progress.rechecked == 3 * 2
+    assert len(rows) == 7 + 3 * 2 * 2
     assert {row["feature"] for row in rows} == {"classify"}
-    assert progress.calls == 7
+    assert progress.calls == len(rows)
     assert progress.total_tokens == sum(row["total_tokens"] for row in rows)
 
 
@@ -353,7 +355,8 @@ async def test_a_call_that_never_answered_is_recorded_as_failed(
 async def test_an_invented_value_is_counted_and_left_out(conn: sqlite3.Connection) -> None:
     progress = await run(conn, response(region="서울 강남구 테헤란로 123"))
 
-    assert progress.dropped == 3
+    # 품질 검사가 셋을 두 번 더 분류해 같은 값을 또 버린다
+    assert progress.dropped == 3 + 3 * 2
     assert read_classification(conn, 1)["region"] == ""
 
 
@@ -468,3 +471,59 @@ async def test_a_role_from_the_title_alone_is_stored(conn: sqlite3.Connection) -
     )
 
     assert read_classification(conn, 4)["position_name"] == "카카오비즈니스 파트너 플랫폼 PM"
+
+
+async def test_the_quality_gate_reclassifies_a_caught_posting_twice_at_most(
+    conn: sqlite3.Connection,
+) -> None:
+    """새 공고를 분류하는 길은 끝에 품질 검사가 돈다. 같은 공고는 두 번까지만 다시 분류한다."""
+    progress = await run(conn, GOOD)
+
+    rows = conn.execute(
+        "SELECT reasons, reasons_after, attempts, finished_at FROM quality_gate_runs"
+        " ORDER BY raw_job_id"
+    ).fetchall()
+    assert progress.rechecked == 3 * 2
+    assert [row["attempts"] for row in rows] == [2, 2, 2]
+    assert all(row["finished_at"] for row in rows)
+    # 가짜 응답은 직무·공고 내용을 채우지 않아 다시 분류해도 그대로다
+    # 최소 경력 연수를 뽑지 않아 경력 상한 조건에는 걸리지 않는다
+    assert rows[0]["reasons"] == "empty_key,thin_content,off_target"
+    assert rows[0]["reasons_after"] == rows[0]["reasons"]
+
+    again = ClassifyProgress()
+    await classify_ids(
+        conn, [1], again, client=FakeClient(GOOD), settings=settings_with_key(), recheck=True
+    )
+    assert again.rechecked == 0
+
+
+async def test_refilling_by_hand_skips_the_quality_gate(conn: sqlite3.Connection) -> None:
+    """운영자가 고른 공고를 다시 채우는 길은 이미 사람이 보고 있다."""
+    progress = ClassifyProgress()
+    await classify_ids(conn, [1], progress, client=FakeClient(GOOD), settings=settings_with_key())
+
+    assert progress.rechecked == 0
+    assert conn.execute("SELECT count(*) FROM quality_gate_runs").fetchone()[0] == 0
+
+
+async def test_새_공고_분류_뒤_직군이_대상_밖이면_버리고_보내지_않는다(
+    conn: sqlite3.Connection,
+) -> None:
+    """2026-10-22 결정 (`app/discard.py`). 재분류까지 끝난 뒤에도 대상 밖이면 버린다."""
+    # 분류가 직군을 고른 것과 같은 결과를 사람 보정으로 만든다 — 가짜 응답은 직군을 채우지 않는다
+    conn.execute(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (1, ?, ?)",
+        ("job_field", "엔지니어링·R&D"),
+    )
+    conn.execute(
+        "INSERT INTO job_field_overrides (raw_job_id, field_name, value) VALUES (2, ?, ?)",
+        ("job_field", "IT·개발"),
+    )
+
+    progress = await run(conn, GOOD)
+
+    assert progress.discarded == 1
+    assert [row[0] for row in conn.execute("SELECT id FROM raw_jobs ORDER BY id")] == [2, 3]
+    reason = conn.execute("SELECT reason FROM discarded_jobs WHERE source_url = 'https://x/1'")
+    assert reason.fetchone()[0] == "off_target"
