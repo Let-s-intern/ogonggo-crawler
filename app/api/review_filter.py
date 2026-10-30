@@ -174,6 +174,12 @@ EXPERIENCE_STATES: dict[str, str] = {
     EXPERIENCE_UP_TO: f"{TARGET_MAX_YEARS}년 이하",
 }
 
+# 들어온 날. 보기 칩과 따로 고르게 둔다 — `확인 필요` 와 겹쳐 오늘 들어온 것 중 손볼 것만 본다
+# (2026-10-30). 비어 있으면 가르지 않는다
+CRAWLED_STATES: dict[str, str] = {
+    "today": "오늘 들어옴",
+}
+
 # 보낼 준비 여부. 비어 있으면 가르지 않는다. `보내기 전` 은 아직 안 보낸 공고 전부다 — 확인
 # 필요에 걸렸거나 마감이 지난 것도 든다
 READY_STATES: dict[str, str] = {
@@ -309,6 +315,7 @@ class JobFilter:
     status: str = ""
     delivered: str = ""
     ready: str = ""
+    crawled: str = ""
     # 직군. 목록에 없는 이름이 와도 그대로 받는다 — 꺼진 직군으로 이미 분류된 공고를 조회할
     # 방법이 없어지면 안 된다. 여러 개는 쉼표로 잇는다(2026-10-19) — 한 칸이라 페이지 이동·지우기·
     # 보내기가 실어 나르는 모양이 그대로다. 직군 이름에는 쉼표가 없다
@@ -334,6 +341,7 @@ class JobFilter:
             "status": self.status,
             "delivered": self.delivered,
             "ready": self.ready,
+            "crawled": self.crawled,
             "job_field": self.job_field,
             "experience": self.experience,
             "dup": self.dup,
@@ -348,6 +356,7 @@ def read_filter(
     status: str = "",
     delivered: str = "",
     ready: str = "",
+    crawled: str = "",
     job_field: str = "",
     experience: str = "",
     dup: str = "",
@@ -365,6 +374,7 @@ def read_filter(
         status=status if status in DEADLINE_STATES else "",
         delivered=delivered if delivered in DELIVERY_STATES else "",
         ready=ready if ready in READY_STATES else "",
+        crawled=crawled if crawled in CRAWLED_STATES else "",
         job_field=",".join(JobFilter(job_field=job_field).job_fields),
         experience=experience if experience in EXPERIENCE_STATES else "",
         dup=dup if dup in DUP_CRITERIA else "",
@@ -445,6 +455,10 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
         params.append(now_local())
     elif picked.ready == "unsent":
         clauses.append(f"NOT {SENT_SQL}")
+
+    if picked.crawled == "today":
+        clauses.append("r.crawled_at >= ?")
+        params.append(today_start_utc())
 
     if picked.reason in CHECK_REASONS:
         clauses.append(CHECK_REASONS[picked.reason][1])
@@ -631,6 +645,7 @@ def _describe(conn: sqlite3.Connection, picked: JobFilter, scope: str) -> str:
             f"모집 {DEADLINE_STATES.get(picked.status, '전체')}",
             f"오공고 {DELIVERY_STATES.get(picked.delivered, '전체')}",
             f"준비 {READY_STATES.get(picked.ready, '전체')}",
+            f"들어온 날 {CRAWLED_STATES.get(picked.crawled, '전체')}",
             f"중복 {DUP_LABELS.get(picked.dup, '안 걸림')}",
             f"검색어 {picked.query or '없음'}",
         )
@@ -780,6 +795,7 @@ def form_filter(form: Any) -> JobFilter:
                 "status",
                 "delivered",
                 "ready",
+                "crawled",
                 "job_field",
                 "experience",
                 "dup",

@@ -30,6 +30,7 @@ from app import custom_fields
 from app.api import crawlers, job_detail, ui_target_fields
 from app.api.review_filter import (
     CHECK_REASONS,
+    CRAWLED_STATES,
     DEADLINE_STATES,
     DUP_CRITERIA,
     DUP_GROUP_PREVIEW,
@@ -281,6 +282,7 @@ def review_filters_fragment(
         **ui_target_fields.switch_context(conn),
         deadline_states=DEADLINE_STATES,
         ready_states=READY_STATES,
+        crawled_states=CRAWLED_STATES,
         experience_states=EXPERIENCE_STATES,
         views=VIEWS,
         view_counts=view_counts(conn),

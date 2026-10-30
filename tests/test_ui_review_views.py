@@ -219,11 +219,22 @@ def test_오늘_들어옴에서_확인_필요를_빼고_고른다(
     assert titles(client, view="today", ready="yes") == {"정상 대기"}
 
 
+def test_확인_필요에서_오늘_들어온_것만_고른다(client: TestClient) -> None:
+    assert titles(client, view="check", crawled="today") == {
+        "거절된 공고",
+        "분류 전 공고",
+        "칸 빈 공고",
+        "본문 짧은 공고",
+    }
+
+
 def test_보내기와_지우기도_보낼_준비_조건을_읽는다() -> None:
     from app.api.review_filter import form_filter
 
     assert form_filter({"view": "today", "ready": "yes"}).ready == "yes"
     assert form_filter({"ready": "nope"}).ready == ""
+    assert form_filter({"view": "check", "crawled": "today"}).crawled == "today"
+    assert form_filter({"crawled": "nope"}).crawled == ""
 
 
 def test_보냄은_보낸_공고_전부다(client: TestClient) -> None:
