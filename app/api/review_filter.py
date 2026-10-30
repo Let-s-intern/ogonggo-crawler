@@ -174,9 +174,11 @@ EXPERIENCE_STATES: dict[str, str] = {
     EXPERIENCE_UP_TO: f"{TARGET_MAX_YEARS}년 이하",
 }
 
-# 보낼 준비 여부. 비어 있으면 가르지 않는다
+# 보낼 준비 여부. 비어 있으면 가르지 않는다. `보내기 전` 은 아직 안 보낸 공고 전부다 — 확인
+# 필요에 걸렸거나 마감이 지난 것도 든다
 READY_STATES: dict[str, str] = {
     "yes": "보낼 준비 됨",
+    "unsent": "보내기 전",
 }
 
 # 같은 공고가 두 번 들어왔는지 보는 기준. 무엇을 중복으로 볼지가 상황마다 달라 고르게 둔다.
@@ -441,6 +443,8 @@ def filter_sql(picked: JobFilter) -> tuple[str, list[Any]]:
     if picked.ready == "yes":
         clauses.append(ready_sql())
         params.append(now_local())
+    elif picked.ready == "unsent":
+        clauses.append(f"NOT {SENT_SQL}")
 
     if picked.reason in CHECK_REASONS:
         clauses.append(CHECK_REASONS[picked.reason][1])

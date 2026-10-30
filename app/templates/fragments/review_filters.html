@@ -45,7 +45,7 @@
      `조건 전체 고르기` 로 한꺼번에 보낸다 #}
   <label for="review-ready" class="sr-only">보낼 준비</label>
   <select id="review-ready" name="ready" class="mt-0"
-          title="아직 안 보냈고 마감 전인데 확인 필요에 안 걸린 공고만">
+          title="보낼 준비 됨: 아직 안 보냈고 마감 전인데 확인 필요에 안 걸린 공고 · 보내기 전: 아직 안 보낸 공고 전부">
     <option value="">준비 전체</option>
     {% for value, label in ready_states.items() %}
     <option value="{{ value }}">{{ label }}</option>
