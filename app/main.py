@@ -59,6 +59,7 @@ from app.crawler.runner import close_orphan_runs
 from app.job_analysis import schedule as job_analysis_schedule
 from app.job_analysis.runner import close_orphan_runs as close_orphan_job_analysis_runs
 from app.log_ring import handler as _log_ring_handler
+from app.notify import daily_report
 from app.scheduler import get_scheduler, shutdown_scheduler
 from app.side.runs import close_orphans as close_orphan_side_runs
 from app.work_experience import schedule as work_experience_schedule
@@ -135,6 +136,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             bootcamp_schedule.sync(get_scheduler().scheduler, conn)
             work_experience_schedule.sync(get_scheduler().scheduler, conn)
             job_analysis_schedule.sync(get_scheduler().scheduler, conn)
+            daily_report.sync(get_scheduler().scheduler)
         except sqlite3.OperationalError:
             # 스키마가 아직 없는 DB 다. 등록할 워크플로우도 없다.
             #

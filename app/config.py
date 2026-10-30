@@ -135,6 +135,11 @@ class Settings(BaseSettings):
     ogonggo_internal_api_key: str = ""
     build_sha: str = "unknown"
 
+    # 일일 공고 현황 슬랙 웹훅. 비어 있으면 보내지 않는다 (`app/notify/daily_report.py`)
+    daily_report_slack_webhook: str = ""
+    # 보내는 시각 `HH:MM`. 표시 시간대 기준이다
+    daily_report_time: str = Field(default="13:30", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+
     # 실행
     # 동시 실행 상한의 초기값. 한 번 app_settings 에 들어간 뒤로는 DB 값이 이긴다
     # (`app/settings.py`). 초기값으로 들어갈 값이라 여기서 범위를 지킨다
