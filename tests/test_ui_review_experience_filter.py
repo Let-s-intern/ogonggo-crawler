@@ -9,7 +9,7 @@
 | `experience` 로 좁히면 그 값을 가진 건만 나온다 | 신입 공고만 골라 보낼 수 없다 |
 | 다른 조건(보냄·마감일 없음)과 겹쳐 걸린다 | 이미 보낸 공고 중 경력별로 마감일을 못 고친다 |
 | 목록에 없는 값은 조건을 걸지 않은 것으로 본다 | 엉뚱한 값 하나로 표가 비거나 오류가 난다 |
-| `3년 이하` 는 자동 전송과 같은 연차 조건이다 | 화면에서 고른 범위와 자동 전송 범위가 어긋난다 |
+| `1-3년` 은 자동 전송·수집과 같은 연차 조건이다 | 화면에서 고른 범위와 자동 전송 범위가 어긋난다 |
 """
 
 from __future__ import annotations
@@ -137,10 +137,14 @@ def test_조건_전체_고르기도_경력을_지킨다(conn: sqlite3.Connection
     assert form_raw_ids(conn, form) == [1]
 
 
-def test_3년_이하는_자동_전송과_같은_연차로_거른다(
+def test_1_3년은_자동_전송과_같은_연차로_거른다(
     conn: sqlite3.Connection, client: TestClient
 ) -> None:
-    """신입은 정규화가 0 으로, 연수를 말하지 않은 경력 공고는 빈 값으로 둔다. 둘 다 3년 이하다."""
+    """신입은 정규화가 0 으로, 연수를 말하지 않은 경력 공고는 빈 값으로 둔다. 둘 다 대상이다.
+
+    최대 경력이 있으면 그것이 3년 이하, 없으면 "N년 이상" 의 N 이 2년 이하여야 한다. "경력 3년
+    이상" 은 빠진다 (2026-10-30).
+    """
     years = {1: "0", 2: "5", 3: "0", 4: "0", 5: None}
     for raw_job_id, value in years.items():
         conn.execute(
@@ -160,6 +164,26 @@ def test_3년_이하는_자동_전송과_같은_연차로_거른다(
         """,
         (f"{LIST_URL}6/",),
     )
+    # 번호, 제목, 최소 경력, 최대 경력
+    for raw_job_id, title, low, high in (
+        (7, "1~3년 마케터", "1", "3"),
+        (8, "2년 이상 마케터", "2", None),
+        (9, "2~10년 마케터", "2", "10"),
+    ):
+        conn.execute(
+            "INSERT INTO raw_jobs (id, workflow_id, source_url, raw_data_json, content_hash)"
+            " VALUES (?, 1, ?, '{}', ?)",
+            (raw_job_id, f"{LIST_URL}{raw_job_id}/", f"hash-{raw_job_id}"),
+        )
+        conn.execute(
+            """
+            INSERT INTO normalized_jobs
+                (raw_job_id, company_name, title, source_url, experience_type,
+                 experience_min_years, experience_max_years)
+            VALUES (?, '예시회사', ?, ?, 'EXPERIENCED', ?, ?)
+            """,
+            (raw_job_id, title, f"{LIST_URL}{raw_job_id}/", low, high),
+        )
     conn.commit()
 
     assert _titles(client, experience="up_to_3") == {
@@ -167,7 +191,8 @@ def test_3년_이하는_자동_전송과_같은_연차로_거른다(
         "신입 개발자",
         "보내지 않은 신입",
         "아직 분류 안 된 공고",
-        "3년차 마케터",
+        "1~3년 마케터",
+        "2년 이상 마케터",
     }
     html = client.get("/ui/review/filters").text
-    assert '<option value="up_to_3">3년 이하</option>' in html
+    assert '<option value="up_to_3">1-3년</option>' in html

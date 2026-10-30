@@ -92,7 +92,7 @@ def add_job(
         "auto_close_enabled": "true",
         # 품질 검사를 통과한다 (`app/classify/gate.py`) — 공고 내용이 다 차 있고 경력 상한을 안다
         **{name: f"{name} 내용" for name in gate.CONTENT_FIELDS},
-        "experience_max_years": "5",
+        "experience_max_years": "3",
         **values,
     }
     conn.execute(
@@ -341,12 +341,36 @@ async def test_임시로_정한_직군과_인턴부터_3년차까지만_보낸�
 ) -> None:
     """2026-10-06 결정. 연수는 원문에 있을 때만 차므로 비면 보낸다. 지금 보내기도 같다.
 
+    "경력 3년 이상" 처럼 위가 열린 공고는 3년부터 빠진다 (2026-10-30). 수집과 같은 기준이다.
+
     2026-10-12 오공고가 합친 직군의 직무(온라인MD, 데이터엔지니어 등)도 합친 직군으로 보낸다.
     """
     marketing = add_job(conn, 1, job_field="마케팅·광고", job_role="퍼포먼스마케팅")
-    md = add_job(conn, 2, job_field="기획·전략", job_role="온라인MD", experience_min_years="3")
+    md = add_job(
+        conn,
+        2,
+        job_field="기획·전략",
+        job_role="온라인MD",
+        experience_min_years="1",
+        experience_max_years="3",
+    )
     design = add_job(conn, 3, job_field="기획·전략", job_role="UXUI·프로덕트디자인")
-    add_job(conn, 4, job_field="영업", job_role="B2B영업", experience_min_years="5")
+    add_job(
+        conn,
+        4,
+        job_field="영업",
+        job_role="B2B영업",
+        experience_min_years="5",
+        experience_max_years=None,
+    )
+    add_job(
+        conn,
+        7,
+        job_field="영업",
+        job_role="B2B영업",
+        experience_min_years="3",
+        experience_max_years=None,
+    )
     data = add_job(conn, 5, job_field="IT·개발", job_role="데이터엔지니어")
     seen = mock(lambda request: created(1), monkeypatch)
 
@@ -389,7 +413,14 @@ async def test_오공고에서_지운_직무의_공고는_자동으로_보내지
 async def test_골라_보내기는_직군과_연차를_보지_않는다(
     conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    add_job(conn, 1, job_field="기획·전략", job_role="웹디자인", experience_min_years="7")
+    add_job(
+        conn,
+        1,
+        job_field="기획·전략",
+        job_role="웹디자인",
+        experience_min_years="7",
+        experience_max_years="10",
+    )
     job_id = conn.execute("SELECT id FROM normalized_jobs").fetchone()["id"]
     mock(lambda request: created(1), monkeypatch)
 

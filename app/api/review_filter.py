@@ -166,12 +166,12 @@ _CHECK_SQL = f"(NOT {{sent}} AND {OPEN_SQL} AND {_TROUBLE_SQL})"
 # (2026-10-14). 보낸 공고를 빼는 이유는 다시 보내면 관리자 콘솔에서 고친 값을 덮어써서다
 _READY_TO_SEND_SQL = f"(NOT {{sent}} AND {OPEN_SQL} AND NOT {_TROUBLE_SQL})"
 
-# 경력 구분. 분류가 고르는 값 그대로이고, 끝에 연차로 거르는 `3년 이하` 가 붙는다 — 자동 전송이
+# 경력 구분. 분류가 고르는 값 그대로이고, 끝에 연차로 거르는 `1-3년` 이 붙는다 — 자동 전송이
 # 보내는 범위(인턴~3년차)와 같은 조건이다. 비어 있으면 가르지 않는다
 EXPERIENCE_UP_TO = "up_to_3"
 EXPERIENCE_STATES: dict[str, str] = {
     **EXPERIENCE_TYPES,
-    EXPERIENCE_UP_TO: f"{TARGET_MAX_YEARS}년 이하",
+    EXPERIENCE_UP_TO: f"1-{TARGET_MAX_YEARS}년",
 }
 
 # 들어온 날. 보기 칩과 따로 고르게 둔다 — `확인 필요` 와 겹쳐 오늘 들어온 것 중 손볼 것만 본다

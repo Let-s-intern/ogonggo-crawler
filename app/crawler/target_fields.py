@@ -38,6 +38,9 @@ DEFAULT_FIELDS: tuple[str, ...] = (
 # 인턴~3년차. 최소 경력이 이보다 긴 공고는 수집에서 거르고(`app/crawler/screen.py`) 보내지도
 # 않는다(`app/deliver/spring.py` 의 `TARGET_MAX_YEARS`). 오공고 고용24 수집과 같은 값이다
 MAX_CAREER_YEARS = 3
+# "N년 이상" 처럼 위가 열린 경력 조건에서 대상으로 보는 N 의 상한. 수집(`app/crawler/screen.py`)과
+# 전송·공고 목록의 `1-3년`(`app/deliver/spring.py` 의 `TARGET_YEARS_SQL`)이 같이 쓴다
+MAX_OPEN_MIN_YEARS = 2
 
 
 class TargetFieldError(ValueError):

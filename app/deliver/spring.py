@@ -348,13 +348,17 @@ def auto_missing(job: Mapping[str, Any] | sqlite3.Row) -> list[str]:
     return empty
 
 
-# 인턴~3년차. 최소 경력 연수는 경력 공고에서 원문이 말할 때만 차므로, 비었으면 보낸다. 신입·인턴은
-# 정규화가 0 으로 채운다. 공고 목록의 경력 조건 `3년 이하` 도 이 조건이다
+# 인턴~3년차. 수집(`app/crawler/screen.py`)과 같은 기준이다 — 최대 경력이 있으면 그것이 3년 이하,
+# 없으면 "N년 이상" 의 N 이 2년 이하. 최대 경력만 보던 예전 조건은 "경력 3년 이상" 공고를
+# 통과시켰다(2026-10-30). 연수는 원문이 말할 때만 차므로 둘 다 비었으면 보낸다. 신입·인턴은
+# 정규화가 최소 경력을 0 으로 채운다. 공고 목록의 경력 조건 `1-3년` 도 이 조건이다
 # (`app/api/review_filter.py`)
 TARGET_MAX_YEARS = target_fields.MAX_CAREER_YEARS
 TARGET_YEARS_SQL = (
-    "(trim(coalesce(n.experience_min_years, '')) = ''"
-    f" OR CAST(n.experience_min_years AS INTEGER) <= {TARGET_MAX_YEARS})"
+    "(CASE WHEN trim(coalesce(n.experience_max_years, '')) <> ''"
+    f" THEN CAST(n.experience_max_years AS INTEGER) <= {TARGET_MAX_YEARS}"
+    " ELSE trim(coalesce(n.experience_min_years, '')) = ''"
+    f" OR CAST(n.experience_min_years AS INTEGER) <= {target_fields.MAX_OPEN_MIN_YEARS} END)"
 )
 # 오공고에서 지운 직무의 공고는 보내지 않는다 (2026-10-15, LC-3472). 오공고도 더 모으지 않는다
 EXCLUDED_ROLES_SQL = (
