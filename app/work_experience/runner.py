@@ -27,6 +27,7 @@ from typing import Protocol
 
 from app.config import Settings
 from app.crawler.fetcher import FetchError, FetchPolicy, get_fetcher
+from app.notify import work_report
 from app.work_experience import deliver, portal, store
 from app.work_experience import settings as work_settings
 from app.work_experience.fill import LlmProgramFiller, ProgramFill, ProgramFillError
@@ -167,7 +168,22 @@ async def run_all(
         excluded |= summary.failed_urls
         if summary.status != "success" or not summary.deferred or not summary.filled:
             break
+    await _report(summaries)
     return summaries
+
+
+async def _report(summaries: list[RunSummary]) -> None:
+    last = summaries[-1] if summaries else RunSummary()
+    lines = [
+        f"목록 {last.listed}건 · 새 프로그램 {sum(item.new for item in summaries)}건",
+        f"AI 정리 {sum(item.filled for item in summaries)}건: "
+        f"실패 {sum(item.fill_failed for item in summaries)}건",
+        f"오공고 전송 {sum(item.sent for item in summaries)}건: "
+        f"실패 {sum(item.failed for item in summaries)}건",
+        f"남은 프로그램 {last.deferred}건",
+        *last.notes,
+    ]
+    await work_report.report("미래내일 일경험 수집", lines, ok=last.status == "success")
 
 
 class _ListBroken(RuntimeError):

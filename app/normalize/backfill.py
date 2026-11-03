@@ -58,6 +58,7 @@ from app.normalize.engine import (
     posting_parts,
 )
 from app.normalize.rules import COMPANY_FIELDS, DERIVED_FIELDS, NORMALIZED_FIELDS, Rule
+from app.notify import work_report
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +151,12 @@ class Backfill:
             with self._lock:
                 self._progress.running = False
                 self._progress.finished_at = _now()
+                done = self._progress.snapshot()
+            work_report.report_sync(
+                "재정규화",
+                [f"대상 {done.total}건: 처리 {done.processed}, 실패 {done.failed}"],
+                ok=not done.failed or bool(done.processed),
+            )
 
 
 def renormalize(conn: sqlite3.Connection, progress: BackfillProgress) -> BackfillProgress:

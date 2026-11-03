@@ -44,6 +44,7 @@ from app.classify.batch import (
     classify_ids,
 )
 from app.normalize.backfill import ConnectFactory
+from app.notify import work_report
 
 logger = logging.getLogger(__name__)
 
@@ -226,6 +227,7 @@ class RefillBoard:
             except sqlite3.Error:
                 logger.exception("AI 다시 채우기: 마감일 변화를 세지 못했다")
             conn.close()
+            done: RefillRun | None = None
             # 모델 설정이 틀려 한 건도 못 돌았거나 중단됐으면 남은 것은 실패다. 대기로 두면
             # 목록이 끝나지 않는 일을 영원히 기다린다. 멈춘 것은 손대지 않았으니 표시를 지운다
             with self._lock:
@@ -244,7 +246,19 @@ class RefillBoard:
                     self._run.finished_at = _now()
                     self._run.found = found
                     self._run.changed = changed
+                    done = self._run.snapshot()
             run.release()
+            if done is not None:
+                work_report.report_sync(
+                    "AI 다시 채우기",
+                    [
+                        f"대상 {done.total}건: 처리 {done.done}, 실패 {done.failed}"
+                        + (" (중간에 멈춤)" if stopped else ""),
+                        f"마감일 새로 찾음 {len(found)}건 · 바뀜 {len(changed)}건",
+                        f"오공고 값을 바꿔야 하는 공고 {len(done.sent_changes())}건",
+                    ],
+                    ok=not done.failed or bool(done.done),
+                )
             logger.info(
                 "AI 다시 채우기 끝: 마감일 새로 찾음 %s건, 바뀜 %s건%s",
                 len(found),
