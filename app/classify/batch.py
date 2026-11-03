@@ -49,6 +49,7 @@ from app.llm.base import Usage
 from app.llm.log import CLASSIFY, record_call
 from app.normalize.backfill import ConnectFactory, rewrite_one
 from app.normalize.engine import NormalizeError, load_rules
+from app.notify import work_report
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +180,16 @@ class ClassifyRun:
             with self._lock:
                 self._progress.running = False
                 self._progress.finished_at = _now()
+                done = self._progress.snapshot()
+            work_report.report_sync(
+                "분류",
+                [
+                    f"대상 {done.total}건: 처리 {done.processed}, 실패 {done.failed}",
+                    f"재분류 {done.rechecked}건 · 버림 {done.discarded}건",
+                    f"토큰 {done.total_tokens:,}개",
+                ],
+                ok=not done.failed or bool(done.processed),
+            )
 
 
 def bounded(limit: int) -> int:

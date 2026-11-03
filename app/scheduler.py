@@ -172,12 +172,16 @@ class WorkflowScheduler:
         side_runner: RunFn | None = None,
         sleep: SleepFn | None = None,
         clock: ClockFn | None = None,
+        finisher: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._scheduler = scheduler or AsyncIOScheduler(timezone="UTC")
         self._runner = runner or self._execute
         self._side_runner = side_runner or self._execute_side
         self._sleep = sleep or asyncio.sleep
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._finisher = finisher or self._finish_round
+        # 한 바퀴가 남은 분류와 보고까지 끝나기 전이다. 공고 분석이 이것을 보고 기다린다
+        self._round_busy = False
         # 도는 중인 한 바퀴에서 아직 시작하지 않은 곳의 예정 시각. 화면이 읽는다
         self._round_slots: dict[int, datetime] = {}
         self._scheduler.add_listener(_log_skipped_tick, EVENT_JOB_MAX_INSTANCES)
@@ -203,6 +207,7 @@ class WorkflowScheduler:
             return
 
         self._round_slots = daily.slots(remaining, now, end)
+        self._round_busy = True
         logger.info(
             "매일 수집 시작: %d곳을 %s 까지 한 곳씩 돈다",
             len(remaining),
@@ -222,9 +227,28 @@ class WorkflowScheduler:
                 except Exception:
                     # 한 곳이 죽어도 남은 곳은 돈다. 실패는 실행 기록에 이미 남는다
                     logger.exception("매일 수집: workflow %s 실행이 예외로 끝났다", workflow_id)
+            logger.info("매일 수집 끝: %d곳", len(remaining))
+            await self._finisher()
         finally:
             self._round_slots = {}
-        logger.info("매일 수집 끝: %d곳", len(remaining))
+            self._round_busy = False
+
+    async def _finish_round(self) -> None:
+        """남은 분류를 마치고 결과를 보낸다. 실패해도 한 바퀴는 끝난 것이다."""
+        # 이 모듈을 읽는 화면 쪽 모듈을 함께 읽으므로 여기서 읽는다
+        from app.notify import daily_report
+
+        conn = db.connect()
+        try:
+            await daily_report.finish_round(conn)
+        except Exception:
+            logger.exception("매일 수집: 끝난 뒤 정리가 예외로 끝났다")
+        finally:
+            conn.close()
+
+    @property
+    def round_busy(self) -> bool:
+        return self._round_busy
 
     @staticmethod
     def _still_active(workflow_id: int) -> bool:

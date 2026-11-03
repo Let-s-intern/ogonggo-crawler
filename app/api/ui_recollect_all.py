@@ -39,6 +39,7 @@ from app.api.ui_workflows import (
 from app.crawler import recollect
 from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import FetchPolicy
+from app.notify import work_report
 from app.scheduler import RunGate, WorkflowScheduler
 
 logger = logging.getLogger(__name__)
@@ -209,6 +210,15 @@ async def _run_all(
         state.running = False
         state.current = ""
         state.finished_at = _now()
+        await work_report.report(
+            "전체 원문 다시 수집",
+            [
+                f"{state.done}/{state.total}곳: 실패 {len(state.failed)}곳, "
+                f"건너뜀 {len(state.skipped)}곳",
+                *(f"{name}: {reason}" for name, reason in state.failed[:10]),
+            ],
+            ok=not state.failed,
+        )
         logger.info(
             "전체 원문 다시 수집이 끝났다: %s/%s곳, 실패 %s곳, 건너뜀 %s곳",
             state.done,

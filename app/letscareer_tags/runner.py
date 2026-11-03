@@ -19,6 +19,7 @@ from app.config import Settings
 from app.job_analysis import ogonggo as job_analysis_ogonggo
 from app.letscareer_tags import ogonggo
 from app.letscareer_tags.tagger import TagError, tag
+from app.notify import work_report
 
 logger = logging.getLogger(__name__)
 
@@ -102,4 +103,15 @@ async def run_once(
         summary.left,
         " / ".join(summary.notes),
     )
+    # 대상이 없는 날이 대부분이다. 할 일이 없었던 것은 보고할 것이 없다
+    if summary.targets or summary.status != "success":
+        await work_report.report(
+            "렛츠커리어 콘텐츠 태그",
+            [
+                f"대상 {summary.targets}건: 보냄 {summary.sent}, 실패 {summary.failed}, "
+                f"남음 {summary.left}",
+                *summary.notes,
+            ],
+            ok=summary.status == "success",
+        )
     return summary

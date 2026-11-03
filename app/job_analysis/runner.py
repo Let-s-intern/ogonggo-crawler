@@ -32,6 +32,7 @@ from app.job_analysis import guide as guides
 from app.job_analysis import ogonggo, store
 from app.job_analysis.analyzer import AnalysisError, analyze
 from app.job_analysis.posting import Posting
+from app.notify import work_report
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,16 @@ async def run_once(
         summary.failed,
         summary.skipped,
         summary.left,
+    )
+    await work_report.report(
+        "공고 분석",
+        [
+            f"대상 {summary.targets}건: 분석 {summary.analyzed}, 실패 {summary.failed}, "
+            f"남음 {summary.left}",
+            f"오공고 전송 {summary.sent}건",
+            *summary.notes,
+        ],
+        ok=summary.status == "success",
     )
     return summary
 

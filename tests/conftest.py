@@ -94,10 +94,11 @@ def static_detail_holds(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _no_storage_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """로컬 `.env` 의 `S3_*` 가 테스트에 새지 않게 한다. 저장소 설정은 테스트가 DB 에 넣는다."""
+    """로컬 `.env` 의 `S3_*` 와 슬랙 웹훅이 테스트에 새지 않게 한다."""
     from app.config import get_settings
 
     for name in (
+        "DAILY_REPORT_SLACK_WEBHOOK",
         "S3_ENDPOINT",
         "S3_REGION",
         "S3_BUCKET",

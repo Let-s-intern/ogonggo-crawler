@@ -31,6 +31,7 @@ from app.bootcamp import settings as bootcamp_settings
 from app.bootcamp.fill import BootcampFill, BootcampFillError, LlmBootcampFiller
 from app.config import Settings
 from app.crawler.fetcher import FetchError, FetchPolicy, get_fetcher
+from app.notify import work_report
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +171,22 @@ async def run_sesac_all(
         excluded |= summary.failed_urls
         if summary.status != "success" or not summary.deferred or not summary.filled:
             break
+    await _report(summaries)
     return summaries
+
+
+async def _report(summaries: list[RunSummary]) -> None:
+    last = summaries[-1] if summaries else RunSummary()
+    lines = [
+        f"목록 {last.listed}건 · 새 과정 {sum(item.new for item in summaries)}건",
+        f"AI 정리 {sum(item.filled for item in summaries)}건: "
+        f"실패 {sum(item.fill_failed for item in summaries)}건",
+        f"오공고 전송 {sum(item.sent for item in summaries)}건: "
+        f"실패 {sum(item.failed for item in summaries)}건",
+        f"남은 과정 {last.deferred}건",
+        *last.notes,
+    ]
+    await work_report.report("부트캠프 수집", lines, ok=last.status == "success")
 
 
 class _ListBroken(RuntimeError):

@@ -53,6 +53,7 @@ from app.api.ui_companies import save_logo_file
 from app.api.ui_crawlers import error_detail
 from app.api.ui_sites import PROBLEMS, UNKNOWN_PROBLEM
 from app.crawler.fetcher import FetchPolicy
+from app.notify import work_report
 from app.scheduler import WorkflowScheduler
 from app.storage import s3
 from app.storage import settings as store
@@ -335,6 +336,16 @@ async def _work(
             _fail(add, UNKNOWN_PROBLEM, f"{type(exc).__name__}: {exc}")
         finally:
             conn.close()
+            await _report(add)
+
+
+async def _report(add: site_adds.SiteAdd) -> None:
+    lines = [add.company or add.list_url]
+    if add.problem:
+        lines.append(add.problem)
+    else:
+        lines.append(f"시험 수집 {add.success_count or 0}건을 읽고 자동 수집을 시작했다")
+    await work_report.report("사이트 추가", lines, ok=not add.problem)
 
 
 @router.post("/ui/sites/new", response_class=HTMLResponse)
