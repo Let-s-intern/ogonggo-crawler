@@ -26,7 +26,7 @@
   {% endfor %}
 </ul>
 {% if adds | selectattr("running") | list %}
-<div hidden hx-get="/ui/sites" hx-trigger="every 3s" hx-target="#site-list" hx-swap="innerHTML"></div>
+<div hidden hx-get="/ui/sites" hx-include="#site-q" hx-trigger="every 3s" hx-target="#site-list" hx-swap="innerHTML"></div>
 {% endif %}
 {% endif %}
 <ul class="divide-y divide-slate-100">
@@ -59,7 +59,11 @@
     </button>
   </li>
   {% else %}
-  {% if not adds %}
+  {% if q and not adds %}
+  <li class="px-4 py-6 text-sm text-slate-500">
+    ‘<span class="font-medium">{{ q }}</span>’ 이름의 사이트가 없습니다
+  </li>
+  {% elif not adds %}
   <li class="px-4 py-6 text-sm text-slate-500">
     아직 사이트가 없습니다. 오른쪽 위 <span class="font-medium">+ 사이트 추가</span>로 채용공고 목록 페이지를 등록합니다
   </li>

@@ -14,7 +14,13 @@
 </div>
 {# 사이트 전체 원문 다시 수집. 도는 동안 스스로 갱신한다 (`app/api/ui_recollect_all.py`) #}
 <div id="recollect-all" hx-get="/ui/sites/recollect-all" hx-trigger="load" hx-swap="outerHTML"></div>
-<div id="site-list" class="card" hx-get="/ui/sites" hx-trigger="load, panel-closed from:body, site-added from:body" hx-swap="innerHTML">
+{# 이름 검색. 목록을 다시 부르는 모든 길(패널 닫기·사이트 추가·3초 갱신)이 검색어를 같이 보낸다 #}
+<div class="mb-3">
+  <label for="site-q" class="sr-only">사이트 이름 검색</label>
+  <input id="site-q" name="q" type="search" placeholder="사이트 이름 검색" autocomplete="off" class="mt-0 w-64"
+         hx-get="/ui/sites" hx-trigger="input changed delay:300ms, search" hx-target="#site-list" hx-swap="innerHTML">
+</div>
+<div id="site-list" class="card" hx-get="/ui/sites" hx-include="#site-q" hx-trigger="load, panel-closed from:body, site-added from:body" hx-swap="innerHTML">
   <div class="px-4 py-3">{{ empty("목록을 불러오는 중") }}</div>
 </div>
 {% endblock %}
