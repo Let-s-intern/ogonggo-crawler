@@ -35,6 +35,12 @@
 (`app/crawler/sightings.py`). 최근 수집 표의 목록 수가 매번 같은 수(8·10·20 같은)에 붙어 있으면 첫
 쪽만 읽는 사이트일 수 있어 켜지 않는다.
 
+## 이름 검색
+
+목록 위 검색칸에 적은 글자가 이름에 들어간 사이트만 보인다 (2026-11-08 결정, LC-3585). 대소문자와
+앞뒤 공백은 가리지 않는다. 주소는 찾지 않는다 — 운영자는 회사 이름으로 사이트를 찾는다. 추가 중인
+사이트도 회사 이름으로 같이 거른다. 문제 있는 곳이 위로 오는 순서는 그대로다.
+
 ## 지우기
 
 패널 맨 아래에서 사이트를 지운다 (2026-10-15 결정). 사이트 목록·매일 수집에서 빠지고 스케줄러 잡도
@@ -97,11 +103,17 @@ def _problem(conn: sqlite3.Connection, card: CardView) -> str:
     return PROBLEMS.get(str(row["error_class"] or ""), UNKNOWN_PROBLEM)
 
 
-def _cards(conn: sqlite3.Connection, scheduler: WorkflowScheduler) -> list[CardView]:
+def _matches(name: str, q: str) -> bool:
+    """검색어가 이름에 들어 있나. 검색어가 비면 모두 맞는다."""
+    return q.casefold() in name.casefold()
+
+
+def _cards(conn: sqlite3.Connection, scheduler: WorkflowScheduler, q: str = "") -> list[CardView]:
     next_runs = scheduler.next_run_times(conn)
     return [
         _view(conn, item, next_run_at=next_runs.get(item.id))
         for item in workflows.list_workflows(conn)
+        if _matches(item.name, q)
     ]
 
 
@@ -110,16 +122,19 @@ def site_list_fragment(
     request: Request,
     conn: Annotated[sqlite3.Connection, Depends(workflows.get_connection)],
     scheduler: Annotated[WorkflowScheduler, Depends(workflows.get_workflow_scheduler)],
+    q: str = "",
 ) -> HTMLResponse:
-    """사이트 목록. 문제 있는 사이트가 위로 온다."""
-    cards = _cards(conn, scheduler)
+    """사이트 목록. 문제 있는 사이트가 위로 온다. `q` 가 있으면 이름에 그 글자가 든 사이트만."""
+    q = q.strip()
+    cards = _cards(conn, scheduler, q)
     order = {"bad": 0, "warn": 1}
     cards.sort(key=lambda card: (order.get(card.tone, 2), card.item.status != "active"))
     return render(
         request,
         "fragments/site_list.html",
         rows=[(card, _problem(conn, card)) for card in cards],
-        adds=site_adds.listed(),
+        adds=[add for add in site_adds.listed() if _matches(add.company, q)],
+        q=q,
     )
 
 

@@ -114,6 +114,39 @@ def test_사이트마다_한_줄이고_문제_있는_곳이_위로_온다(client
     assert html.index("고장 난 곳") < html.index("잘 되는 곳") < html.index("멈춘 곳")
 
 
+def test_이름_검색칸이_있고_목록_갱신이_검색어를_같이_보낸다(client: TestClient) -> None:
+    body = client.get("/workflows").text
+
+    assert 'id="site-q" name="q"' in body
+    assert 'hx-include="#site-q"' in body
+
+
+def test_이름에_검색어가_든_사이트만_보인다(client: TestClient) -> None:
+    html = client.get("/ui/sites", params={"q": " 고장 "}).text
+
+    assert html.count('class="site-row"') == 1
+    assert "고장 난 곳" in html
+    assert "잘 되는 곳" not in html
+
+
+def test_주소로는_찾지_않는다(client: TestClient) -> None:
+    html = client.get("/ui/sites", params={"q": "careers.example.com"}).text
+
+    assert html.count('class="site-row"') == 0
+    assert "이름의 사이트가 없습니다" in html
+    assert "아직 사이트가 없습니다" not in html
+
+
+def test_영문_이름은_대소문자를_가리지_않는다(client: TestClient, conn: sqlite3.Connection) -> None:
+    conn.execute("UPDATE workflows SET name = 'Naver Cloud' WHERE id = 1")
+    conn.commit()
+
+    html = client.get("/ui/sites", params={"q": "naver"}).text
+
+    assert html.count('class="site-row"') == 1
+    assert "Naver Cloud" in html
+
+
 def test_실패는_쉬운_말로_적고_고치기를_붙인다(client: TestClient) -> None:
     html = client.get("/ui/sites").text
     broken = html[html.index("고장 난 곳") : html.index("잘 되는 곳")]
