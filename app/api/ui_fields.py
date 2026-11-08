@@ -25,6 +25,7 @@ from app.api.review_filter import _filled
 from app.api.ui import render
 from app.classify.schema import FALLBACK_FIELDS
 from app.llm.base import LlmCallError
+from app.notify import work_report
 
 logger = logging.getLogger(__name__)
 
@@ -266,6 +267,13 @@ async def _fill(field_id: int, limit: int, connect: Any) -> None:
     finally:
         _progress.running = False
         conn.close()
+    lines = [
+        _progress.field_label,
+        f"대상 {_progress.total}건: 처리 {_progress.done}, 채움 {_progress.filled}",
+    ]
+    if _progress.error:
+        lines.append(_progress.error)
+    await work_report.report("추가 항목 다시 채우기", lines, ok=not _progress.error)
 
 
 @router.post("/ui/fields/{field_id}/fill", response_class=HTMLResponse)

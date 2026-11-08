@@ -90,9 +90,11 @@ from app.crawler.runner import (
     RECOLLECT,
     SCHEDULE,
     TEST,
+    RunResult,
     consecutive_failures,
     run_workflow,
 )
+from app.notify import work_report
 from app.scheduler import RunGate, WorkflowScheduler, get_gate
 
 logger = logging.getLogger(__name__)
@@ -514,15 +516,32 @@ async def _execute_run(
     conn = connect()
     try:
         async with gate.slot():
-            await run_workflow(conn, workflow_id, trigger=MANUAL, fetcher=fetcher)
-    except Exception:
+            result = await run_workflow(conn, workflow_id, trigger=MANUAL, fetcher=fetcher)
+        await _report_run(conn, workflow_id, "수동 수집", result)
+    except Exception as exc:
         # 백그라운드에서 터진 예외는 아무도 보지 못한다. 로그에는 남긴다
         logger.exception("workflow %s: 화면에서 시작한 1회 실행이 예외로 끝났다", workflow_id)
+        await work_report.report("수동 수집", [f"{type(exc).__name__}: {exc}"], ok=False)
     finally:
         _running.discard(workflow_id)
         # 연속 실패로 자동 중지됐을 수 있다. 그 사실이 잡까지 가야 실제로 멈춘다
         scheduler.sync(conn)
         conn.close()
+
+
+async def _report_run(
+    conn: sqlite3.Connection, workflow_id: int, name: str, result: RunResult
+) -> None:
+    """화면에서 시작한 사이트 하나의 실행 결과를 보낸다."""
+    row = conn.execute("SELECT name FROM workflows WHERE id = ?", (workflow_id,)).fetchone()
+    lines = [
+        str(row["name"]) if row is not None else f"워크플로우 {workflow_id}",
+        f"처리 {result.success_count}건 · 새 공고 {result.new_count}건 · "
+        f"건너뜀 {result.skipped_count}건 · 실패 {result.fail_count}건",
+    ]
+    if result.error_message:
+        lines.append(result.error_message)
+    await work_report.report(name, lines, ok=result.status == SUCCESS)
 
 
 def _find(conn: sqlite3.Connection, workflow_id: int) -> workflows.WorkflowItem | None:
@@ -888,11 +907,13 @@ async def _execute_recollect(
     """
     conn = connect()
     try:
-        await recollect.recollect_workflow(
+        result = await recollect.recollect_workflow(
             conn, workflow_id, fetcher=fetcher, slot=gate.slot, include_closed=include_closed
         )
-    except Exception:
+        await _report_run(conn, workflow_id, "원문 다시 수집", result)
+    except Exception as exc:
         logger.exception("workflow %s: 원문 다시 수집이 예외로 끝났다", workflow_id)
+        await work_report.report("원문 다시 수집", [f"{type(exc).__name__}: {exc}"], ok=False)
     finally:
         _running.discard(workflow_id)
         scheduler.sync(conn)

@@ -45,6 +45,7 @@ from app.classify.batch import ClassifyProgress, classify_ids, get_classify_run
 from app.classify.store import scope_ids
 from app.config import Settings
 from app.normalize.backfill import ConnectFactory
+from app.notify import work_report
 from app.side import runs, store
 from app.side.runs import FAILED, SUCCESS, SideRun, SideRunCounts
 
@@ -195,7 +196,18 @@ def run_now(
     `client` 와 `settings` 는 테스트가 가짜 제공자를 넣는 자리다. 비워 두면 화면에서 고른
     제공자와 모델을 실행할 때 읽는다 (`app/llm/settings.py`).
     """
-    return run_once(conn, side_workflow_id, _body(client, settings), trigger=trigger)
+    run = run_once(conn, side_workflow_id, _body(client, settings), trigger=trigger)
+    _report(run)
+    return run
+
+
+def _report(run: SideRun) -> None:
+    """부가 워크플로우 한 번의 결과를 보낸다. 수집 직후 분류는 한 바퀴 끝에 모아서 보낸다."""
+    if run.trigger == AFTER_CRAWL or run.status == runs.SKIPPED:
+        return
+    lines = [f"대상 {run.target_count}건: 처리 {run.processed_count}, 실패 {run.failed_count}"]
+    lines.extend(text for text in (run.note, run.error_message) if text)
+    work_report.report_sync("분류", lines, ok=run.status == SUCCESS)
 
 
 def _body(client: Any | None, settings: Settings | None) -> Body:
@@ -333,6 +345,6 @@ def _work(
         logger.exception("부가 워크플로우 %s 의 실행 연결을 열지 못했다", taken.workflow.id)
         return
     try:
-        run_claimed(conn, taken.workflow, taken.run_id, _body(client, settings))
+        _report(run_claimed(conn, taken.workflow, taken.run_id, _body(client, settings)))
     finally:
         conn.close()

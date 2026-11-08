@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sqlite3
 from datetime import datetime
@@ -20,10 +21,14 @@ from app.config import get_settings
 from app.job_analysis import settings as analysis_settings
 from app.job_analysis.runner import SCHEDULE, run_once
 from app.letscareer_tags import runner as letscareer_tags
+from app.scheduler import get_scheduler
 
 logger = logging.getLogger(__name__)
 
 JOB_ID = "job_analysis:daily"
+
+# 수집 한 바퀴가 끝났는지 들여다보는 간격
+ROUND_POLL_SECONDS = 30
 
 
 def stop_at(stop_time: str, now: datetime | None = None) -> datetime:
@@ -35,11 +40,22 @@ def stop_at(stop_time: str, now: datetime | None = None) -> datetime:
     )
 
 
+async def wait_for_round(until: datetime) -> None:
+    """수집 한 바퀴가 분류까지 끝나기를 멈춤 시각까지 기다린다.
+
+    분류가 끝나기 전에 분석을 시작하면 그날 공고가 오공고에 없어 분석에서 빠진다. 멈춤 시각까지
+    끝나지 않으면 분석 쪽이 남은 공고를 다음 실행에 넘기고 그 사실을 보고한다.
+    """
+    while get_scheduler().round_busy and datetime.now(until.tzinfo) < until:
+        await asyncio.sleep(ROUND_POLL_SECONDS)
+
+
 async def _execute() -> None:
     conn = db.connect()
     try:
         config = analysis_settings.read_config(conn)
         until = stop_at(config.stop_time)
+        await wait_for_round(until)
         # 렛츠커리어 콘텐츠 태그는 같은 서버·같은 AI 를 쓰므로 같은 잡에서 돈다 (LC-3448).
         # 처음 한 번만 수백 건이고 그 뒤로는 하루 몇 건이라, 공고 분석이 멈춤 시각까지 쓰더라도
         # 밀리지 않게 먼저 돈다
