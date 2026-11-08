@@ -247,8 +247,14 @@ async def _work(
     fetcher: FetchPolicy,
     scheduler: WorkflowScheduler,
     repair: crawlers.RepairFn,
+    *,
+    report: bool = True,
 ) -> None:
-    """등록 → 시험 수집 → 자동 수집 시작. 단계마다 본 것과 어디서 멈췄는지를 `add` 에 남긴다."""
+    """등록 → 시험 수집 → 자동 수집 시작. 단계마다 본 것과 어디서 멈췄는지를 `add` 에 남긴다.
+
+    `report` 를 끄면 슬랙으로 보내지 않는다. 엑셀 일괄 추가가 다 끝난 뒤 한 통으로 묶는다
+    (`app/api/ui_site_bulk.py`).
+    """
     async with site_adds.slot():
         conn = connect()
         try:
@@ -336,7 +342,8 @@ async def _work(
             _fail(add, UNKNOWN_PROBLEM, f"{type(exc).__name__}: {exc}")
         finally:
             conn.close()
-            await _report(add)
+            if report:
+                await _report(add)
 
 
 async def _report(add: site_adds.SiteAdd) -> None:
@@ -346,6 +353,17 @@ async def _report(add: site_adds.SiteAdd) -> None:
     else:
         lines.append(f"시험 수집 {add.success_count or 0}건을 읽고 자동 수집을 시작했다")
     await work_report.report("사이트 추가", lines, ok=not add.problem)
+
+
+def check_input(list_url: str, company: str, detail_url: str) -> str:
+    """걸기 전에 입력만 보고 거를 사유. 없으면 빈 문자열이다. 엑셀 일괄 추가도 같은 검사를 쓴다."""
+    if not list_url.startswith(("http://", "https://")) or not company:
+        return "목록 페이지 주소(http:// 나 https://)와 회사 이름을 모두 넣어 주세요"
+    if detail_url and not detail_url.startswith(("http://", "https://")):
+        return "공고 주소는 http:// 나 https:// 로 시작해야 합니다"
+    if crawlers.same_page(list_url, detail_url):
+        return crawlers.SAME_PAGE_MESSAGE
+    return ""
 
 
 @router.post("/ui/sites/new", response_class=HTMLResponse)
@@ -376,24 +394,9 @@ async def site_add_try(
         "interval": interval_minutes,
         "has_affiliates": bool(has_affiliates),
     }
-    if not list_url.startswith(("http://", "https://")) or not company:
-        return _form(
-            request,
-            conn,
-            step="form",
-            error="목록 페이지 주소(http:// 나 https://)와 회사 이름을 모두 넣어 주세요",
-            **kept,
-        )
-    if detail_url and not detail_url.startswith(("http://", "https://")):
-        return _form(
-            request,
-            conn,
-            step="form",
-            error="공고 주소는 http:// 나 https:// 로 시작해야 합니다",
-            **kept,
-        )
-    if crawlers.same_page(list_url, detail_url):
-        return _form(request, conn, step="form", error=crawlers.SAME_PAGE_MESSAGE, **kept)
+    problem = check_input(list_url, company, detail_url)
+    if problem:
+        return _form(request, conn, step="form", error=problem, **kept)
     try:
         save_logo_file(conn, company, logo)
     except s3.StorageError as exc:

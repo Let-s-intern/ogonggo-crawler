@@ -1,0 +1,59 @@
+{# 엑셀로 사이트 여러 곳 추가 창 (`app/api/ui_site_bulk.py`). 틀은 base.html 의 모달이다.
+
+   step: form(파일 고르기) → queued(걸었음. 진행은 사이트 목록 맨 위에 한 건 추가와 똑같이 보인다) #}
+<div class="modal-body">
+  <div class="modal-head flex items-center justify-between">
+    <h3 id="app-modal-title" class="text-base font-semibold text-slate-900">엑셀로 여러 곳 추가</h3>
+    <button type="button" data-modal-close class="mt-0">닫기</button>
+  </div>
+  <div class="modal-scroll space-y-4" tabindex="-1" autofocus>
+    {% if error %}<p class="notice notice-bad">{{ error }}</p>{% endif %}
+
+    {% if step == "form" %}
+    <p class="text-sm text-slate-600">한 줄에 한 곳씩 적은 엑셀을 올리면 줄마다 사이트 추가를 겁니다. 두 곳씩 차례로 돌고, 진행과 실패는 사이트 목록 맨 위에 보입니다</p>
+    <div class="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+      <p class="my-0">첫 줄은 머리글입니다. <span class="font-medium">회사 이름</span> · <span class="font-medium">목록 페이지 주소</span>는 꼭, <span class="font-medium">예시 공고 주소</span> · <span class="font-medium">계열사</span>(그룹 사이트면 O)는 비워도 됩니다</p>
+      <p class="mb-0 mt-1 text-xs text-slate-500">.xlsx · .csv, 한 번에 {{ max_rows }}곳까지. 이미 등록된 목록 주소는 건너뜁니다. 로고는 회사 화면에서 따로 올려 주세요</p>
+      <p class="mb-0 mt-2"><a href="/ui/sites/bulk/template" class="text-sm font-medium underline" download>빈 양식 받기 (.xlsx)</a></p>
+    </div>
+    <form class="space-y-3" hx-post="/ui/sites/bulk" hx-target="#app-modal-body" hx-swap="innerHTML"
+          hx-encoding="multipart/form-data" hx-disabled-elt="find button">
+      <p class="my-0">
+        <label for="site-bulk-file" class="block">파일</label>
+        <input id="site-bulk-file" name="sheet" type="file" required
+               accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" class="w-full text-sm">
+      </p>
+      <p class="my-0 flex justify-between gap-2">
+        <button type="button" hx-get="/ui/sites/new" hx-target="#app-modal-body" hx-swap="innerHTML" class="mt-0">한 곳만 추가</button>
+        <button type="submit" class="mt-0">올려서 추가</button>
+      </p>
+    </form>
+
+    {% elif step == "queued" %}
+    {% if ready %}
+    <div class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+      <span class="font-semibold">{{ ready | length }}곳</span> 추가를 시작했어요. 두 곳씩 차례로 돌고, 한 곳에 1분쯤 걸립니다. 창을 닫아도 계속 돕니다
+    </div>
+    {% else %}
+    <p class="notice notice-bad">걸 수 있는 줄이 없었어요. 아래 사유를 보고 고쳐 다시 올려 주세요</p>
+    {% endif %}
+    {% if skipped %}
+    <div>
+      <p class="mb-1 text-sm font-medium text-slate-900">건너뛴 줄 {{ skipped | length }}개</p>
+      <ul class="site-bulk-skipped space-y-1">
+        {% for item in skipped %}
+        <li class="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-900">
+          <span class="font-medium">{{ item.line }}번째 줄 · {{ item.label }}</span>
+          <span class="block break-all text-xs text-amber-700">{{ item.reason }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    <p class="flex justify-end gap-2">
+      <button type="button" hx-get="/ui/sites/bulk" hx-target="#app-modal-body" hx-swap="innerHTML" class="mt-0">파일 하나 더</button>
+      <button type="button" data-modal-close class="mt-0">닫기</button>
+    </p>
+    {% endif %}
+  </div>
+</div>
