@@ -12,8 +12,8 @@
     {% if step == "form" %}
     <p class="text-sm text-slate-600">한 줄에 한 곳씩 적은 엑셀을 올리면 줄마다 사이트 추가를 겁니다. 두 곳씩 차례로 돌고, 진행과 실패는 사이트 목록 맨 위에 보입니다</p>
     <div class="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-      <p class="my-0">첫 줄은 머리글입니다. <span class="font-medium">회사 이름</span> · <span class="font-medium">목록 페이지 주소</span>는 꼭, <span class="font-medium">예시 공고 주소</span> · <span class="font-medium">계열사</span>(그룹 사이트면 O)는 비워도 됩니다</p>
-      <p class="mb-0 mt-1 text-xs text-slate-500">.xlsx · .csv, 한 번에 {{ max_rows }}곳까지. 이미 등록된 목록 주소는 건너뜁니다. 로고는 회사 화면에서 따로 올려 주세요</p>
+      <p class="my-0">첫 줄은 머리글입니다. <span class="font-medium">회사 이름</span> · <span class="font-medium">목록 페이지 주소</span>는 꼭, <span class="font-medium">예시 공고 주소</span> · <span class="font-medium">계열사</span>(그룹 사이트면 O) · <span class="font-medium">로고 주소</span>는 비워도 됩니다</p>
+      <p class="mb-0 mt-1 text-xs text-slate-500">.xlsx · .csv, 한 번에 {{ max_rows }}곳까지. 이미 등록된 목록 주소는 건너뜁니다. 로고 주소의 이미지는 서버가 내려받아 보관합니다</p>
       <p class="mb-0 mt-2"><a href="/ui/sites/bulk/template" class="text-sm font-medium underline" download>빈 양식 받기 (.xlsx)</a></p>
     </div>
     <form class="space-y-3" hx-post="/ui/sites/bulk" hx-target="#app-modal-body" hx-swap="innerHTML"
@@ -32,10 +32,24 @@
     {% elif step == "queued" %}
     {% if ready %}
     <div class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-      <span class="font-semibold">{{ ready | length }}곳</span> 추가를 시작했어요. 두 곳씩 차례로 돌고, 한 곳에 1분쯤 걸립니다. 창을 닫아도 계속 돕니다
+      <span class="font-semibold">{{ ready | length }}곳</span> 추가를 시작했어요{% if logo_count %} (로고 {{ logo_count }}곳 함께){% endif %}. 두 곳씩 차례로 돌고, 한 곳에 1분쯤 걸립니다. 창을 닫아도 계속 돕니다
     </div>
+    {% if logo_count %}<p class="text-xs text-slate-500">로고를 못 받은 곳은 다 끝난 뒤 슬랙 보고에 적힙니다. 사이트 패널에서 다시 올릴 수 있어요</p>{% endif %}
     {% else %}
     <p class="notice notice-bad">걸 수 있는 줄이 없었어요. 아래 사유를 보고 고쳐 다시 올려 주세요</p>
+    {% endif %}
+    {% if notes %}
+    <div>
+      <p class="mb-1 text-sm font-medium text-slate-900">로고 없이 건 줄 {{ notes | length }}개</p>
+      <ul class="site-bulk-notes space-y-1">
+        {% for item in notes %}
+        <li class="rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-800">
+          <span class="font-medium">{{ item.line }}번째 줄 · {{ item.label }}</span>
+          <span class="block break-all text-xs text-slate-500">{{ item.reason }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
     {% endif %}
     {% if skipped %}
     <div>

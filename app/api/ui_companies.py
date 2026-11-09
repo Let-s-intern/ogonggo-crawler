@@ -371,7 +371,13 @@ def save_logo_file(conn: sqlite3.Connection, company: str, logo: UploadFile | No
     if logo is None or not logo.filename:
         return ""
     # 상한보다 한 바이트만 더 읽는다. 다 읽고 나서 재면 이미 다 쓴 뒤다
-    data = logo.file.read(s3.MAX_IMAGE_BYTES + 1)
+    return save_logo_bytes(conn, company, logo.file.read(s3.MAX_IMAGE_BYTES + 1))
+
+
+def save_logo_bytes(conn: sqlite3.Connection, company: str, data: bytes) -> str:
+    """이미지 바이트를 올리고 그 회사 행에 적는다. 엑셀 일괄 추가는 로고 주소에서 받은 바이트를
+    넘긴다 (`app/api/ui_site_bulk.py`). 비어 있으면 아무것도 하지 않는다.
+    """
     if not data:
         return ""
     public_url = s3.upload_image(
