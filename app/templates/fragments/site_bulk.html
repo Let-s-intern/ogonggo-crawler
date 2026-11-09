@@ -14,7 +14,10 @@
     <div class="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
       <p class="my-0">첫 줄은 머리글입니다. <span class="font-medium">회사 이름</span> · <span class="font-medium">목록 페이지 주소</span>는 꼭, <span class="font-medium">예시 공고 주소</span> · <span class="font-medium">계열사</span>(그룹 사이트면 O) · <span class="font-medium">로고 주소</span>는 비워도 됩니다</p>
       <p class="mb-0 mt-1 text-xs text-slate-500">.xlsx · .csv, 한 번에 {{ max_rows }}곳까지. 이미 등록된 목록 주소는 건너뜁니다. 로고 주소의 이미지는 서버가 내려받아 보관합니다</p>
-      <p class="mb-0 mt-2"><a href="/ui/sites/bulk/template" class="text-sm font-medium underline" download>빈 양식 받기 (.xlsx)</a></p>
+      <p class="mb-0 mt-2 flex flex-wrap items-center gap-3">
+        <a href="/ui/sites/bulk/template" class="text-sm font-medium underline" download>빈 양식 받기 (.xlsx)</a>
+        <button type="button" hx-get="/ui/sites/bulk/logos" hx-target="#app-modal-body" hx-swap="innerHTML" class="mt-0 text-sm">로고 올려 주소 받기</button>
+      </p>
     </div>
     <form class="space-y-3" hx-post="/ui/sites/bulk" hx-target="#app-modal-body" hx-swap="innerHTML"
           hx-encoding="multipart/form-data" hx-disabled-elt="find button">
