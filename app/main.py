@@ -42,6 +42,7 @@ from app.api import (
     ui_settings,
     ui_side,
     ui_site_add,
+    ui_site_bulk,
     ui_sites,
     ui_storage,
     ui_target_fields,
@@ -172,6 +173,7 @@ app.include_router(ui_workflows.router)
 app.include_router(ui_sites.router)
 app.include_router(ui_recollect_all.router)
 app.include_router(ui_site_add.router)
+app.include_router(ui_site_bulk.router)
 app.include_router(ui_posting_add.router)
 app.include_router(ui_runs.router)
 app.include_router(ui_rules.router)

@@ -24,6 +24,7 @@
 
     {% if step == "form" %}
     <p class="text-sm text-slate-600">채용공고 목록 페이지 주소만 넣으면 나머지는 자동으로 찾습니다. 공고 몇 건을 시험으로 가져와 되면 자동 수집까지 시작합니다. 창을 닫아도 계속 돌고, 여러 곳을 이어서 넣어도 됩니다</p>
+    <p class="text-sm"><button type="button" hx-get="/ui/sites/bulk" hx-target="#app-modal-body" hx-swap="innerHTML" class="mt-0">엑셀로 여러 곳 한 번에 추가</button></p>
     <form class="space-y-3" hx-post="/ui/sites/new" hx-target="#app-modal-body" hx-swap="innerHTML"
           hx-encoding="multipart/form-data" hx-disabled-elt="find button">
       {% if replace_add_id %}<input type="hidden" name="replace_add_id" value="{{ replace_add_id }}">{% endif %}

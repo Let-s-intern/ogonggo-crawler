@@ -27,6 +27,8 @@ dependencies = [
     "boto3",
     # 본문이 이미지로만 올라온 공고의 긴 이미지를 조각내 읽는다 (app/crawler/images.py)
     "pillow",
+    # 사이트 여러 곳을 엑셀 한 장으로 올린다 (app/api/ui_site_bulk.py)
+    "openpyxl>=3.1.5",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +37,7 @@ dev = [
     "pytest-asyncio",
     "ruff",
     "mypy",
+    "types-openpyxl>=3.1.5.20261017",
 ]
 
 [build-system]
