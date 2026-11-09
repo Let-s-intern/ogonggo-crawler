@@ -371,17 +371,42 @@ def save_logo_file(conn: sqlite3.Connection, company: str, logo: UploadFile | No
     if logo is None or not logo.filename:
         return ""
     # 상한보다 한 바이트만 더 읽는다. 다 읽고 나서 재면 이미 다 쓴 뒤다
-    data = logo.file.read(s3.MAX_IMAGE_BYTES + 1)
+    return save_logo_bytes(conn, company, logo.file.read(s3.MAX_IMAGE_BYTES + 1))
+
+
+def save_logo_bytes(conn: sqlite3.Connection, company: str, data: bytes) -> str:
+    """이미지 바이트를 올리고 그 회사 행에 적는다. 엑셀 일괄 추가는 로고 주소에서 받은 바이트를
+    넘긴다 (`app/api/ui_site_bulk.py`). 비어 있으면 아무것도 하지 않는다.
+    """
     if not data:
         return ""
-    public_url = s3.upload_image(
-        store.read_config(conn), data=data, name=f"{UPLOAD_PREFIX}{uuid4().hex}"
-    )
+    public_url = upload_logo(conn, data)
+    assign_logo(conn, company, public_url)
+    return public_url
+
+
+def upload_logo(conn: sqlite3.Connection, data: bytes) -> str:
+    """회사에 붙이지 않고 저장소에만 올려 공개 주소를 돌려준다.
+
+    엑셀 일괄 추가의 `로고 올려 주소 받기` 가 쓴다 (`app/api/ui_site_bulk.py`). 엑셀을 채우는
+    사람은 회사가 아직 없어 회사 화면에서 로고를 올릴 수 없다 — 여기서 주소를 받아 엑셀의
+    `로고 주소` 칸에 적는다. 실패하면 `s3.StorageError` 를 그대로 올린다.
+    """
+    return s3.upload_image(store.read_config(conn), data=data, name=f"{UPLOAD_PREFIX}{uuid4().hex}")
+
+
+def is_uploaded_logo(conn: sqlite3.Connection, url: str) -> bool:
+    """우리 저장소에 올린 로고 주소인가. 그렇다면 다시 내려받아 올릴 필요가 없다."""
+    config = store.read_config(conn)
+    return config.configured and url.startswith(config.public_url(UPLOAD_PREFIX))
+
+
+def assign_logo(conn: sqlite3.Connection, company: str, public_url: str) -> None:
+    """이미 올린 로고 주소를 그 회사 행에 적고 그 회사 공고를 다시 정규화한다."""
     companies.ensure(conn, company)
     companies.set_logo_url(conn, company, public_url)
     refresh_postings(conn, company)
     logger.info("%s 로고를 올렸다 -> %s", company, public_url)
-    return public_url
 
 
 # 모회사를 여기서 사람이 고치는 라우트(`PUT /ui/companies/parent`)는 2026-08-29 에 뺐다.

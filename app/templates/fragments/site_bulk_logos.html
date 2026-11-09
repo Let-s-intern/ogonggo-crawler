@@ -1,0 +1,65 @@
+{# 로고 올려 주소 받기 (`app/api/ui_site_bulk.py`). 틀은 base.html 의 모달이다.
+
+   엑셀을 채우는 사람은 회사가 아직 없어 로고를 올릴 곳이 없다. 이미지만 저장소에 올리고 주소를 받아
+   엑셀의 `로고 주소` 칸에 붙여 넣는다. step: form(고르기) → done(파일 이름과 주소) #}
+<div class="modal-body">
+  <div class="modal-head flex items-center justify-between">
+    <h3 id="app-modal-title" class="text-base font-semibold text-slate-900">로고 올려 주소 받기</h3>
+    <button type="button" data-modal-close class="mt-0">닫기</button>
+  </div>
+  <div class="modal-scroll space-y-4" tabindex="-1" autofocus>
+    {% if error %}<p class="notice notice-bad">{{ error }}</p>{% endif %}
+
+    {% if not storage_ready %}
+    <p class="text-sm text-slate-600">로고를 올리려면 <a href="/settings/storage" class="underline">설정 › 파일 저장소</a>를 먼저 채워 주세요</p>
+
+    {% elif step == "form" %}
+    <p class="text-sm text-slate-600">회사 로고 이미지를 올리면 주소를 돌려줍니다. 그 주소를 엑셀의 <span class="font-medium">로고 주소</span> 칸에 붙여 넣으면 사이트를 넣을 때 그 회사 로고가 됩니다</p>
+    <form class="space-y-3" hx-post="/ui/sites/bulk/logos" hx-target="#app-modal-body" hx-swap="innerHTML"
+          hx-encoding="multipart/form-data" hx-disabled-elt="find button">
+      <p class="my-0">
+        <label for="site-bulk-logos" class="block">로고 이미지 <span class="font-normal text-slate-500">(여러 장)</span></label>
+        <input id="site-bulk-logos" name="logos" type="file" multiple required accept="{{ accept_attr }}" class="w-full text-sm">
+        <span class="text-xs text-slate-500">{{ accepted }}, 장당 {{ max_label }}, 한 번에 {{ max_logos }}장까지. 파일 이름을 회사 이름으로 해 두면 짝 맞추기 쉽습니다</span>
+      </p>
+      <p class="my-0 flex justify-between gap-2">
+        <button type="button" hx-get="/ui/sites/bulk" hx-target="#app-modal-body" hx-swap="innerHTML" class="mt-0">엑셀 올리기로</button>
+        <button type="submit" class="mt-0">올리기</button>
+      </p>
+    </form>
+
+    {% elif step == "done" %}
+    {% set ok = results | selectattr("url") | list %}
+    <p class="text-sm text-slate-600">{{ results | length }}장 중 {{ ok | length }}장을 올렸어요. 주소를 복사해 엑셀의 <span class="font-medium">로고 주소</span> 칸에 붙여 넣어 주세요</p>
+    {% if ok %}
+    <p class="my-0">
+      {# 파일 이름과 주소를 탭으로 나눠 복사한다. 엑셀에 붙이면 두 칸으로 들어간다 #}
+      <button type="button" class="mt-0"
+              data-copy="{% for item in ok %}{{ item.filename }}&#9;{{ item.url }}{% if not loop.last %}&#10;{% endif %}{% endfor %}"
+              onclick="navigator.clipboard.writeText(this.dataset.copy).then(() => { this.textContent = '복사했어요' })">파일 이름·주소 전부 복사</button>
+      <span class="block text-xs text-slate-500">엑셀에 붙이면 파일 이름과 주소가 두 칸으로 들어갑니다</span>
+    </p>
+    {% endif %}
+    <ul class="site-bulk-logo-results space-y-1">
+      {% for item in results %}
+      <li class="rounded-md border px-3 py-1.5 text-sm {% if item.url %}border-slate-200 bg-slate-50{% else %}border-red-200 bg-red-50{% endif %}">
+        <span class="block font-medium {% if not item.url %}text-red-800{% endif %}">{{ item.filename }}</span>
+        {% if item.url %}
+        <span class="flex items-center gap-2">
+          <input type="text" readonly value="{{ item.url }}" class="mt-0 min-w-0 flex-1 text-xs" onclick="this.select()">
+          <button type="button" class="mt-0 shrink-0 text-xs" data-copy="{{ item.url }}"
+                  onclick="navigator.clipboard.writeText(this.dataset.copy).then(() => { this.textContent = '복사됨' })">복사</button>
+        </span>
+        {% else %}
+        <span class="block text-xs text-red-700">{{ item.problem }}</span>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="flex justify-end gap-2">
+      <button type="button" hx-get="/ui/sites/bulk/logos" hx-target="#app-modal-body" hx-swap="innerHTML" class="mt-0">더 올리기</button>
+      <button type="button" hx-get="/ui/sites/bulk" hx-target="#app-modal-body" hx-swap="innerHTML" class="mt-0">엑셀 올리기로</button>
+    </p>
+    {% endif %}
+  </div>
+</div>
