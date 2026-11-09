@@ -12,7 +12,16 @@
 찾는다 (`HEADERS`). 회사 이름과 목록 페이지 주소만 있으면 되고 예시 공고 주소 · 계열사는 비워도
 된다. 엑셀에서 CSV 로 저장하면 cp949 로 나오므로 utf-8 이 아니면 cp949 로 읽는다.
 
-로고는 받지 않는다. 파일 칸을 줄마다 둘 수 없다. 회사 화면이나 사이트 패널에서 올린다.
+## 로고 (2026-11-09)
+
+로고는 파일이 아니라 `로고 주소` 칸으로 받는다. 파일 칸을 줄마다 둘 수 없고, 엑셀 칸 안에 붙인
+그림은 openpyxl 이 읽지 못하거나 어느 줄 것인지 위치로 짐작해야 한다. 주소를 그대로 저장하지는
+않는다 — 남의 주소는 언제 사라질지 모른다(`ui_site_add` 의 로고 결정). 공용 fetch 클라이언트로
+내려받아 한 건 추가와 같은 길로 저장소에 올린다 (`ui_companies.save_logo_bytes`).
+
+받기는 요청 밖에서 사이트 추가 바로 앞에 한다. 로고를 못 받아도 사이트 추가는 그대로 건다 — 로고는
+나중에 사이트 패널에서 올리면 되지만 사이트는 다시 넣어야 한다. 못 받은 로고는 끝에 보내는 슬랙
+한 통에 회사와 사유가 적힌다. 주소 꼴이 틀렸거나 저장소가 비어 있으면 걸 때 창에 바로 적는다.
 
 ## 거르는 줄
 
@@ -39,6 +48,7 @@ from openpyxl.styles import Font
 
 from app.api import crawlers, site_adds, workflows
 from app.api.ui import render
+from app.api.ui_companies import save_logo_bytes
 from app.api.ui_site_add import (
     DEFAULT_INTERVAL,
     _work,
@@ -46,9 +56,11 @@ from app.api.ui_site_add import (
     get_add_connect,
     get_add_launcher,
 )
-from app.crawler.fetcher import FetchPolicy
+from app.crawler.fetcher import FetchError, FetchPolicy
 from app.notify import work_report
 from app.scheduler import WorkflowScheduler
+from app.storage import s3
+from app.storage import settings as store
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +74,7 @@ COMPANY = "company"
 LIST_URL = "list_url"
 DETAIL_URL = "detail_url"
 AFFILIATES = "has_affiliates"
+LOGO_URL = "logo_url"
 
 # 머리글 이름 → 칸. 띄어쓰기는 지우고 비교한다. 양식의 이름이 맨 앞이다
 HEADERS: dict[str, tuple[str, ...]] = {
@@ -69,8 +82,9 @@ HEADERS: dict[str, tuple[str, ...]] = {
     LIST_URL: ("목록페이지주소", "목록주소", "목록url", "채용목록주소"),
     DETAIL_URL: ("예시공고주소", "공고주소", "상세주소", "상세url"),
     AFFILIATES: ("계열사", "계열사여부", "그룹채용"),
+    LOGO_URL: ("로고주소", "로고", "로고url", "로고이미지주소", "로고이미지"),
 }
-TEMPLATE_HEADERS = ("회사 이름", "목록 페이지 주소", "예시 공고 주소", "계열사")
+TEMPLATE_HEADERS = ("회사 이름", "목록 페이지 주소", "예시 공고 주소", "계열사", "로고 주소")
 
 # 계열사 칸에서 켬으로 읽는 값
 YES = {"o", "y", "yes", "예", "네", "1", "true", "v", "✓", "✔", "켬", "있음"}
@@ -87,6 +101,7 @@ class Row:
     list_url: str
     detail_url: str
     has_affiliates: bool
+    logo_url: str = ""
 
 
 @dataclass
@@ -165,6 +180,7 @@ def parse_rows(filename: str, data: bytes) -> list[Row]:
             list_url=at(row, LIST_URL),
             detail_url=at(row, DETAIL_URL),
             has_affiliates=_key(at(row, AFFILIATES)) in YES,
+            logo_url=at(row, LOGO_URL),
         )
         for offset, row in enumerate(table[start + 1 :])
         if any(row)
@@ -209,20 +225,76 @@ def sort_rows(rows: Iterable[Row], taken: set[str]) -> tuple[list[Row], list[Ski
     return ready, skipped
 
 
+def check_logos(ready: list[Row], storage_ready: bool) -> list[Skipped]:
+    """로고 주소를 쓸 수 없는 줄. 사이트는 그대로 걸고 로고 주소만 비운다."""
+    notes: list[Skipped] = []
+    for row in ready:
+        if not row.logo_url:
+            continue
+        if not storage_ready:
+            reason = "파일 저장소가 비어 있어 로고는 올리지 않았어요(설정 › 파일 저장소)"
+        elif not row.logo_url.startswith(("http://", "https://")):
+            reason = "로고 주소가 http:// 나 https:// 로 시작하지 않아 로고 없이 걸었어요"
+        else:
+            continue
+        notes.append(Skipped(row.line, row.company, reason))
+        row.logo_url = ""
+    return notes
+
+
+async def put_logo(
+    connect: Callable[[], sqlite3.Connection], fetcher: FetchPolicy, company: str, url: str
+) -> str:
+    """로고 주소에서 받아 저장소에 올린다. 못 하면 사유를, 되면 빈 문자열을 돌려준다."""
+    try:
+        result = await fetcher.request(url)
+    except FetchError as exc:
+        return f"로고를 받지 못했어요: {exc}"
+    if len(result.content) > s3.MAX_IMAGE_BYTES:
+        return f"로고가 {s3.MAX_IMAGE_LABEL} 를 넘어요"
+    conn = connect()
+    try:
+        save_logo_bytes(conn, company, result.content)
+    except s3.StorageError as exc:
+        return f"로고를 올리지 못했어요: {exc.message}"
+    finally:
+        conn.close()
+    return ""
+
+
 async def _all(
     adds: list[site_adds.SiteAdd],
     work: Callable[[site_adds.SiteAdd], Coroutine[Any, Any, None]],
     skipped: int,
+    logo: Callable[[site_adds.SiteAdd], Coroutine[Any, Any, str]],
 ) -> None:
     """한꺼번에 걸고 다 끝나면 슬랙으로 한 통 보낸다. 동시에 도는 수는 `site_adds.slot` 이
-    막는다.
+    막는다. 로고는 사이트 추가 바로 앞에 받는다.
     """
-    await asyncio.gather(*(work(add) for add in adds))
+    logo_problems: dict[int, str] = {}
+
+    async def one(add: site_adds.SiteAdd) -> None:
+        try:
+            problem = await logo(add)
+        except Exception as exc:  # noqa: BLE001 — 로고 때문에 사이트 추가가 멈추면 안 된다
+            logger.exception("사이트 일괄 추가: %s 로고에서 예상하지 못한 오류", add.company)
+            problem = f"로고를 올리지 못했어요: {type(exc).__name__}"
+        if problem:
+            logo_problems[add.id] = problem
+            logger.info("사이트 일괄 추가: %s %s", add.company, problem)
+        await work(add)
+
+    await asyncio.gather(*(one(add) for add in adds))
     failed = [add for add in adds if add.problem]
     lines = [f"{len(adds) - len(failed)}곳 자동 수집 시작, {len(failed)}곳 못 찾음"]
     if skipped:
         lines.append(f"파일에서 건너뛴 줄 {skipped}개")
     lines.extend(f"못 찾음: {add.company} — {add.problem}" for add in failed[:20])
+    lines.extend(
+        f"로고 못 올림: {add.company} — {logo_problems[add.id]}"
+        for add in adds
+        if add.id in logo_problems
+    )
     await work_report.report("사이트 일괄 추가", lines, ok=not failed)
 
 
@@ -241,7 +313,7 @@ def site_bulk_template() -> Response:
     sheet.append(list(TEMPLATE_HEADERS))
     for cell in sheet[1]:
         cell.font = Font(bold=True)
-    for column, width in zip("ABCD", (18, 50, 50, 10), strict=True):
+    for column, width in zip("ABCDE", (18, 50, 50, 10, 50), strict=True):
         sheet.column_dimensions[column].width = width
     guide = book.create_sheet("설명")
     guide.append(["칸", "꼭", "설명"])
@@ -249,6 +321,9 @@ def site_bulk_template() -> Response:
     guide.append(["목록 페이지 주소", "예", "채용공고 여러 건이 보이는 목록 페이지 (https://…)"])
     guide.append(["예시 공고 주소", "", "공고 하나를 열었을 때 주소. 비우면 목록에서 찾습니다"])
     guide.append(["계열사", "", "계열사 공고가 함께 올라오는 그룹 사이트면 O"])
+    guide.append(
+        ["로고 주소", "", "로고 이미지 주소. 서버가 내려받아 보관합니다. 비우면 사이트 아이콘"]
+    )
     guide.append(["", "", "첫 시트만 읽습니다. 이미 등록된 목록 주소는 건너뜁니다"])
     for column, width in zip("ABC", (18, 6, 60), strict=True):
         guide.column_dimensions[column].width = width
@@ -292,6 +367,7 @@ async def site_bulk_try(
         return again(str(exc))
 
     ready, skipped = sort_rows(rows, registered_urls(conn))
+    notes = check_logos(ready, store.read_config(conn).configured)
     adds = [
         site_adds.new(
             row.list_url,
@@ -302,15 +378,26 @@ async def site_bulk_try(
         )
         for row in ready
     ]
+    logos = {add.id: row.logo_url for add, row in zip(adds, ready, strict=True)}
     if adds:
 
         def work(add: site_adds.SiteAdd) -> Coroutine[Any, Any, None]:
             return _work(add, connect, generate, discover, fetcher, scheduler, repair, report=False)
 
-        launch(_all(adds, work, len(skipped)))
+        async def logo(add: site_adds.SiteAdd) -> str:
+            url = logos[add.id]
+            return await put_logo(connect, fetcher, add.company, url) if url else ""
+
+        launch(_all(adds, work, len(skipped), logo))
     logger.info("사이트 일괄 추가: %d곳을 걸고 %d줄을 건너뛰었다", len(ready), len(skipped))
     response = render(
-        request, "fragments/site_bulk.html", step="queued", ready=ready, skipped=skipped
+        request,
+        "fragments/site_bulk.html",
+        step="queued",
+        ready=ready,
+        skipped=skipped,
+        notes=notes,
+        logo_count=sum(1 for row in ready if row.logo_url),
     )
     if ready:
         response.headers["HX-Trigger"] = "site-added"

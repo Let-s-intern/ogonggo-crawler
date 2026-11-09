@@ -11,6 +11,9 @@
 | 잘못된 줄 · 등록된 주소 · 겹친 줄은 줄 번호와 사유를 남기고 건너뛴다 | 같은 사이트가 둘 생긴다 |
 | 머리글이 없거나 형식이 다르면 아무것도 걸지 않는다 | 엉뚱한 칸으로 AI 가 헛돈다 |
 | 슬랙은 다 끝난 뒤 한 통이다 | 백 곳이면 백 통이 온다 |
+| 로고 주소에서 받아 저장소에 올리고 그 회사 로고가 된다 | 로고를 사이트마다 따로 올려야 한다 |
+| 로고를 못 받아도 사이트는 시작하고 슬랙에 적힌다 | 로고 하나 때문에 사이트가 빠진다 |
+| 저장소가 비거나 주소 꼴이 틀리면 받지 않고 창에 적는다 | 조용히 로고 없이 걸린다 |
 """
 
 # 한 건 추가 테스트의 픽스처를 가져와 쓴다. 인자 이름이 픽스처 이름과 같아야 한다
@@ -26,12 +29,19 @@ import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook, load_workbook
 
+from app import companies
+from app.api import crawlers as crawlers_api
 from app.api import site_adds, ui_site_bulk
+from app.crawler.fetcher import FetchResult, TransportError
+from app.main import app
+from app.storage import s3
+from app.storage import settings as store
 from tests.test_ui_site_add import (  # noqa: F401 — 픽스처를 이 모듈에서도 쓴다
     LIST_URL,
     Fake,
     client,
     conn,
+    fill_storage,
     finish,
     install,
     launched,
@@ -189,3 +199,109 @@ def test_형식이_다르면_아무것도_걸지_않는다(
     assert message in body
     assert launched == []
     assert site_adds.listed() == []
+
+
+class LogoFetcher:
+    """로고 주소에 정해 둔 바이트를 돌려준다. `fail` 이면 접속 실패를 낸다."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.asked: list[str] = []
+
+    async def request(self, url: str, **_: Any) -> FetchResult:
+        self.asked.append(url)
+        if self.fail:
+            raise TransportError("연결이 끊겼다")
+        return FetchResult(url=url, status_code=200, text="", content=b"BM-logo")
+
+
+@pytest.fixture
+def uploaded(monkeypatch: pytest.MonkeyPatch) -> list[bytes]:
+    sent: list[bytes] = []
+
+    def upload(config: store.StorageConfig, *, data: bytes, name: str) -> str:
+        sent.append(data)
+        return f"http://localhost:9000/logos/{name}.png"
+
+    monkeypatch.setattr(s3, "upload_image", upload)
+    return sent
+
+
+LOGO_SHEET = xlsx(
+    ["회사 이름", "목록 페이지 주소", "로고 주소"],
+    ["가나다", "https://a.example.com/jobs", "https://a.example.com/logo.png"],
+    ["라마바", "https://b.example.com/jobs", None],
+)
+
+
+def test_로고_주소에서_받아_올리고_그_회사_로고가_된다(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    launched: list[Any],
+    reports: list[tuple[str, list[str], bool]],
+    uploaded: list[bytes],
+) -> None:
+    fill_storage(conn)
+    install(monkeypatch, Fake(conn, found=True))
+    fetcher = LogoFetcher()
+    app.dependency_overrides[crawlers_api.get_crawl_fetcher] = lambda: fetcher
+
+    assert "로고 1곳 함께" in upload(client, LOGO_SHEET)
+    finish(launched)
+
+    assert fetcher.asked == ["https://a.example.com/logo.png"]
+    assert uploaded == [b"BM-logo"]
+    logo = companies.read(conn, "가나다")
+    assert logo is not None and (logo.logo_url or "").startswith("http://localhost:9000/")
+    other = companies.read(conn, "라마바")
+    assert other is None or not other.logo_url
+    assert not any("로고" in line for line in reports[0][1])
+
+
+def test_로고를_못_받아도_사이트는_시작하고_슬랙에_적힌다(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    launched: list[Any],
+    reports: list[tuple[str, list[str], bool]],
+    uploaded: list[bytes],
+) -> None:
+    fill_storage(conn)
+    install(monkeypatch, Fake(conn, found=True))
+    app.dependency_overrides[crawlers_api.get_crawl_fetcher] = lambda: LogoFetcher(fail=True)
+
+    upload(client, LOGO_SHEET)
+    finish(launched)
+
+    names = [r["name"] for r in conn.execute("SELECT name FROM workflows ORDER BY id")]
+    assert names == ["가나다", "라마바"]
+    assert uploaded == []
+    assert any(line.startswith("로고 못 올림: 가나다") for line in reports[0][1])
+
+
+def test_저장소가_비거나_주소_꼴이_틀리면_로고를_받지_않고_창에_적는다(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    launched: list[Any],
+    reports: list[tuple[str, list[str], bool]],
+) -> None:
+    install(monkeypatch, Fake(conn, found=True))
+    fetcher = LogoFetcher()
+    app.dependency_overrides[crawlers_api.get_crawl_fetcher] = lambda: fetcher
+
+    body = upload(client, LOGO_SHEET)
+    assert "로고 없이 건 줄 1개" in body and "파일 저장소가 비어" in body
+
+    fill_storage(conn)
+    sheet = xlsx(
+        ["회사 이름", "목록 페이지 주소", "로고"],
+        ["사아자", "https://c.example.com/jobs", "logo.png"],
+    )
+    body = upload(client, sheet)
+    assert "로고 없이 건 줄 1개" in body and "http:// 나 https://" in body
+
+    finish(launched)
+    assert fetcher.asked == []
+    assert len(site_adds.listed()) == 0
