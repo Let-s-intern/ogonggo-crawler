@@ -113,7 +113,30 @@
     var host = document.getElementById('review-table');
     if (!host) { return; }
 
+    // 고른 수집 건 번호. 표가 페이지를 넘겨 갈려 들어와도 남는다. 조회 조건을 바꾸거나 보내기·
+    // 다시 채우기·지우기가 끝나면 비운다 — 남겨 두면 보이지 않는 공고까지 다음 동작에 실린다
+    var chosen = new Set();
+
     function rows() { return host.querySelectorAll('input[data-select-row]'); }
+
+    // 이 페이지에 없는 고른 행은 숨은 칸으로 폼에 싣는다. 보내기·다시 채우기는 hx-include 로,
+    // 지우기는 폼 제출로 같은 칸을 읽는다
+    function carry(whole) {
+      var box = host.querySelector('[data-select-carry]');
+      if (!box) { return; }
+      var shown = new Set();
+      Array.prototype.forEach.call(rows(), function (row) { shown.add(row.value); });
+      box.textContent = '';
+      chosen.forEach(function (id) {
+        if (shown.has(id)) { return; }
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'raw_job_id';
+        input.value = id;
+        input.disabled = whole;
+        box.appendChild(input);
+      });
+    }
 
     function sync() {
       var form = document.getElementById('review-select-form');
@@ -126,6 +149,7 @@
         box.disabled = whole;
         if (box.checked) { picked += 1; }
       });
+      carry(whole);
 
       var page = form.querySelector('[data-select-page]');
       if (page) {
@@ -135,18 +159,19 @@
       }
 
       var total = form.getAttribute('data-total') || '0';
+      var none = whole ? total === '0' : chosen.size === 0;
       var count = document.getElementById('review-select-count');
       if (count) {
         count.textContent = whole
           ? '조건에 걸린 ' + total + '건 전체를 골랐다'
-          : '이 페이지의 ' + boxes.length + '건 중 ' + picked + '건을 골랐다';
+          : chosen.size + '건을 골랐다 (이 페이지 ' + boxes.length + '건 중 ' + picked + '건)';
       }
       var button = document.getElementById('review-delete-open');
-      if (button) { button.disabled = whole ? total === '0' : picked === 0; }
+      if (button) { button.disabled = none; }
       // 보내기도 지우기처럼 표에서 고른 것이나 조건 전체를 받는다. 조건 전체는 건수를 묻고 보낸다
       var send = document.getElementById('review-send-open');
       if (send) {
-        send.disabled = whole ? total === '0' : picked === 0;
+        send.disabled = none;
         send.textContent = whole ? '조건 전체 ' + total + '건 오공고로 보내기' : '고른 공고 오공고로 보내기';
         if (whole) {
           send.setAttribute('hx-confirm', '조건에 걸린 ' + total + '건 전체를 오공고로 보낼까요? 이미 보낸 공고는 지금 값으로 바꾸고, 관리자 콘솔에서 고친 내용도 덮어씁니다');
@@ -157,7 +182,7 @@
       // 다시 채우기도 같은 고르기를 받는다. 건마다 AI 비용이 들어 조건 전체는 건수를 묻는다
       var refill = document.getElementById('review-refill-open');
       if (refill) {
-        refill.disabled = whole ? total === '0' : picked === 0;
+        refill.disabled = none;
         refill.textContent = whole ? '조건 전체 ' + total + '건 AI로 다시 채우기' : '고른 공고 AI로 다시 채우기';
         if (whole) {
           refill.setAttribute('hx-confirm', '조건에 걸린 ' + total + '건 전체를 AI로 다시 채울까요? 건마다 AI 호출 비용이 든다');
@@ -171,8 +196,42 @@
       var target = evt.target;
       if (!target.closest || !target.closest('#review-select-form')) { return; }
       if (target.hasAttribute('data-select-page')) {
-        Array.prototype.forEach.call(rows(), function (box) { box.checked = target.checked; });
+        Array.prototype.forEach.call(rows(), function (box) {
+          box.checked = target.checked;
+          if (target.checked) { chosen.add(box.value); } else { chosen.delete(box.value); }
+        });
+      } else if (target.hasAttribute('data-select-row')) {
+        if (target.checked) { chosen.add(target.value); } else { chosen.delete(target.value); }
       }
+      sync();
+    });
+
+    // 조회 조건 폼이 표를 부를 때. 조건을 바꿨으면 고른 것을 비우고 1페이지로 간다. 보내기·지우기
+    // 뒤에 다시 그리는 것(`jobs-deleted`)이면 보던 페이지를 그대로 부른다 — 서버가 마지막
+    // 페이지를 넘는 번호는 마지막 페이지로 맞춘다
+    document.body.addEventListener('htmx:configRequest', function (evt) {
+      if (!evt.detail.elt || evt.detail.elt.id !== 'review-filter-form') { return; }
+      var trigger = evt.detail.triggeringEvent;
+      if (trigger && trigger.type === 'jobs-deleted') {
+        var form = document.getElementById('review-select-form');
+        var page = form && form.getAttribute('data-page');
+        if (page) { evt.detail.parameters['page'] = page; }
+      } else {
+        chosen.clear();
+      }
+    });
+
+    // 고른 것을 쓴 동작이 끝나면 비운다. 표는 서버가 보낸 `jobs-deleted` 로 다시 그려진다.
+    // 지우기는 확인 창 안의 폼이 실제로 지운다. 다시 채우기 결과의 보내기 폼은 제 행을 싣고 가서
+    // 표의 고르기와 무관하다
+    var actions = ['/ui/review/send', '/ui/review/reclassify', '/ui/review/delete'];
+    document.body.addEventListener('htmx:afterRequest', function (evt) {
+      if (!evt.detail.successful) { return; }
+      var elt = evt.detail.elt;
+      if (elt && elt.closest && elt.closest('#review-refill-status')) { return; }
+      if (actions.indexOf(evt.detail.requestConfig && evt.detail.requestConfig.path) < 0) { return; }
+      chosen.clear();
+      Array.prototype.forEach.call(rows(), function (box) { box.checked = false; });
       sync();
     });
 
@@ -187,9 +246,11 @@
       radio.dispatchEvent(new Event('change', { bubbles: true }));
     });
 
-    // 표가 갈려 들어오면 체크는 전부 풀린 상태다. 숫자와 단추를 그 상태에 맞춘다
+    // 표가 갈려 들어오면 체크는 전부 풀린 상태다. 고른 것을 다시 켜고 숫자와 단추를 맞춘다
     document.body.addEventListener('htmx:afterSwap', function (evt) {
-      if (evt.detail.target === host) { sync(); }
+      if (evt.detail.target !== host) { return; }
+      Array.prototype.forEach.call(rows(), function (box) { box.checked = chosen.has(box.value); });
+      sync();
     });
   })();
 </script>
