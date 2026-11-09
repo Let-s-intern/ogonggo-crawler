@@ -15,6 +15,7 @@
 | 로고를 못 받아도 사이트는 시작하고 슬랙에 적힌다 | 로고 하나 때문에 사이트가 빠진다 |
 | 저장소가 비거나 주소 꼴이 틀리면 받지 않고 창에 적는다 | 조용히 로고 없이 걸린다 |
 | 슬랙에 넣음 · 성공 · 실패 · 중복과 실패 목록이 간다 | 결과를 화면에서 일일이 봐야 한다 |
+| 실패 사유는 첫 문장만 한 줄로 | 슬랙 목록이 사유로 길어진다 |
 | 하나도 못 걸어도 슬랙은 간다 | 다 실패한 파일은 아무 소식이 없다 |
 | 로고만 올려 주소를 받는다 | 회사가 없는 엑셀 담당자는 로고를 올릴 곳이 없다 |
 | 우리 저장소 주소는 다시 받지 않고 붙인다 | 같은 로고가 두 벌 쌓인다 |
@@ -282,7 +283,7 @@ def test_로고를_못_받아도_사이트는_시작하고_슬랙에_적힌다(
     assert names == ["가나다", "라마바"]
     assert uploaded == []
     text = "\n".join(reports[0][1])
-    assert "로고 못 올림 1곳" in text and "    가나다 — 로고를 받지 못했어요" in text
+    assert "로고 못 올림 (1곳" in text and "\n가나다 — 로고를 받지 못했어요" in text
 
 
 def test_저장소가_비거나_주소_꼴이_틀리면_로고를_받지_않고_창에_적는다(
@@ -361,10 +362,23 @@ def test_슬랙에_넣음_성공_실패_중복과_실패_목록이_간다(
         "실패 2곳 (입력 오류 1, 등록·시험 수집 실패 1)",
         "중복 2곳",
     ]
-    assert lines[5] == "실패 목록"
-    assert lines[6].startswith("    3번째 줄 라마바 — ")
-    assert lines[7].startswith("    4번째 줄 주소틀림 — 목록 페이지 주소")
+    assert lines[5] == "실패 목록 (2곳)"
+    assert lines[6].startswith("3번째 줄 라마바 — ")
+    assert lines[7].startswith("4번째 줄 주소틀림 — 목록 페이지 주소")
     assert len(lines) == 8
+
+
+def test_실패_사유는_첫_문장만_한_줄로() -> None:
+    assert (
+        ui_site_bulk.one_line(
+            "이 주소에서 공고 목록을 찾지 못했어요. 채용공고 목록이 보이는 페이지 주소인지"
+            " 확인해 주세요"
+        )
+        == "이 주소에서 공고 목록을 찾지 못했어요"
+    )
+    long = ui_site_bulk.one_line("로고를 받지 못했어요: " + "x" * 200)
+    assert len(long) == ui_site_bulk.REASON_CHARS and long.endswith("…")
+    assert "\n" not in ui_site_bulk.one_line("첫 줄\n둘째 줄")
 
 
 def test_하나도_못_걸어도_슬랙은_간다(

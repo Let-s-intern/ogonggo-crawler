@@ -305,6 +305,14 @@ class Batch:
 
 # 슬랙 실패 목록에 적는 최대 수. 넘으면 몇 곳 더 있는지만 적는다
 MAX_LISTED = 50
+# 슬랙 목록의 사유 한 줄 길이. 쉬운 말 사유는 두 문장이고 기술 사유는 더 길다 — 첫 문장만 이만큼
+REASON_CHARS = 60
+
+
+def one_line(reason: str) -> str:
+    """사유를 한 줄로. 첫 문장만 남기고, 그래도 길면 자른다. 자세한 것은 다시 찾기 창에 있다."""
+    text = " ".join(reason.split()).partition(". ")[0].rstrip(" .")
+    return text if len(text) <= REASON_CHARS else text[: REASON_CHARS - 1].rstrip() + "…"
 
 
 def summary_lines(batch: Batch) -> list[str]:
@@ -327,18 +335,22 @@ def summary_lines(batch: Batch) -> list[str]:
         f"중복 {len(duplicates)}곳",
     ]
     if failures:
-        lines.append("실패 목록")
+        # 슬랙이 줄마다 `• ` 를 붙인다. 들여쓰면 `•     ` 가 되어 오히려 읽기 어렵다
+        lines.append(f"실패 목록 ({len(failures)}곳)")
         lines.extend(
-            f"    {line}번째 줄 {label} — {reason}" for line, label, reason in failures[:MAX_LISTED]
+            f"{line}번째 줄 {label} — {one_line(reason)}"
+            for line, label, reason in failures[:MAX_LISTED]
         )
         if len(failures) > MAX_LISTED:
-            lines.append(f"    외 {len(failures) - MAX_LISTED}곳")
+            lines.append(f"외 {len(failures) - MAX_LISTED}곳")
     problems = [
         (add, batch.logo_problems[add.id]) for add in batch.adds if add.id in batch.logo_problems
     ]
     if problems:
-        lines.append(f"로고 못 올림 {len(problems)}곳 (사이트는 그대로 추가)")
-        lines.extend(f"    {add.company} — {problem}" for add, problem in problems[:MAX_LISTED])
+        lines.append(f"로고 못 올림 ({len(problems)}곳, 사이트는 그대로 추가)")
+        lines.extend(
+            f"{add.company} — {one_line(problem)}" for add, problem in problems[:MAX_LISTED]
+        )
     return lines
 
 
