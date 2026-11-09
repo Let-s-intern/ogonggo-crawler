@@ -125,6 +125,21 @@ def test_행마다_체크박스가_있고_지우기_폼이_표를_감싼다(clie
         assert f'name="raw_job_id" value="{raw_job_id}"' in html
 
 
+def test_표가_보던_페이지와_다른_페이지에서_고른_행을_실을_자리를_가진다(
+    client: TestClient,
+) -> None:
+    """페이지를 넘겨도 고른 것이 남고, 보내기·지우기 뒤 다시 그릴 때 보던 페이지로 돌아온다.
+
+    고른 것은 페이지 스크립트가 들고 있다가 이 자리에 숨은 칸으로 싣는다. 폼 밖에 있으면 보내기·
+    지우기에 실리지 않는다.
+    """
+    html = client.get("/ui/review", params={"page": "1"}).text
+    form = html[html.index('id="review-select-form"') : html.index("</form>")]
+
+    assert 'data-page="1"' in form
+    assert "data-select-carry" in form
+
+
 def test_지우기_도구는_표_위에_있다(client: TestClient) -> None:
     html = client.get("/ui/review").text
 
