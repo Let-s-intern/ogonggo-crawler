@@ -495,3 +495,23 @@ def test_직접_추가_워크플로우는_지우지_않는다(client: TestClient
     )
     assert client.delete("/api/workflows/9").status_code == 404
     assert conn.execute("SELECT deleted_at FROM workflows WHERE id = 9").fetchone()[0] is None
+
+
+def test_공고_없음인_사이트는_고치기가_아니라_회색_공고_없음이다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """공고가 없다고 말한 실행은 성공이고 처리한 공고가 0건이다 (`app/crawler/empty_list.py`)."""
+    conn.execute(
+        "INSERT INTO crawl_runs (workflow_id, status, matched, error_message, finished_at)"
+        " VALUES (1, 'success', 0, '목록에 공고가 없다고 나온다: 채용이 없습니다', datetime('now'))"
+    )
+
+    listing = client.get("/ui/sites").text
+    start = listing.index("잘 되는 곳")
+    row = listing[start : listing.index("</li>", start)]
+    assert "공고 없음" in row
+    assert "고치기" not in row
+
+    panel = client.get("/ui/sites/1/panel").text
+    assert "지금 올라온 공고가 없어요" in panel
+    assert "무엇이 문제인가요" not in panel

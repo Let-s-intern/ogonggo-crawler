@@ -14,12 +14,13 @@ HTML 을 셀렉터로 읽는 자리(`app/crawler/parser.py`)와 하는 일이 �
 | 무슨 일 | error_class | 고치는 법 |
 |---|---|---|
 | 타임아웃·5xx·연결 끊김 | `transport` | 재시도. 반복되면 사이트 상태 확인 |
-| `items_path` 가 응답에 없거나 배열이 비었다 | `selector_miss` | 경로 재작성. 재시도 금지 |
+| `items_path` 가 응답에 없다 | `selector_miss` | 경로 재작성. 재시도 금지 |
+| `items_path` 배열이 비었다 | 공고 없음(성공) | 없음. 회사에 지금 공고가 없다 |
 | JSON 이 아니거나 배열이 아니거나 필드를 못 읽었다 | `parse` | 그 경로만 보정 |
 
-**항목 0건은 실패다.** 200 이 오고 배열이 비어 있는 것은 "신규 공고 없음" 이 아니라 목록을
-가져오지 못한 것이다. API 응답 모양이 바뀐 사이트와 공고가 없는 사이트를 같은 결과로 남기면
-둘을 구분할 수 없다 (`CLAUDE.md`).
+**경로가 없으면 실패, 배열이 비면 공고 없음이다** (2026-11-10 결정). 경로가 그대로 잡히고 배열만
+빈 것은 응답 모양이 바뀐 것이 아니라 회사에 공고가 없는 것이다. 응답 모양이 바뀐 사이트는 경로가
+사라지므로 둘이 섞이지 않는다 (`app/crawler/empty_list.py`).
 
 ## 값은 손대지 않는다
 
@@ -50,10 +51,12 @@ from urllib.parse import urlsplit
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
+from app.crawler.empty_list import empty_notice
 from app.crawler.fetcher import FetchPolicy, FetchResult
 from app.crawler.parser import (
     REQUIRED_DETAIL_FIELDS,
     DetailParseResult,
+    EmptyListError,
     FieldFailure,
     FieldParseError,
     ListItem,
@@ -325,9 +328,11 @@ def build_items(payload: Any, config: ApiListConfig) -> ListParseResult:
             f"items_path `{config.items_path}` 가 배열이 아니다: {type(entries).__name__}"
         )
     if not entries:
-        raise SelectorMissError(
-            f"items_path `{config.items_path}` 가 빈 배열이다. "
-            "신규 0건인 정상 실행이 아니라 목록을 가져오지 못한 것이다"
+        # 경로는 그대로 잡혔고 배열만 비었다. 응답 모양이 바뀐 것이 아니라 공고가 없는 것이다
+        # (`app/crawler/empty_list.py`)
+        raise EmptyListError(
+            f"items_path `{config.items_path}` 가 빈 배열이다. 공고가 없는 것으로 본다",
+            f"API 목록 `{config.items_path}` 이 비어 있다",
         )
 
     items: list[ListItem] = []
@@ -374,9 +379,11 @@ def build_html_items(html: str, config: ApiListConfig) -> ListParseResult:
     soup = BeautifulSoup(html, "html.parser")
     nodes = select_nodes(soup, config.items_path, "list.items_path")
     if not nodes:
-        raise SelectorMissError(
-            f"items_path `{config.items_path}` 가 0개 매칭됐다. 목록 조각의 구조가 바뀌었다"
-        )
+        message = f"items_path `{config.items_path}` 가 0개 매칭됐다"
+        notice = empty_notice(html)
+        if notice:
+            raise EmptyListError(f"{message}. 조각에 공고가 없다고 나온다: {notice}", notice)
+        raise SelectorMissError(f"{message}. 목록 조각의 구조가 바뀌었다")
 
     items: list[ListItem] = []
     failures: list[FieldFailure] = []

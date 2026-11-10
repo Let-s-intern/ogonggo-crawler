@@ -217,8 +217,13 @@ async def test_rendered_list_and_detail_share_one_browser(conn: sqlite3.Connecti
     assert client.calls == []
 
 
-async def test_an_api_list_that_comes_back_empty_is_a_failure(conn: sqlite3.Connection) -> None:
-    """200 인데 배열이 비었다. 신규 0건인 정상 실행으로 남기지 않는다."""
+async def test_an_api_list_that_comes_back_empty_means_no_postings(
+    conn: sqlite3.Connection,
+) -> None:
+    """200 이고 경로는 그대로인데 배열이 비었다. 회사에 공고가 없는 것이라 성공이다.
+
+    처리한 공고가 0건인 성공이라 사이트 화면이 `공고 없음` 으로 띄운다 (`empty_list.py`).
+    """
     workflow_id = add_workflow(conn, "api", "api")
 
     def empty(request: httpx.Request) -> httpx.Response:
@@ -233,9 +238,10 @@ async def test_an_api_list_that_comes_back_empty_is_a_failure(conn: sqlite3.Conn
 
     result = await run_workflow(conn, workflow_id, fetcher=client, limit=1)
 
-    assert result.status == "failed"
-    assert result.error_class == "selector_miss"
-    assert "빈 배열" in result.error_message
+    assert result.status == "success"
+    assert result.error_class is None
+    assert "jobNoticeList" in result.error_message
+    assert result.success_count == 0
     assert stored(conn) == []
 
 

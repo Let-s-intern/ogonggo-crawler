@@ -1,5 +1,6 @@
 {# 사이트 목록 (`app/api/ui_sites.py` 의 `site_list_fragment`). 한 줄에 상태·새 공고·마지막 수집만
    두고, 조작은 오른쪽 패널로 옮겼다. 문제가 있는 사이트만 줄 끝에 `고치기` 가 붙는다.
+   페이지가 공고가 없다고 말한 사이트는 고칠 것이 없어 회색 `공고 없음` 이다 (`app/crawler/empty_list.py`).
 
    맨 위는 추가 중인 사이트다 (`app/api/site_adds.py`). 돌고 있는 것이 있으면 3초마다 목록을 다시
    부르고, 다 끝나면 멈춘다 #}
@@ -30,13 +31,13 @@
 {% endif %}
 {% endif %}
 <ul class="divide-y divide-slate-100">
-  {% for card, problem in rows %}
+  {% for card, problem, no_postings in rows %}
   {% set item = card.item %}
   <li class="site-row">
     <button type="button" data-panel-open
             hx-get="/ui/sites/{{ item.id }}/panel" hx-target="#app-panel-body" hx-swap="innerHTML"
             class="m-0 flex w-full flex-wrap items-center gap-x-4 gap-y-1 rounded-none border-0 bg-transparent px-4 py-3 text-left font-normal shadow-none hover:bg-slate-50">
-      <span class="h-2.5 w-2.5 shrink-0 rounded-full {% if card.tone == 'bad' or problem %}bg-red-500{% elif item.status != 'active' %}bg-slate-300{% else %}bg-emerald-500{% endif %}"
+      <span class="h-2.5 w-2.5 shrink-0 rounded-full {% if card.tone == 'bad' or problem %}bg-red-500{% elif item.status != 'active' or no_postings %}bg-slate-300{% else %}bg-emerald-500{% endif %}"
             aria-hidden="true"></span>
       <span class="min-w-0 sm:w-56">
         <span class="site-name block truncate font-medium text-slate-900">{{ item.name }}</span>
@@ -46,6 +47,7 @@
         {% if card.running %}수집하는 중
         {% elif problem %}{{ problem }}
         {% elif item.status != 'active' %}멈춤
+        {% elif no_postings %}공고 없음
         {% elif item.last_run_status %}정상
         {% else %}아직 수집 전{% endif %}
       </span>

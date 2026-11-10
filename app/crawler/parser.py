@@ -14,7 +14,9 @@
 | `SelectorMissError` | 가져오기는 됐는데 item 셀렉터가 0개 매칭 | 재시도 금지. 셀렉터 재작성 |
 | `FieldParseError` | 매칭은 됐는데 필요한 필드를 못 읽음 | 그 필드만 보정 |
 
-목록 항목 0건은 실패다. 신규 0건인 정상 실행과 같은 결과로 남기지 않는다.
+목록 항목 0건은 실패다. 신규 0건인 정상 실행과 같은 결과로 남기지 않는다. 페이지가 빈 목록이라고
+직접 말하면 `EmptyListError` 이고, 러너는 그것을 `공고 없음` 으로
+남긴다 (`app/crawler/empty_list.py`).
 
 상세 링크를 어디서 뽑는지는 `app/selector/link.py` 가 정한다. `href` 를 읽는 것이 기본이고,
 `list.link_template` 이 있으면 항목의 속성값으로 URL 을 만든다. 어느 쪽이든 여기서는 목록
@@ -38,6 +40,7 @@ from bs4.element import Tag
 from soupsieve import SelectorSyntaxError
 
 from app.crawler.canonical import canonical_url
+from app.crawler.empty_list import empty_notice
 from app.selector.link import LinkResult, resolve_link
 from app.selector.schema import DETAIL_FIELDS, DetailSelectors, ListSelectors
 
@@ -58,6 +61,18 @@ class SelectorMissError(CrawlDataError):
     """item 셀렉터가 0개 매칭. 사이트 구조가 바뀌었거나 JS 렌더링이다."""
 
     error_class = "selector_miss"
+
+
+class EmptyListError(SelectorMissError):
+    """0개 매칭인데 페이지가 빈 목록이라고 말한다 (`app/crawler/empty_list.py`).
+
+    러너는 이것을 실패가 아니라 `공고 없음` 으로 남긴다. 사이트를 찾는 경로는 하위 클래스인 줄
+    모르고 `SelectorMissError` 로 받는다 — 빈 목록을 맞은 셀렉터로 저장하지 않게 한다.
+    """
+
+    def __init__(self, message: str, notice: str) -> None:
+        super().__init__(message)
+        self.notice = notice
 
 
 class FieldParseError(CrawlDataError):
@@ -157,9 +172,11 @@ def parse_list(html: str, selectors: ListSelectors, base_url: str) -> ListParseR
     soup = BeautifulSoup(html, "html.parser")
     nodes = select_nodes(soup, selectors.item, "list.item")
     if not nodes:
-        raise SelectorMissError(
-            f"list.item `{selectors.item}` 이 0개 매칭됐다. 사이트 구조가 바뀌었거나 JS 렌더링이다"
-        )
+        message = f"list.item `{selectors.item}` 이 0개 매칭됐다"
+        notice = empty_notice(html)
+        if notice:
+            raise EmptyListError(f"{message}. 페이지에 공고가 없다고 나온다: {notice}", notice)
+        raise SelectorMissError(f"{message}. 사이트 구조가 바뀌었거나 JS 렌더링이다")
 
     items: list[ListItem] = []
     failures: list[FieldFailure] = []

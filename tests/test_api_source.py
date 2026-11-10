@@ -27,7 +27,7 @@ from app.crawler.api_source import (
     payload_source_text,
 )
 from app.crawler.fetcher import Fetcher
-from app.crawler.parser import FieldParseError, SelectorMissError
+from app.crawler.parser import EmptyListError, FieldParseError, SelectorMissError
 from app.selector.api_schema import validate_api_config
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
@@ -174,15 +174,19 @@ def test_the_body_keeps_the_html_fragment() -> None:
     assert "<p" in detail.fields["qualifications"]
 
 
-def test_an_empty_array_is_a_failure_not_an_empty_success() -> None:
-    """200 인데 배열이 비었다. 마크업이 바뀐 사이트와 공고 없는 사이트를 섞지 않는다."""
+def test_an_empty_array_means_no_postings() -> None:
+    """200 이고 경로도 그대로인데 배열만 비었다. 응답 모양은 그대로라 공고가 없는 것이다.
+
+    러너는 공고 없음으로 남기고, 사이트를 찾는 경로는 셀렉터 미스로 받는다
+    (`app/crawler/empty_list.py`).
+    """
     payload = {"status": "S", "data": {"jobNoticeList": []}}
 
-    with pytest.raises(SelectorMissError) as caught:
+    with pytest.raises(EmptyListError) as caught:
         build_items(payload, LIST_CONFIG)
 
-    assert caught.value.error_class == "selector_miss"
-    assert "빈 배열" in str(caught.value)
+    assert isinstance(caught.value, SelectorMissError)
+    assert "jobNoticeList" in caught.value.notice
 
 
 def test_a_missing_items_path_is_a_selector_miss() -> None:
