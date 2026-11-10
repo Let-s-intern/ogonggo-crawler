@@ -49,6 +49,7 @@ from app.crawler.deadline import is_closed
 from app.crawler.failures import (
     FAILED,
     LIST_EMPTY,
+    NO_POSTINGS_MESSAGE,
     SUCCESS,
     ZERO_ITEM_MESSAGE,
     DetailEmptyError,
@@ -60,7 +61,7 @@ from app.crawler.failures import (
 from app.crawler.fetcher import FetchPolicy, PageSource, get_fetcher
 from app.crawler.hashing import content_hash
 from app.crawler.images import LlmImageReader
-from app.crawler.parser import DetailParseResult, ListItem
+from app.crawler.parser import DetailParseResult, EmptyListError, ListItem
 from app.crawler.screen import (
     BODY,
     OUT,
@@ -172,6 +173,9 @@ class RunResult:
     seen_links: list[str] = field(default_factory=list)
     # 목록 단계에서 값을 읽지 못한 항목 수. 하나라도 있으면 목록을 다 읽었다고 볼 수 없다
     list_misses: int = 0
+    # 목록이 0건인데 페이지가 공고가 없다고 말한 문구 (`app/crawler/empty_list.py`). 있으면 이
+    # 실행은 실패가 아니라 `공고 없음` 인 성공이다
+    no_postings: str = ""
 
 
 class WorkflowMissingError(LookupError):
@@ -502,7 +506,12 @@ async def _crawl(
     screener: Screener | None = None,
 ) -> None:
     rules, rules_error = _load_rules(conn)
-    parsed = await collectors.list.collect()
+    try:
+        parsed = await collectors.list.collect()
+    except EmptyListError as exc:
+        # 고칠 셀렉터가 없다. 회사에 지금 공고가 없을 뿐이다
+        result.no_postings = exc.notice
+        return
 
     result.matched = parsed.matched
     result.seen_links = [item.link for item in parsed.items]
@@ -936,7 +945,10 @@ def _finish_run(
     result.status = run_status(
         result.success_count, failure, timed_out=timed_out, skipped_count=result.skipped_count
     )
-    if failure is not None:
+    if failure is None and not timed_out and result.no_postings:
+        result.status = SUCCESS
+        result.error_message = f"{NO_POSTINGS_MESSAGE}: {result.no_postings}"
+    elif failure is not None:
         result.error_class = failure.error_class
         result.error_message = failure.message
     elif result.status == FAILED:

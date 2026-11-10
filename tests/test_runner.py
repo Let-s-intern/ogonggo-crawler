@@ -269,3 +269,36 @@ async def test_워크플로우_없는_실행은_적재하지_않고_행만_남�
 def test_어디에도_속하지_않는_실행은_만들지_못한다() -> None:
     with pytest.raises(ValueError, match="workflow_id"):
         RunTarget(list_url=LIST_URL, selectors=SELECTORS, trigger=SCHEDULE)
+
+
+class EmptySite(StubSite):
+    """목록 페이지가 공고가 없다고 말하는 사이트."""
+
+    def _handle(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text=ROBOTS)
+        self.requests.append(str(request.url))
+        return httpx.Response(
+            200, text="<ol class='list-recent-jobs'></ol><p>현재 진행 중인 채용이 없습니다</p>"
+        )
+
+
+async def test_페이지가_공고가_없다고_말하면_실패가_아니라_공고_없음이다(
+    conn: sqlite3.Connection,
+) -> None:
+    """채용공고가 하나도 없는 회사다. 고칠 셀렉터가 없으니 `고치기` 로 띄우지 않는다."""
+    site = EmptySite()
+    fetcher = site.fetcher()
+
+    result = await run_once(conn, workflow_target(), fetcher=fetcher)
+    await fetcher.aclose()
+
+    assert result.status == "success"
+    assert result.error_class is None
+    assert (result.success_count, result.new_count, result.fail_count) == (0, 0, 0)
+    run = rows(conn, "SELECT * FROM crawl_runs")[0]
+    assert run["status"] == "success"
+    assert run["error_class"] is None
+    assert "채용이 없" in run["error_message"]
+    # 상세는 열지 않는다
+    assert site.requests == [LIST_URL]

@@ -127,6 +127,8 @@ All paths above are relative to `.claude/`.
 
 A run that extracted nothing is a failure, not an empty success. If it reports as a clean run with
 zero new postings, a site that changed its markup looks identical to a site with no new jobs.
+The one exception is a page that says so itself ("진행 중인 채용이 없습니다", an API array that is
+present but empty): that run is a success shown as `공고 없음` (`app/crawler/empty_list.py`).
 
 Dirty extracted text is a normalization problem, not a selector problem. Fixing it in the selector
 is how a working selector gets replaced with a fragile one.

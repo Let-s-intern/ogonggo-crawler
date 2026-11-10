@@ -16,7 +16,7 @@
 {% set item = card.item %}
 <div class="flex h-full flex-col">
   <div class="flex items-start gap-3 border-b border-slate-200 px-6 py-4">
-    <span class="mt-2 h-2.5 w-2.5 shrink-0 rounded-full {% if problem %}bg-red-500{% elif item.status != 'active' %}bg-slate-300{% else %}bg-emerald-500{% endif %}"></span>
+    <span class="mt-2 h-2.5 w-2.5 shrink-0 rounded-full {% if problem %}bg-red-500{% elif item.status != 'active' or no_postings %}bg-slate-300{% else %}bg-emerald-500{% endif %}"></span>
     <div class="min-w-0 flex-1">
       <h3 id="app-panel-title" class="text-lg font-bold text-slate-900">{{ item.name }}</h3>
       <p class="truncate text-xs text-slate-400">
@@ -37,6 +37,12 @@
         <p class="mt-1 break-all">{{ card.reason }}</p>
       </details>
       {% endif %}
+    </div>
+    {% elif no_postings %}
+    {# 페이지가 공고가 없다고 말했다. 고칠 것이 없다 (`app/crawler/empty_list.py`) #}
+    <div class="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+      <p class="font-semibold">지금 올라온 공고가 없어요</p>
+      <p class="mt-1">사이트에 공고가 없다고 나와 고칠 것이 없습니다. 공고가 올라오면 다음 수집이 가져옵니다</p>
     </div>
     {% endif %}
 
@@ -157,6 +163,7 @@
             <td>{{ run.started_at | as_time }}</td>
             <td class="cell-text">
               {% if run.status is none %}<span class="state-warn">도는 중</span>
+              {% elif run.status == "success" and run.no_postings %}<span class="text-slate-500">공고 없음</span>
               {% elif run.status == "success" %}<span class="state-ok">성공</span>
               {% else %}<span class="state-bad">실패</span>{% if run.problem %} <span class="text-xs text-slate-500">{{ run.problem }}</span>{% endif %}{% endif %}
             </td>

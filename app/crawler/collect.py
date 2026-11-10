@@ -36,6 +36,7 @@ from app.crawler.fetcher import FetchPolicy, PageSource
 from app.crawler.images import ImageReader, read_detail_images
 from app.crawler.parser import (
     DetailParseResult,
+    EmptyListError,
     FieldParseError,
     ListItem,
     ListParseResult,
@@ -91,6 +92,9 @@ class HtmlListCollector:
         page = await self._source.fetch(self._list_url)
         try:
             return parse_list(page.text, self._selectors, page.url)
+        except EmptyListError:
+            # 공고 없음이다. 렌더 승격 힌트를 붙이면 러너가 받는 예외가 바뀐다
+            raise
         except SelectorMissError as exc:
             # 0개 매칭이 마크업 변경인지 JS 렌더인지를 사유에 적는다. 승격은 운영자가 정하므로
             # 여기서 모드를 바꾸지 않는다 (`app/crawler/shell.py`)

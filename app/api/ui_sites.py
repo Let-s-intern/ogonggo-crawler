@@ -103,6 +103,23 @@ def _problem(conn: sqlite3.Connection, card: CardView) -> str:
     return PROBLEMS.get(str(row["error_class"] or ""), UNKNOWN_PROBLEM)
 
 
+def _no_postings(conn: sqlite3.Connection, card: CardView) -> bool:
+    """마지막 실행이 `공고 없음` 인 성공인가 (`app/crawler/empty_list.py`).
+
+    성공인데 처리한 공고가 0건인 실행은 이것뿐이다 — 다른 0건은 실패로 남는다 (`run_status`).
+    """
+    row = _last_run(conn, card.item.id)
+    return row is not None and row["status"] == "success" and _handled(row) == 0
+
+
+def _handled(row: sqlite3.Row) -> int:
+    """실행이 다룬 공고 수. 적재·새 공고·건너뜀·실패를 다 센다."""
+    return sum(
+        int(row[name] or 0)
+        for name in ("success_count", "new_count", "skipped_count", "fail_count")
+    )
+
+
 def _matches(name: str, q: str) -> bool:
     """검색어가 이름에 들어 있나. 검색어가 비면 모두 맞는다."""
     return q.casefold() in name.casefold()
@@ -132,7 +149,7 @@ def site_list_fragment(
     return render(
         request,
         "fragments/site_list.html",
-        rows=[(card, _problem(conn, card)) for card in cards],
+        rows=[(card, _problem(conn, card), _no_postings(conn, card)) for card in cards],
         adds=[add for add in site_adds.listed() if _matches(add.company, q)],
         q=q,
     )
@@ -141,7 +158,8 @@ def site_list_fragment(
 def _recent_runs(conn: sqlite3.Connection, workflow_id: int) -> list[dict[str, object]]:
     rows = conn.execute(
         """
-        SELECT id, started_at, status, matched, new_count, fail_count, error_class, trigger
+        SELECT id, started_at, status, matched, success_count, skipped_count, new_count,
+               fail_count, error_class, trigger
           FROM crawl_runs WHERE workflow_id = ? ORDER BY id DESC LIMIT ?
         """,
         (workflow_id, RECENT_RUNS),
@@ -161,6 +179,7 @@ def _recent_runs(conn: sqlite3.Connection, workflow_id: int) -> list[dict[str, o
                 if row["status"] not in (None, "success")
                 else ""
             ),
+            "no_postings": row["status"] == "success" and _handled(row) == 0,
             "trigger": TRIGGER_WORDS.get(str(row["trigger"] or ""), UNKNOWN_TRIGGER),
         }
         for row in rows
@@ -207,6 +226,7 @@ def _panel(
         card=card,
         workflow_id=workflow_id,
         problem=_problem(conn, card),
+        no_postings=_no_postings(conn, card),
         runs=_recent_runs(conn, workflow_id),
         detail_url=str(row["detail_url"] or "") if row else "",
         url_message=message,
