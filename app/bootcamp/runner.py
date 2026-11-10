@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, nullcontext
@@ -43,6 +44,12 @@ MAX_FILLS_PER_RUN = 20
 # 이어 도는 묶음 수의 상한. 새싹 전체가 200건 남짓이라 20건씩 열 번이면 끝난다. 무엇이 꼬여도
 # 한없이 돌지 않게 넉넉히 둔다
 MAX_BATCHES = 20
+# 슬랙 실패 묶음 하나에 적는 과정 번호 수. 넘으면 몇 건 더 있는지만 적는다
+MAX_LISTED_IDS = 10
+# 슬랙 실패 사유 한 줄 길이. 자세한 사유는 실행 기록(`bootcamp_runs.notes`)에 그대로 있다
+REASON_CHARS = 60
+_URL = re.compile(r"(?:https?|data):\S+")
+_CRS_SN = re.compile(r"crsSn=(\d+)")
 
 
 class Filler(Protocol):
@@ -177,6 +184,11 @@ async def run_sesac_all(
 
 async def _report(summaries: list[RunSummary]) -> None:
     last = summaries[-1] if summaries else RunSummary()
+    # 과정별 실패는 묶음마다 다른 과정이라 모두 모은다. 나머지 안내는 마지막 묶음 것만
+    failures: dict[str, list[str]] = {}
+    for summary in summaries:
+        for url, reason in _failures(summary.notes):
+            failures.setdefault(_short_reason(reason), []).append(_course_label(url))
     lines = [
         f"목록 {last.listed}건 · 새 과정 {sum(item.new for item in summaries)}건",
         f"AI 정리 {sum(item.filled for item in summaries)}건: "
@@ -184,9 +196,34 @@ async def _report(summaries: list[RunSummary]) -> None:
         f"오공고 전송 {sum(item.sent for item in summaries)}건: "
         f"실패 {sum(item.failed for item in summaries)}건",
         f"남은 과정 {last.deferred}건",
-        *last.notes,
     ]
+    # 많은 사유부터. 사유마다 한 줄에 과정 번호만 적는다 — 주소·이미지 내용을 붙이면 슬랙이 넘친다
+    for reason, labels in sorted(failures.items(), key=lambda pair: -len(pair[1])):
+        shown = ", ".join(labels[:MAX_LISTED_IDS])
+        more = f" 외 {len(labels) - MAX_LISTED_IDS}건" if len(labels) > MAX_LISTED_IDS else ""
+        lines.append(f"{reason} — {len(labels)}건 ({shown}{more})")
+    lines.extend(note for note in last.notes if not _is_failure(note))
     await work_report.report("부트캠프 수집", lines, ok=last.status == "success")
+
+
+def _is_failure(note: str) -> bool:
+    return note.startswith(("http://", "https://")) and ": " in note
+
+
+def _failures(notes: list[str]) -> list[tuple[str, str]]:
+    """`주소: 사유` 꼴의 과정별 실패를 (주소, 사유) 로. 수집·정리·전송 실패가 다 이 꼴이다."""
+    return [tuple(note.split(": ", 1)) for note in notes if _is_failure(note)]  # type: ignore[misc]
+
+
+def _short_reason(reason: str) -> str:
+    """사유에서 주소(이미지 data URL 포함)를 빼고 한 줄로. 같은 사유끼리 묶이게 한다."""
+    text = " ".join(_URL.sub("", reason).split()).rstrip(" :.")
+    return text if len(text) <= REASON_CHARS else text[: REASON_CHARS - 1].rstrip() + "…"
+
+
+def _course_label(url: str) -> str:
+    found = _CRS_SN.search(url)
+    return found.group(1) if found else url
 
 
 class _ListBroken(RuntimeError):

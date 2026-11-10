@@ -650,3 +650,41 @@ def test_목록은_최근에_처음_모은_과정이_위다(tmp_path: pathlib.Pa
 
     assert [row["external_id"] for row in rows] == ["500", "100", "900"]
     connection.close()
+
+
+async def test_report_groups_failures_by_short_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    """슬랙에는 과정별 실패를 사유로 묶어 번호만 적는다. 주소·이미지 data URL 은 빠진다."""
+    from app.bootcamp import runner
+
+    sent: list[list[str]] = []
+
+    async def fake_report(name: str, lines: list[str], *, ok: bool = True) -> None:
+        sent.append(list(lines))
+
+    monkeypatch.setattr(runner.work_report, "report", fake_report)
+    base = "https://sesac.seoul.kr/sesac/course/offline/courseDetail.do?crsSn="
+    first = runner.RunSummary(
+        notes=[
+            f"{base}1162: 교육개요 이미지를 받지 못했다: 가져올 수 없는 URL 이다:"
+            " data:image/png;base64,iVBOR",
+            f"{base}935: 교육개요 이미지를 받지 못했다: 응답 404: https://sesac.seoul.kr/a%20b.jpg",
+            "한 번에 AI 로 정리하는 상한(20건)에 닿아 5건은 다음 묶음에서 모은다",
+        ]
+    )
+    last = runner.RunSummary(
+        notes=[
+            f"{base}931: 교육개요 이미지를 받지 못했다: 응답 404: https://sesac.seoul.kr/c.png",
+            f"{base}1245: 교육개요에 글도 이미지도 없다",
+            "모집 상태가 바뀐 과정 2건",
+        ]
+    )
+
+    await runner._report([first, last])
+
+    lines = sent[0]
+    assert "교육개요 이미지를 받지 못했다: 응답 404 — 2건 (935, 931)" in lines
+    assert "교육개요 이미지를 받지 못했다: 가져올 수 없는 URL 이다 — 1건 (1162)" in lines
+    assert "교육개요에 글도 이미지도 없다 — 1건 (1245)" in lines
+    assert "모집 상태가 바뀐 과정 2건" in lines
+    assert not any("http" in line or "base64" in line for line in lines)
+    assert not any("다음 묶음에서" in line for line in lines)
