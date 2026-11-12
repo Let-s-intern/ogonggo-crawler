@@ -65,7 +65,10 @@ def upsert(conn: sqlite3.Connection, item: ListItem, program: Program) -> tuple[
     row = conn.execute(
         "SELECT id, page_hash FROM work_experiences WHERE source_url = ?", (item.source_url,)
     ).fetchone()
+    if row is not None:
+        save_share_url(conn, item)
     if row is None:
+        values["share_url"] = item.share_url or None
         columns = ["source_url", *values]
         cursor = conn.execute(
             f"INSERT INTO work_experiences ({', '.join(columns)})"
@@ -102,11 +105,24 @@ def is_current(conn: sqlite3.Connection, item: ListItem) -> bool:
     )
 
 
-def touch(conn: sqlite3.Connection, source_url: str) -> None:
+def touch(conn: sqlite3.Connection, item: ListItem) -> None:
+    """다시 읽지 않는 프로그램도 봤다고 적고, 카드의 공유 주소를 둔다."""
     conn.execute(
         "UPDATE work_experiences SET last_seen_at = datetime('now') WHERE source_url = ?",
-        (source_url,),
+        (item.source_url,),
     )
+    save_share_url(conn, item)
+
+
+def save_share_url(conn: sqlite3.Connection, item: ListItem) -> None:
+    """카드의 공유 주소를 둔다. 카드에 없으면 읽어 둔 주소를 지우지 않는다 — 버튼이 한 번 빠진 날에
+    오공고 주소가 다시 열리지 않는 상세 주소로 돌아가지 않게 한다 (LC-3615).
+    """
+    if item.share_url:
+        conn.execute(
+            "UPDATE work_experiences SET share_url = ? WHERE source_url = ?",
+            (item.share_url, item.source_url),
+        )
 
 
 def needs_fill(conn: sqlite3.Connection, row_id: int) -> bool:
