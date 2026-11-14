@@ -363,3 +363,58 @@ def test_보고에_마감한_공고와_모르겠음_사유를_적는다() -> Non
     assert lines[0] == "확인 2건 · 모집 중 0 · 마감 1 · 모르겠음 1"
     assert any("마감 1 오공고" in line and "응답 404" in line for line in lines)
     assert lines[-1] == "모르겠음 사유: 응답 403 1"
+
+
+async def test_시작과_끝에_슬랙을_한_통씩_보낸다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    targets = [target(1, "https://a.test/1")]
+    server(targets, monkeypatch)
+    pages = Pages({"https://a.test/1": page("https://a.test/1")})
+    sent: list[tuple[str, list[str], str]] = []
+
+    async def report(name: str, lines: list[str], *, ok: bool = True, state: str = "") -> None:
+        sent.append((name, list(lines), state))
+
+    monkeypatch.setattr(runner.work_report, "report", report)
+    runner.write_cursor(conn, 0)
+
+    await runner.run_once(
+        conn,
+        settings=SETTINGS,
+        fetcher=pages,
+        renderer=Pages({}),
+        stop_at=datetime(2026, 11, 15, 13, 20),
+    )
+
+    assert [(name, state) for name, _, state in sent] == [
+        (runner.REPORT_NAME, "시작"),
+        (runner.REPORT_NAME, ""),
+    ]
+    assert sent[0][1] == ["처음 공고부터 본다 · 13:20 에 멈춘다"]
+
+
+async def test_손으로_돌리면_시작_알림도_보내지_않는다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server([target(1, "https://a.test/1")], monkeypatch)
+    sent: list[str] = []
+
+    async def report(name: str, lines: list[str], **kw: object) -> None:
+        sent.append(name)
+
+    monkeypatch.setattr(runner.work_report, "report", report)
+
+    await runner.run_once(
+        conn,
+        settings=SETTINGS,
+        fetcher=Pages({"https://a.test/1": page("https://a.test/1")}),
+        renderer=Pages({}),
+        close=False,
+    )
+
+    assert sent == []
+
+
+def test_시작_알림은_이어_볼_자리를_적는다() -> None:
+    assert runner.start_lines(120, None) == ["공고 120 다음부터 이어서 본다"]

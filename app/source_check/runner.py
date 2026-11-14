@@ -11,7 +11,7 @@
 - 공용 fetch 클라이언트를 쓰므로 robots·호스트별 딜레이를 그대로 지킨다. 호스트가 다른 공고는
   `CONCURRENCY` 개까지 함께 연다.
 
-끝나면 슬랙으로 한 통 보낸다(`app/notify/work_report.py`).
+시작할 때와 끝날 때 슬랙으로 한 통씩 보낸다(`app/notify/work_report.py`).
 """
 
 from __future__ import annotations
@@ -165,6 +165,8 @@ async def run_once(
         return item
 
     after_id = 0 if manual else read_cursor(conn)
+    if report and not manual:
+        await work_report.report(REPORT_NAME, start_lines(after_id, stop_at), state="시작")
     try:
         async with client:
             while True:
@@ -194,6 +196,12 @@ async def run_once(
     if report and not manual:
         await work_report.report(REPORT_NAME, report_lines(result), ok=not result.reason)
     return result
+
+
+def start_lines(after_id: int, stop_at: datetime | None) -> list[str]:
+    where = f"공고 {after_id} 다음부터 이어서 본다" if after_id else "처음 공고부터 본다"
+    until = f" · {stop_at:%H:%M} 에 멈춘다" if stop_at is not None else ""
+    return [where + until]
 
 
 def report_lines(result: RunResult) -> list[str]:

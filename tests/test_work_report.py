@@ -80,6 +80,7 @@ def test_제목은_날짜와_결과를_적는다() -> None:
         "*11/2 공고 분석 완료*\n• 대상 3건"
     )
     assert "공고 분석 실패" in work_report.build_text(day, "공고 분석", [], ok=False)
+    assert work_report.build_text(day, "공고 분석", [], state="시작") == "*11/2 공고 분석 시작*"
 
 
 async def test_웹훅이_비면_보내지_않는다() -> None:
