@@ -10,11 +10,16 @@
 
 **목록도 상세도 POST 로만 열린다.** 상세 주소를 GET 으로 열면 `GET Parameter 조회를 지원하지
 않습니다` 화면이 뜬다. 그래도 원문 주소는 상세 주소에 프로그램 번호를 붙인 것으로 둔다
-(2026-10-02 결정) — 프로그램마다 하나뿐인 주소가 필요하고, 오공고가 그 주소로 같은 공고를 가른다.
+(2026-10-02 결정) — 프로그램마다 하나뿐인 주소가 필요하고, 수집기가 그 주소로 프로그램을 가른다.
+
+**오공고로 보내는 원문 주소는 카드의 공유 주소다** (2026-11-12, LC-3615). 카드의 `공유` 버튼이
+`data-shtn-url` 에 단축 주소(`/d/a/prgmDtl/…`)를 들고 있고, 이 주소는 GET 으로 열린다 —
+상세로 302 를 보내고 세션 쿠키를 받은 브라우저에 상세를 보여 준다. 지원하기 버튼이 이 주소로 간다.
+공유 주소가 없는 카드는 위의 상세 주소를 보낸다.
 
 | 자리 | 읽는 것 |
 |---|---|
-| 목록 `selectWkexPrgmList.do` | 카드마다 번호·유형·제목·직무·지역·인원·모집기간·운영기관·참여기업 |
+| 목록 `selectWkexPrgmList.do` | 카드마다 번호·유형·제목·직무·지역·인원·모집기간·기관·기업·공유 |
 | 상세 `selectItrnPrjtEsgPrgmDtal.do` | 표의 칸 이름과 값. 주요내용·모집내용·선발기준·담당자 |
 
 목록은 모집이 끝나지 않은 프로그램만 보여 준다. 기업탐방형(`C`)은 상세 주소가 다른데 2026년 2월에
@@ -72,6 +77,9 @@ class ListItem:
     recruitment_end: date | None = None
     operator: str = ""
     company: str = ""
+    # 카드의 공유 버튼 주소. GET 으로 열린다. 다시 읽을지 가르는 카드 값에는 넣지 않는다 — 주소만
+    # 바뀌었는데 상세와 AI 를 다시 부르지 않게 한다
+    share_url: str = ""
 
     @property
     def source_url(self) -> str:
@@ -169,9 +177,18 @@ def parse_list(html: str) -> list[ListItem]:
                 recruitment_end=end,
                 operator=values.get("운영기관", ""),
                 company=values.get("참여기업", ""),
+                share_url=_share_url(card),
             )
         )
     return items
+
+
+def _share_url(card: Tag) -> str:
+    """카드의 공유 주소. 포털 밖 주소거나 없으면 빈 값이다. 포털이 붙이는 `:443` 은 덜어 낸다."""
+    button = card.select_one("[data-shtn-url]")
+    url = str(button.get("data-shtn-url", "")).strip() if button else ""
+    url = url.replace("https://yw.work24.go.kr:443/", f"{BASE_URL}/", 1)
+    return url if url.startswith(f"{BASE_URL}/") else ""
 
 
 def _card_values(card: Tag) -> dict[str, str]:

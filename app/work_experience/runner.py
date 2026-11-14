@@ -203,7 +203,7 @@ async def _collect(
     for item in items:
         source_url = item.source_url
         if store.is_current(conn, item):
-            store.touch(conn, source_url)
+            store.touch(conn, item)
             summary.skipped += 1
             continue
         if source_url in exclude:

@@ -12,6 +12,8 @@
 | 목록이 비었는데 총 건수가 0 이 아니면 실패다 | 포털 틀이 바뀐 날이 성공으로 보인다 |
 | 고용 형태 미래내일 일경험·참여기업·지역·모집기간을 실어 등록한다 | 일반 공고로 섞인다 |
 | 409 면 원문 주소로 id 를 찾아 교체한다 | id 를 잃은 프로그램을 영영 못 보낸다 |
+| 카드의 공유 주소를 원문 주소로 보낸다 | 지원하기 버튼이 포털 오류 화면으로 간다 |
+| 보낸 프로그램은 공유 주소만 바꿔 같은 id 로 교체한다 | 상세·AI 를 또 부르거나 중복이 생긴다 |
 | 마감일이 지난 프로그램은 보내지 않는다 | 이미 끝난 프로그램이 오공고에 새로 뜬다 |
 | AI 가 다른 직군의 직무를 고르면 그 직군의 기타 직무다 | 오공고가 400 으로 거절한다 |
 """
@@ -53,6 +55,8 @@ from tests.test_selector_generator import FakeClient as FakeGeminiClient
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 LIST_HTML = (FIXTURES / "work-experience-list-20261002.html").read_text(encoding="utf-8")
+# 공유 버튼이 있는 목록. 2026-10-02 목록에는 공유 버튼이 없다
+SHARE_LIST_HTML = (FIXTURES / "work-experience-list-20261112.html").read_text(encoding="utf-8")
 INTERN = "PG0031168202609230009"
 PROJECT = "PG0031102202609160001"
 ESG = "PG0031109202608120003"
@@ -80,6 +84,21 @@ def _only(html: str, keep: int, total: int | None = None) -> str:
 
 
 LIST_THREE = _only(LIST_HTML, 3)
+
+
+def _with_share(html: str) -> str:
+    """카드마다 공유 버튼을 붙인다. 주소는 `…/prgmDtl/S` + 프로그램 번호다."""
+    soup = BeautifulSoup(html, "html.parser")
+    for card in soup.select("ul.card-list > li"):
+        found = portal._DETAIL_CALL.search(str(card.select_one("div.link a")["href"]))
+        button = soup.new_tag("button", type="button")
+        button["data-shtn-url"] = f"https://yw.work24.go.kr:443/d/a/prgmDtl/S{found.group(2)}"
+        card.append(button)
+    return str(soup)
+
+
+def _share(program_id: str) -> str:
+    return f"https://yw.work24.go.kr/d/a/prgmDtl/S{program_id}"
 
 
 class PortalFetcher:
@@ -188,6 +207,18 @@ def test_목록_카드에서_번호_유형_참여기업_모집기간을_읽는�
     assert first.source_url == (
         "https://yw.work24.go.kr/d/a/selectItrnPrjtEsgPrgmDtal.do?untyPrgmCtn=" + INTERN
     )
+    assert first.share_url == ""
+
+
+def test_카드의_공유_버튼_주소를_읽는다() -> None:
+    items = portal.parse_list(SHARE_LIST_HTML)
+
+    assert [(item.program_id, item.share_url) for item in items] == [
+        ("PG0031137202611100006", "https://yw.work24.go.kr/d/a/prgmDtl/brPLGx3rrl"),
+        ("PG0031137202611100003", "https://yw.work24.go.kr/d/a/prgmDtl/brPLIQOMTD"),
+        ("PG0031137202611100005", "https://yw.work24.go.kr/d/a/prgmDtl/brPLEEjY2l"),
+    ]
+    assert items[0].source_url.endswith("untyPrgmCtn=PG0031137202611100006")
 
 
 def test_상세_표의_칸과_기간을_읽는다() -> None:
@@ -418,6 +449,69 @@ async def test_409_면_원문_주소로_id_를_찾아_교체한다(conn: sqlite3
     assert [request.method for request in seen[:3]] == ["POST", "GET", "PUT"]
     assert seen[1].url.params["sourceUrl"].startswith(portal.DETAIL_URL)
     assert {row[0] for row in conn.execute("SELECT spring_job_id FROM work_experiences")} == {7}
+
+
+async def test_공유_주소를_원문_주소로_보낸다(conn: sqlite3.Connection) -> None:
+    await run_once(
+        conn, fetcher=PortalFetcher(_with_share(LIST_THREE)), filler=FakeFiller(), settings=SETTINGS
+    )
+    seen = _spring(_created(iter(range(1, 10))))
+
+    result = await deliver.deliver_pending(conn, settings=SETTINGS)
+
+    assert result.sent == 3
+    assert json.loads(seen[0].content)["sourceUrl"] == _share(INTERN)
+    assert deliver.pending(conn, TODAY) == []
+
+
+async def test_이미_보낸_프로그램은_공유_주소만_바꿔_같은_id_로_교체한다(
+    conn: sqlite3.Connection,
+) -> None:
+    await run_once(conn, fetcher=PortalFetcher(), filler=FakeFiller(), settings=SETTINGS)
+    seen = _spring(_created(iter(range(1, 10))))
+    await deliver.deliver_pending(conn, settings=SETTINGS)
+    assert json.loads(seen[0].content)["sourceUrl"].startswith(portal.DETAIL_URL)
+
+    fetcher = PortalFetcher(_with_share(LIST_THREE))
+    filler = FakeFiller()
+    summary = await run_once(conn, fetcher=fetcher, filler=filler, settings=SETTINGS)
+    result = await deliver.deliver_pending(conn, settings=SETTINGS)
+    # 공유 버튼이 한 번 빠져도 읽어 둔 주소로 남는다
+    await run_once(conn, fetcher=PortalFetcher(), filler=filler, settings=SETTINGS)
+
+    assert (summary.skipped, fetcher.details, filler.titles) == (3, [], [])
+    assert result.sent == 3
+    assert [(request.method, request.url.path) for request in seen[3:]] == [
+        ("PUT", "/api/v1/internal/jobs/1"),
+        ("PUT", "/api/v1/internal/jobs/2"),
+        ("PUT", "/api/v1/internal/jobs/3"),
+    ]
+    assert json.loads(seen[3].content)["sourceUrl"] == _share(INTERN)
+    assert deliver.pending(conn, TODAY) == []
+
+
+async def test_409_에_공유_주소로_못_찾으면_상세_주소로_찾는다(conn: sqlite3.Connection) -> None:
+    await run_once(
+        conn, fetcher=PortalFetcher(_with_share(LIST_THREE)), filler=FakeFiller(), settings=SETTINGS
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(409, json={"message": "이미 등록된 원문 URL입니다."})
+        if request.method == "GET":
+            if request.url.params["sourceUrl"].startswith(portal.DETAIL_URL):
+                return httpx.Response(200, json={"data": {"jobId": 7}})
+            return httpx.Response(404, json={"message": "없다"})
+        return httpx.Response(200, json={"data": None})
+
+    seen = _spring(handler)
+
+    result = await deliver.deliver_pending(conn, settings=SETTINGS)
+
+    assert result.sent == 3
+    assert [request.method for request in seen[:4]] == ["POST", "GET", "GET", "PUT"]
+    assert seen[1].url.params["sourceUrl"] == _share(INTERN)
+    assert json.loads(seen[3].content)["sourceUrl"] == _share(INTERN)
 
 
 async def test_마감일이_지난_프로그램은_보내지_않는다(

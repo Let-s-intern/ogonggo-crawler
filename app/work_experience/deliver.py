@@ -3,15 +3,19 @@
 공고 전송과 같은 채용공고 API 를 쓴다 (`app/deliver/spring.py`). `POST /api/v1/internal/jobs`
 로 등록하고 받은 id 를 행에 적는다. 보낸 뒤 읽은 값이 바뀌면(모집기간이 늘었거나 인원이 바뀌었으면)
 `PUT /{id}` 로 교체한다. 409 가 오면 `GET ?sourceUrl=` 로 id 를 찾아 교체한다 — id 를 적기 전에
-크롤러가 죽었거나 DB 를 옮긴 경우다.
+크롤러가 죽었거나 DB 를 옮긴 경우다. 보낸 주소로 못 찾으면 예전에 보내던 상세 주소로 한 번
+더 찾는다.
+
+`sourceUrl` 은 카드의 공유 주소다 (2026-11-12, LC-3615). 상세 주소는 GET 으로 열리지 않아 지원하기
+버튼이 오류 화면으로 갔다. 공유 주소를 아직 못 읽은 프로그램은 상세 주소를 보낸다.
 
 오공고 주소와 키는 공고 전송과 같은 것이다 (`app/deliver/settings.py`, `OGONGGO_INTERNAL_API_KEY`).
 
 ## 보내지 않는 프로그램
 
 - AI 가 아직 채우지 않은 프로그램(`filled_hash != page_hash`). 다음 수집이 채운다
-- 이미 지금 값으로 보낸 프로그램(`sent_hash = page_hash`). 보낸 뒤 참여기업 로고를 올렸으면
-  다시 보낸다
+- 이미 지금 값으로 보낸 프로그램(`sent_hash = page_hash`). 보낸 뒤 참여기업 로고를 올렸거나
+  공유 주소가 바뀌었으면(처음 읽은 것 포함) 다시 보낸다
 - 모집 마감일이 지난 프로그램. 오공고가 마감일로 모집을 닫으므로 이미 보낸 것도 다시 보내지 않는다
 - 세 번 연달아 실패한 프로그램. 화면의 `지금 보내기` 는 보낸다. 보내는 데 성공하면 다시 센다
 
@@ -24,7 +28,7 @@
 | 시·도 | 카드의 지역. `지역무관` 은 전국 | 포털 지역 이름이 오공고 시·도 화면 이름과 같다 |
 | 모집 유형 | 기간 채용, 마감일에 자동 종료 | 모집기간이 늘 있다 |
 | 채용 시 마감 | 아니다 | 마감일까지 신청을 받고 그 뒤에 서류·면접으로 뽑는다 |
-| 지원 방법 | 외부 페이지(원문 주소) | 신청은 포털에서 한다 |
+| 지원 방법 | 외부 페이지(공유 주소) | 신청은 포털에서 한다 |
 | 최소 경력 연수 | 신입이면 0, 그 밖은 비움 | 공고 정규화와 같은 규칙이다 (`settle_fields`) |
 
 채용 안내사항(`recruitmentNotice`) 앞에는 프로그램 유형·일경험 기간·사전직무교육·운영기관 연락처를
@@ -65,7 +69,10 @@ transport: httpx.AsyncBaseTransport | None = None
 _running = threading.Lock()
 
 _READY = "filled_hash = page_hash AND fill_json IS NOT NULL"
-_UNSENT = "(sent_hash IS NULL OR sent_hash <> page_hash)"
+_UNSENT = (
+    "(sent_hash IS NULL OR sent_hash <> page_hash"
+    " OR IFNULL(sent_share_url, '') <> IFNULL(share_url, ''))"
+)
 
 
 @dataclass
@@ -189,8 +196,13 @@ def payload(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         "applicationMethod": "EXTERNAL_PAGE",
         "applyEmail": None,
         "inquiryEmail": email,
-        "sourceUrl": str(row["source_url"]),
+        "sourceUrl": public_url(row),
     }
+
+
+def public_url(row: sqlite3.Row) -> str:
+    """오공고에 보내는 원문 주소. 카드의 공유 주소이고, 아직 못 읽었으면 상세 주소다."""
+    return str(row["share_url"] or row["source_url"])
 
 
 def _notice(row: sqlite3.Row, fill: ProgramFill) -> str:
@@ -236,7 +248,6 @@ async def _deliver_one(
     row: sqlite3.Row,
     result: WorkExperienceDeliveryResult,
 ) -> None:
-    source_url = str(row["source_url"])
     body = payload(conn, row)
     if not body["companyName"]:
         _fail(conn, row, "참여기업도 운영기관도 없다", result)
@@ -246,7 +257,9 @@ async def _deliver_one(
         if job_id is None:
             response = await client.post(JOBS_PATH, json=body)
             if response.status_code == 409:
-                found = await client.get(JOBS_PATH, params={"sourceUrl": source_url})
+                found = await client.get(JOBS_PATH, params={"sourceUrl": body["sourceUrl"]})
+                if found.status_code == 404 and body["sourceUrl"] != row["source_url"]:
+                    found = await client.get(JOBS_PATH, params={"sourceUrl": row["source_url"]})
                 if found.status_code != 200:
                     raise _Rejected(f"{found.status_code} {_message(found)}")
                 job_id = int(found.json()["data"]["jobId"])
@@ -268,11 +281,11 @@ async def _deliver_one(
     conn.execute(
         """
         UPDATE work_experiences
-           SET spring_job_id = ?, sent_hash = page_hash, sent_logo_url = ?, send_status = 'sent',
-               send_attempts = 0, send_error = '', sent_at = datetime('now')
+           SET spring_job_id = ?, sent_hash = page_hash, sent_logo_url = ?, sent_share_url = ?,
+               send_status = 'sent', send_attempts = 0, send_error = '', sent_at = datetime('now')
          WHERE id = ?
         """,
-        (job_id, body["logoUrl"] or "", row["id"]),
+        (job_id, body["logoUrl"] or "", row["share_url"], row["id"]),
     )
     result.sent += 1
 

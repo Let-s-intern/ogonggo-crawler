@@ -1,0 +1,1012 @@
+
+<!DOCTYPE html>
+
+<html lang="ko">
+<head>
+<!-- 헤더에 csrf토큰 -->
+<meta charset="utf-8"/>
+<meta content="IE=edge" http-equiv="X-UA-Compatible"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" name="viewport"/>
+<meta content="telephone=no, address=no, email=no" name="format-detection"/>
+<link href="/static/css/common.css?v=20260518" rel="stylesheet" type="text/css"/>
+<link href="/static/external/jquery-ui/jquery-ui.min.css" rel="stylesheet" type="text/css"/>
+<link href="/static/css/style.css?v=20260304" rel="stylesheet" type="text/css"/>
+<link href="/static/images/common/KEIS.ico" rel="icon"/>
+
+
+
+
+
+
+
+
+
+
+<!-- title 내용 생성 -->
+<!-- ./ title 내용 생성 -->
+<title>프로그램 정보 | 홈 &gt; 일경험 프로그램 &gt; 프로그램 정보 | 청년일경험 포털</title>
+</head>
+<body>
+<!-- SKIP NAVI -->
+<div class="skip-nav">
+<a href="#content">본문으로 바로가기</a>
+<a href="#gnb">주메뉴 바로가기</a>
+</div>
+<!-- // SKIP NAVI -->
+<div class="wrapper">
+<!-- HEADER -->
+<link href="/static/css/commonNew.css?v=20260309" rel="stylesheet" type="text/css"/>
+<link href="/static/css/layoutNew.css?v=20260309" rel="stylesheet" type="text/css"/>
+<link href="/static/external/swiper/swiper-bundle.min.css" rel="stylesheet" type="text/css"/>
+
+
+
+<!-- 20260204 검색 js 추가 -->
+
+<!-- HEADER -->
+<header id="header-new">
+<div class="header-top-new">
+<div class="inner">
+<span class="nuri-text">이 누리집은 대한민국 공식 전자정부 누리집입니다.</span>
+</div>
+</div>
+<!-- 비로그인시에만, 배너가 보임, 닫기버튼 주석처리 -->
+<div class="header-bottom-new">
+<div class="inner">
+<div class="nav-wrap">
+<div class="logoBox-wrap">
+<h1 class="logo-box"><a class="logoNew" href="/main.do">청년 일경험 포털 UP</a></h1>
+</div>
+<div class="util-new-wrap">
+<ul class="util-new">
+<!-- 비로그인시 -->
+<li class="login-new"><a href="/a/b/openLogin.do" onclick="onSpinBlockUI();"><i class="icon"></i>로그인</a></li>
+<li class="join"><a class="join" href="/a/b/openJoin.do"><i class="icon"></i>회원가입</a></li>
+<!-- //비로그인시 -->
+</ul>
+</div>
+<div class="all-menu-wrap">
+<button class="all-menu" type="button"><span class="blind">전체메뉴 열기</span></button>
+</div>
+</div>
+<!-- MOBILE 펼침 메뉴를 별도 처리 -->
+<div class="mob-util" style="display:none">
+<button class="mobile-close" type="button"><span class="blind">메뉴 닫기</span></button>
+<ul class="util">
+<!-- 비로그인시 -->
+<li class="txt before">로그인하시면 <br/>더 많은 서비스를 이용할 수 있어요</li>
+<li class="join"><a href="/a/b/openJoin.do" onclick="onSpinBlockUI();">회원가입</a></li>
+<li class="login"><a href="/a/b/openLogin.do" onclick="onSpinBlockUI();">로그인</a></li>
+<!-- //비로그인시 -->
+</ul>
+</div>
+<div class="srch-wrap">
+<div class="inp-wrap">
+<div class="inp-box">
+<span aria-hidden="true" class="inp-search-icon"></span>
+<label class="blind" for="totalSearch">통합 검색어 입력</label>
+<input aria-autocomplete="list" aria-controls="autocompleteList" aria-expanded="false" class="inp" id="totalSearch" onkeyup="if(window.event.keyCode==13){fn_totalSearch();}" placeholder="검색어를 입력해주세요." role="combobox" title="검색어를 입력해주세요." type="text"/>
+<!-- 자동완성 추가 -->
+<ul class="autocomplete-list" id="autocompleteList" role="listbox" style="display: none;">
+<li class="auto-item word_link" data-text="프로그램">프로그램</li>
+</ul>
+</div>
+<button class="btn-srch" onclick="fn_totalSearch();" type="button"><span class="blind">검색</span></button>
+</div>
+<div class="history-area">
+<!-- 검색창 클릭 시 .active 생성 -->
+<div>
+<div class="left">
+<div class="trend-box">
+<p class="tit">인기 검색어</p>
+<div aria-label="인기 검색어" class="item-list" id="searchPopword" role="listitem">
+</div>
+</div>
+<div class="history-box">
+<p class="tit">최근 본 일경험 프로그램</p>
+<!-- 로그인 전 -->
+<div class="center">
+<p>최근 본 일경험 프로그램은 로그인 후 <br/>확인 가능합니다.</p>
+<a aria-label="최근 본 일경험 프로그램은 로그인 후 확인 가능합니다. 로그인" class="go-to-login" href="/a/b/openLogin.do" onclick="onSpinBlockUI();">로그인</a>
+</div>
+<div class="item-list" id="recent_list" style="display:none"></div>
+</div>
+</div>
+<form id="detailPageForm" method="POST"></form>
+<div class="right">
+<p class="tit">지원 마감 임박 공고</p>
+<ul class="list" id="deadline_work_list">
+<!-- js추가 -->
+</ul>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- 비로그인시 -->
+<div class="header-bottom">
+<div class="gnb-bg"></div>
+<div class="wrap">
+<!-- GNB -->
+<nav class="gnb" id="gnb">
+<ul aria-label="상단 메뉴">
+<li>
+<!-- 2026.02.24 웹 접근성 조치(depth1 메뉴에만 aria-expanded 적용하기 위해 클래스 추가 css적용x) -->
+<a aria-expanded="false" aria-label="사업소개 상단메뉴" class="dep1" href="javascript:void(0);">
+                            사업소개
+                        </a>
+<ul aria-label="사업소개 메뉴">
+<li>
+<a aria-label="청년일경험 포털 메뉴" href="javascript:fn_header_menuMove('MXH0000004');">청년일경험 포털</a>
+</li>
+<li>
+<a aria-label="고용노동부 청년일경험 메뉴" href="javascript:fn_header_menuMove('MXH0000136');">고용노동부 청년일경험</a>
+</li>
+<li>
+<a aria-label="주관기관별 일경험 사업 메뉴" href="javascript:fn_header_menuMove('MXH0000005');">주관기관별 일경험 사업</a>
+</li>
+</ul>
+</li>
+<li>
+<!-- 2026.02.24 웹 접근성 조치(depth1 메뉴에만 aria-expanded 적용하기 위해 클래스 추가 css적용x) -->
+<a aria-expanded="false" aria-label="일경험 프로그램 상단메뉴" class="dep1 active" href="javascript:void(0);">
+                            일경험 프로그램
+                        </a>
+<ul aria-label="일경험 프로그램 메뉴">
+<li>
+<a aria-label="프로그램 정보 메뉴" href="javascript:fn_header_menuMove('MXH0000008');">프로그램 정보</a>
+</li>
+<li>
+<a aria-label="모집일정 메뉴" href="javascript:fn_header_menuMove('MXH0000019');">모집일정</a>
+</li>
+<li>
+<a aria-label="운영기관 메뉴" href="javascript:fn_header_menuMove('MXH0000022');">운영기관</a>
+</li>
+<li>
+<a aria-label="참여기업 메뉴" href="javascript:fn_header_menuMove('MXH0000024');">참여기업</a>
+</li>
+</ul>
+</li>
+<li>
+<!-- 2026.02.24 웹 접근성 조치(depth1 메뉴에만 aria-expanded 적용하기 위해 클래스 추가 css적용x) -->
+<a aria-expanded="false" aria-label="우수사례 커뮤니티 상단메뉴" class="dep1" href="javascript:void(0);">
+                            우수사례 커뮤니티
+                        </a>
+<ul aria-label="우수사례 커뮤니티 메뉴">
+<li>
+<a aria-label="인턴형 우수사례 메뉴" href="javascript:fn_header_menuMove('MXH0000125');">인턴형 우수사례</a>
+</li>
+<li>
+<a aria-label="프로젝트형 우수사례 메뉴" href="javascript:fn_header_menuMove('MXH0000127');">프로젝트형 우수사례</a>
+</li>
+<li>
+<a aria-label="ESG지원형 우수사례 메뉴" href="javascript:fn_header_menuMove('MXH0000129');">ESG지원형 우수사례</a>
+</li>
+<li>
+<a aria-label="기업탐방형 우수사례 메뉴" href="javascript:fn_header_menuMove('MXH0000131');">기업탐방형 우수사례</a>
+</li>
+</ul>
+</li>
+<li>
+<!-- 2026.02.24 웹 접근성 조치(depth1 메뉴에만 aria-expanded 적용하기 위해 클래스 추가 css적용x) -->
+<a aria-expanded="false" aria-label="알림마당 상단메뉴" class="dep1" href="javascript:void(0);">
+                            알림마당
+                        </a>
+<ul aria-label="알림마당 메뉴">
+<li>
+<a aria-label="공지사항 메뉴" href="javascript:fn_header_menuMove('MXH0000072');">공지사항</a>
+</li>
+<li>
+<a aria-label="자료실 메뉴" href="javascript:fn_header_menuMove('MXH0000074');">자료실</a>
+</li>
+<li>
+<a aria-label="VR 직업체험 메뉴" href="javascript:fn_header_menuMove('MXH0000078');">VR 직업체험</a>
+</li>
+<li>
+<a aria-label="직업정보 동영상 메뉴" href="javascript:fn_header_menuMove('MXH0000076');">직업정보 동영상</a>
+</li>
+<li>
+<a aria-label="수료증 진위확인 메뉴" href="javascript:fn_header_menuMove('MXH0000026');">수료증 진위확인</a>
+</li>
+<li>
+<a aria-label="우수사례 공모전 메뉴" href="javascript:fn_header_menuMove('MXH0000142');">우수사례 공모전</a>
+</li>
+</ul>
+</li>
+<li>
+<!-- 2026.02.24 웹 접근성 조치(depth1 메뉴에만 aria-expanded 적용하기 위해 클래스 추가 css적용x) -->
+<a aria-expanded="false" aria-label="고객센터 상단메뉴" class="dep1" href="javascript:void(0);">
+                            고객센터
+                        </a>
+<ul aria-label="고객센터 메뉴">
+<li>
+<a aria-label="자주하는질문(FAQ) 메뉴" href="javascript:fn_header_menuMove('MXH0000084');">자주하는질문(FAQ)</a>
+</li>
+<li>
+<a aria-label="이용안내 메뉴" href="javascript:fn_header_menuMove('MXH0000086');">이용안내</a>
+</li>
+<li>
+<a aria-label="사이트맵 메뉴" href="javascript:fn_header_menuMove('MXH0000087');">사이트맵</a>
+</li>
+<li>
+<a aria-label="운영 정책 메뉴" href="javascript:fn_header_menuMove('MXH0000088');">운영 정책</a>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+<!-- // GNB -->
+<!-- 웹 접근성 :
+             선택 시 사이트맵 페이지로 이동하는 기능을 하는 버튼에 숨김 텍스로 '전체메뉴 열기'를 제공하고 있어 화면 낭독기 사용자에게 혼란을 주고 있습니다.
+             * 버튼의 용도와 목적에 맞는 안내를 제공하여 화면 낭독기 사용자가 버튼의 용도와 목적을 올바르게 인지할 수 있도록 제공해야 합니다.-->
+<button class="btn-menu" onclick="fn_header_menuMove('MXH0000087');"><span class="blind">사이트맵으로 이동하기</span></button>
+</div>
+</div>
+<div class="dim"></div>
+</header>
+<!--............. mobile gnb .............-->
+<div class="mobile-gnb-wrap">
+<div class="mobile-gnb">
+<nav class="gnb">
+<ul class="depth1">
+<li class="depth1-item">
+<a aria-expanded="false" href="javascript:void(0);">사업소개<i></i></a>
+<ul class="depth2">
+<li class="depth2-item">
+<a aria-label="청년일경험 포털 메뉴" href="javascript:fn_header_menuMove('MXH0000004');">청년일경험 포털</a>
+</li>
+<li class="depth2-item">
+<a aria-label="고용노동부 청년일경험 메뉴" href="javascript:fn_header_menuMove('MXH0000136');">고용노동부 청년일경험</a>
+</li>
+<li class="depth2-item">
+<a aria-label="주관기관별 일경험 사업 메뉴" href="javascript:fn_header_menuMove('MXH0000005');">주관기관별 일경험 사업</a>
+</li>
+</ul>
+</li>
+<li class="depth1-item is-expanded">
+<a aria-expanded="false" href="javascript:void(0);">일경험 프로그램<i></i></a>
+<ul class="depth2">
+<li class="depth2-item on">
+<a aria-label="프로그램 정보 메뉴" href="javascript:fn_header_menuMove('MXH0000008');">프로그램 정보</a>
+</li>
+<li class="depth2-item">
+<a aria-label="모집일정 메뉴" href="javascript:fn_header_menuMove('MXH0000019');">모집일정</a>
+</li>
+<li class="depth2-item">
+<a aria-label="운영기관 메뉴" href="javascript:fn_header_menuMove('MXH0000022');">운영기관</a>
+</li>
+<li class="depth2-item">
+<a aria-label="참여기업 메뉴" href="javascript:fn_header_menuMove('MXH0000024');">참여기업</a>
+</li>
+</ul>
+</li>
+<li class="depth1-item">
+<a aria-expanded="false" href="javascript:void(0);">우수사례 커뮤니티<i></i></a>
+<ul class="depth2">
+<li class="depth2-item">
+<a aria-label="인턴형 우수사례 메뉴" href="javascript:fn_header_menuMove('MXH0000125');">인턴형 우수사례</a>
+</li>
+<li class="depth2-item">
+<a aria-label="프로젝트형 우수사례 메뉴" href="javascript:fn_header_menuMove('MXH0000127');">프로젝트형 우수사례</a>
+</li>
+<li class="depth2-item">
+<a aria-label="ESG지원형 우수사례 메뉴" href="javascript:fn_header_menuMove('MXH0000129');">ESG지원형 우수사례</a>
+</li>
+<li class="depth2-item">
+<a aria-label="기업탐방형 우수사례 메뉴" href="javascript:fn_header_menuMove('MXH0000131');">기업탐방형 우수사례</a>
+</li>
+</ul>
+</li>
+<li class="depth1-item">
+<a aria-expanded="false" href="javascript:void(0);">알림마당<i></i></a>
+<ul class="depth2">
+<li class="depth2-item">
+<a aria-label="공지사항 메뉴" href="javascript:fn_header_menuMove('MXH0000072');">공지사항</a>
+</li>
+<li class="depth2-item">
+<a aria-label="자료실 메뉴" href="javascript:fn_header_menuMove('MXH0000074');">자료실</a>
+</li>
+<li class="depth2-item">
+<a aria-label="VR 직업체험 메뉴" href="javascript:fn_header_menuMove('MXH0000078');">VR 직업체험</a>
+</li>
+<li class="depth2-item">
+<a aria-label="직업정보 동영상 메뉴" href="javascript:fn_header_menuMove('MXH0000076');">직업정보 동영상</a>
+</li>
+<li class="depth2-item">
+<a aria-label="수료증 진위확인 메뉴" href="javascript:fn_header_menuMove('MXH0000026');">수료증 진위확인</a>
+</li>
+<li class="depth2-item">
+<a aria-label="우수사례 공모전 메뉴" href="javascript:fn_header_menuMove('MXH0000142');">우수사례 공모전</a>
+</li>
+</ul>
+</li>
+<li class="depth1-item">
+<a aria-expanded="false" href="javascript:void(0);">고객센터<i></i></a>
+<ul class="depth2">
+<li class="depth2-item">
+<a aria-label="자주하는질문(FAQ) 메뉴" href="javascript:fn_header_menuMove('MXH0000084');">자주하는질문(FAQ)</a>
+</li>
+<li class="depth2-item">
+<a aria-label="이용안내 메뉴" href="javascript:fn_header_menuMove('MXH0000086');">이용안내</a>
+</li>
+<li class="depth2-item">
+<a aria-label="사이트맵 메뉴" href="javascript:fn_header_menuMove('MXH0000087');">사이트맵</a>
+</li>
+<li class="depth2-item">
+<span>운영 정책</span>
+</li>
+<li class="depth3-item">
+<a aria-label="이용약관 메뉴" href="javascript:fn_header_menuMove('MXH0000089');"> • 이용약관</a>
+</li>
+<li class="depth3-item">
+<a aria-label="개인정보처리방침 메뉴" href="javascript:fn_header_menuMove('MXH0000090');"> • 개인정보처리방침</a>
+</li>
+<li class="depth3-item">
+<a aria-label="이메일무단수집거부 메뉴" href="javascript:fn_header_menuMove('MXH0000091');"> • 이메일무단수집거부</a>
+</li>
+<li class="depth3-item">
+<a aria-label="저작권보호정책 메뉴" href="javascript:fn_header_menuMove('MXH0000092');"> • 저작권보호정책</a>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</div>
+</div>
+<!--............. //mobile gnb .............-->
+<!--............. // header .............-->
+<!-- User Authentication popup -->
+<div class="popup" id="userAuthenticationPopup" style="display: none;">
+<div class="popup-wrap">
+<p class="popup-header">로그인 필요</p>
+<div class="popup-body" tabindex="0">
+<p>로그인이 필요한 서비스 입니다.<br/><br/>로그인 페이지로 이동 하시겠습니까?</p>
+</div>
+<div class="popup-footer">
+<button class="btn normal-line md">닫기</button>
+<button class="btn normal-line md ico-prev" onclick="fn_header_prevMenuMove();">이전</button>
+<button class="btn primary-color md ico-home">메인으로</button>
+<button class="btn primary-color md ico-login">로그인</button>
+</div>
+<button class="popup-close"><span class="blind">닫기</span></button>
+</div>
+</div>
+<!-- // User Authentication popup -->
+<!-- User RlnmCrfcCfrm popup -->
+<div class="popup" id="userRlnmCrfcCfrmPopup" style="display: none;">
+<div class="popup-wrap">
+<p class="popup-header">실명인증 필요</p>
+<div class="popup-body" tabindex="0">
+<p>실명인증이 필요한 서비스 입니다.<br/><br/>실명인증 페이지로 이동 하시겠습니까?</p><br/>
+<small>* 실명인증 진행 → 로그아웃 → 재 로그인 완료하여야 실명인증 적용됩니다.</small>
+</div>
+<div class="popup-footer">
+<button class="btn normal-line md">닫기</button>
+<a class="btn primary-color md" href="/a/b/openIndvMberRlnmCrfcPage.do" target="_blank">실명인증</a>
+</div>
+<button class="popup-close"><span class="blind">닫기</span></button>
+</div>
+</div>
+<!-- // User Authentication popup -->
+<!-- 20260204 검색 스크립트 -->
+<!-- 퍼블 이후 검색 구현 -->
+
+<main class="container">
+<div class="wrap">
+<!-- LNB -->
+<!-- LNB -->
+<div class="lnb">
+<div class="wrap">
+<nav aria-label="일경험 프로그램 메뉴" id="lnbNav">
+<h2>일경험 프로그램</h2>
+<ul>
+<li class="on">
+<a href="javascript:fn_header_menuMove('MXH0000008');">프로그램 정보</a>
+</li>
+<li class="">
+<a href="javascript:fn_header_menuMove('MXH0000019');">모집일정</a>
+</li>
+<li class="">
+<a href="javascript:fn_header_menuMove('MXH0000022');">운영기관</a>
+</li>
+<li class="">
+<a href="javascript:fn_header_menuMove('MXH0000024');">참여기업</a>
+</li>
+</ul>
+<button aria-controls="lnbNav" class="btn-lnb" type="button"><span class="blind">메뉴 닫기</span></button>
+</nav>
+</div>
+</div>
+<!-- // LNB -->
+<div class="content" id="content">
+<!-- TOP -->
+<div class="content-top">
+<div class="location">
+<ul>
+<li class="home"><a href="/" onclick="onSpinBlockUI();">홈</a></li>
+<!-- 2025.10.02 웹편의성 조치 브레드크럼에 현재 화면의 전체 정보 계층 구조를 표시하여야 함
+                     브레드크럼은 탐색 중인 화면의 상위 경로로 이동하는 데 사용되고,
+                     페이지 위치를 파악할 수 있는 탐색 수단이기 때문에 페이지 탐색 계층 구조를 빠짐 없이 표시하여
+                     사용자가 현재 위치를 파악하고 계층 구조의 수준을 이동할 수 있도록 해야합니다. -->
+<li><span>일경험 프로그램</span></li>
+</ul>
+</div>
+<h3>
+        
+            
+                프로그램 정보
+            
+            
+        
+    </h3>
+</div>
+<!-- // TOP -->
+<!-- contents-body -->
+
+<!-- BODY -->
+<div class="content-body">
+<form action="/d/a/selectWkexPrgmList.do" id="resetForm" method="post" name="resetForm"></form>
+<form action="/d/a/selectWkexPrgmList.do" autocomplete="off" id="searchForm" method="post" name="searchForm">
+<input id="currentPageNo" name="currentPageNo" type="hidden" value=""/>
+<input id="recordCountPerPage" name="recordCountPerPage" type="hidden" value="48"/>
+<div class="search-area">
+<table>
+<caption>조회 표 - 프로그램명, 프로그램 유형, 직무, 지역, 주관기관, 운영기관, 참여기업, 모집기간, 참여기간, 검색결과로 구성</caption>
+<colgroup>
+<col class="label"/><col/>
+</colgroup>
+<tbody>
+<tr>
+<th scope="row"><span class="label-vertical">프로그램명</span></th>
+<td>
+<div class="ipt">
+<input id="pgnm" maxlength="200" name="pgnm" onkeydown="if(event.keyCode==13){fn_search(1);return false;}" placeholder="프로그램명을 입력해주세요" type="text" value=""/>
+<button class="btn-clear" type="button"><span class="blind">지우기</span></button>
+</div>
+</td>
+</tr>
+<tr class="m-hidden" data-show-target="searchHidden">
+<th scope="row"><span class="label-vertical">프로그램 유형</span></th>
+<td>
+<div class="chk-group">
+<label class="chk"><input checked="checked" id="prgmSecd" name="prgmSecd" onclick="fn_prgmSecdGbn(1)" type="checkbox" value=""/><span>전체</span></label>
+<label class="chk"><input name="prgmSecd" onclick="fn_prgmSecdGbn(prgmSecd)" type="checkbox" value="I"/>
+<span>인턴형
+                                                      
+                                                    </span>
+</label>
+<label class="chk"><input name="prgmSecd" onclick="fn_prgmSecdGbn(prgmSecd)" type="checkbox" value="P"/>
+<span>프로젝트형
+                                                      
+                                                    </span>
+</label>
+<label class="chk"><input name="prgmSecd" onclick="fn_prgmSecdGbn(prgmSecd)" type="checkbox" value="E"/>
+<span>ESG지원형
+                                                      
+                                                    </span>
+</label>
+<label class="chk"><input name="prgmSecd" onclick="fn_prgmSecdGbn(prgmSecd)" type="checkbox" value="C"/>
+<span>기업탐방형
+                                                      
+                                                        <span style="font-size: 0.8rem;">(2026년 2월 종료)</span>
+</span>
+</label>
+</div>
+</td>
+</tr>
+<tr class="m-hidden" data-show-target="searchHidden">
+<th scope="row"><span class="label-vertical">직무</span></th>
+<td>
+<div class="select-box-top">
+<button aria-controls="jobCategoryBox" aria-expanded="false" aria-label="직무 선택" class="btn primary-line sm" data-show-button="jobCategory" id="btnDtyCd" type="button">직무선택</button><!-- data-show-button 속성에 대상 영역의 data-show-target 값 추가 -->
+<div class="selected-item" id="dtyCdHash"></div>
+</div>
+<div class="select-box" data-show-target="jobCategory" id="jobCategoryBox"><!--data-show-target 속성과 data-show-button 매칭 필요, 처음부터 보이게 할 경우 is-expanded 클래스 추가-->
+<div class="chk-group">
+<label class="chk"><input checked="checked" id="dtyCd" name="dtyCd" onclick="fn_dtyCdGbn(1,'전체')" type="checkbox" value=""/><span>전체</span></label>
+<label class="chk"><input name="dtyCd" onclick="fn_dtyCdGbn('10','경영·사무')" type="checkbox" value="10"/><span>경영·사무</span></label>
+<label class="chk"><input name="dtyCd" onclick="fn_dtyCdGbn('11','금융·회계')" type="checkbox" value="11"/><span>금융·회계</span></label>
+<label class="chk"><input name="dtyCd" onclick="fn_dtyCdGbn('12','영업·해외영업')" type="checkbox" value="12"/><span>영업·해외영업</span></label>
+<label class="chk"><input name="dtyCd" onclick="fn_dtyCdGbn('13','광고·마케팅')" type="checkbox" value="13"/><span>광고·마케팅</span></label>
+<label class="chk"><input name="dtyCd" onclick="fn_dtyCdGbn('14','IT')" type="checkbox" value="14"/><span>IT</span></label>
+<label class="chk"><input name="dtyCd" onclick="fn_dtyCdGbn('15','연구·R&amp;D')" type="checkbox" value="15"/><span>연구·R&amp;D</span></label>
+<label class="chk"><input name="dtyCd" onclick="fn_dtyCdGbn('16','생산·제조')" type="checkbox" value="16"/><span>생산·제조</span></label>
+<label class="chk"><input name="dtyCd" onclick="fn_dtyCdGbn('17','공공행정')" type="checkbox" value="17"/><span>공공행정</span></label>
+<label class="chk"><input name="dtyCd" onclick="fn_dtyCdGbn('99','기타')" type="checkbox" value="99"/><span>기타</span></label>
+</div>
+<button aria-controls="jobCategoryBox" class="btn-close" data-show-button="jobCategory" type="button"><span class="blind">닫기</span></button>
+</div>
+</td>
+</tr>
+<tr class="m-hidden" data-show-target="searchHidden">
+<th scope="row"><span class="label-vertical">지역</span></th>
+<td>
+<div class="select-box-top">
+<button aria-controls="regCategoryBox" aria-expanded="false" aria-label="지역 선택" class="btn primary-line sm" data-show-button="regCategory" id="btnAreaCd" type="button">지역선택</button><!-- data-show-button 속성에 대상 영역의 data-show-target 값 추가 -->
+<div class="selected-item" id="areaCdHash"></div>
+</div>
+<div class="select-box" data-show-target="regCategory" id="regCategoryBox"><!--data-show-target 속성과 data-show-button 매칭 필요, 처음부터 보이게 할 경우 is-expanded 클래스 추가-->
+<div class="chk-group">
+<label class="chk"><input checked="checked" id="areaCd" name="areaCd" onclick="fn_areaCdGbn(1,'전체')" type="checkbox" value=""/><span>전체</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('43000','충북')" type="checkbox" value="43000"/><span>충북</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('44000','충남')" type="checkbox" value="44000"/><span>충남</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('47000','경북')" type="checkbox" value="47000"/><span>경북</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('48000','경남')" type="checkbox" value="48000"/><span>경남</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('50000','제주')" type="checkbox" value="50000"/><span>제주</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('51000','강원')" type="checkbox" value="51000"/><span>강원</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('52000','전북')" type="checkbox" value="52000"/><span>전북</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('99999','지역무관')" type="checkbox" value="99999"/><span>지역무관</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('11000','서울')" type="checkbox" value="11000"/><span>서울</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('26000','부산')" type="checkbox" value="26000"/><span>부산</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('27000','대구')" type="checkbox" value="27000"/><span>대구</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('28000','인천')" type="checkbox" value="28000"/><span>인천</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('30000','대전')" type="checkbox" value="30000"/><span>대전</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('31000','울산')" type="checkbox" value="31000"/><span>울산</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('36110','세종')" type="checkbox" value="36110"/><span>세종</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('41000','경기')" type="checkbox" value="41000"/><span>경기</span></label>
+<label class="chk"><input name="areaCd" onclick="fn_areaCdGbn('12000','전남광주')" type="checkbox" value="12000"/><span>전남광주</span></label>
+</div>
+<button aria-controls="regCategoryBox" class="btn-close" data-show-button="regCategory" type="button"><span class="blind">닫기</span></button>
+</div>
+</td>
+</tr>
+<tr class="m-hidden p-hidden" data-show-target="searchHidden">
+<th scope="row"><span class="label-vertical">주관기관</span></th>
+<td>
+<div class="sel w-150px w-lg-80px w-sm-150">
+<select id="mnstIssn" name="mnstIssn">
+<option selected="selected" value="">전체</option>
+<option value="G0000003">고용노동부</option>
+</select>
+</div>
+</td>
+</tr>
+<tr class="m-hidden p-hidden" data-show-target="searchHidden">
+<th scope="row"><span class="label-vertical">운영기관</span></th>
+<td>
+<div class="ipt">
+<input id="operInstNm" maxlength="200" name="operInstNm" onkeydown="if(event.keyCode==13){fn_search(1);return false;}" placeholder="운영기관을 입력해주세요" type="text" value=""/>
+<button class="btn-clear" type="button"><span class="blind">지우기</span></button>
+</div>
+</td>
+</tr>
+<tr class="m-hidden p-hidden" data-show-target="searchHidden">
+<th scope="row"><span class="label-vertical">참여기업</span></th>
+<td>
+<div class="ipt">
+<input id="prtcInstNm" maxlength="200" name="prtcInstNm" onkeydown="if(event.keyCode==13){fn_search(1);return false;}" placeholder="참여기업을 입력해주세요" type="text" value=""/>
+<button class="btn-clear" type="button"><span class="blind">지우기</span></button>
+</div>
+</td>
+</tr>
+<!-- 20260922 사업년도 조건 추가 -->
+<tr class="m-hidden p-hidden" data-show-target="searchHidden">
+<th scope="row"><span class="label-vertical">사업년도</span></th>
+<td>
+<div class="sel w-150px w-md-100">
+<select id="bizYear" name="bizYear">
+<option value="">전체</option>
+<option value="2026">2026</option>
+<option value="2025">2025</option>
+<option value="2024">2024</option>
+<option value="2023">2023</option>
+</select>
+</div>
+</td>
+</tr>
+<tr class="m-hidden p-hidden" data-show-target="searchHidden">
+<th scope="row"><span class="label-vertical">모집기간</span></th>
+<td>
+<div class="d-flex gap-20">
+<div class="rdo-group">
+<label class="rdo"><input checked="checked" id="rcitBe1" name="rcitBe" type="radio" value="1"/><span>시작일 기준</span></label>
+<label class="rdo"><input name="rcitBe" type="radio" value="2"/><span>마감일 기준</span></label>
+</div>
+<div class="calendar">
+<label class="blind" for="rcitBgde">모집기간 시작일자</label>
+<div class="ipt"><input id="rcitBgde" name="rcitBgde" placeholder="날짜입력" title="모집기간 시작일자" type="text" value=""/></div>
+<div class="form-txt">~</div>
+<label class="blind" for="rcitEnde">모집기간 마감일자</label>
+<div class="ipt"><input id="rcitEnde" name="rcitEnde" placeholder="날짜입력" title="모집기간 마감일자" type="text" value=""/></div>
+</div>
+<div class="rdo-group btn">
+<label class="rdo"><input name="rdoRcitMonth" onchange="fn_setMonth(this);" type="radio" value="1"/><span>1개월</span></label>
+<label class="rdo"><input name="rdoRcitMonth" onchange="fn_setMonth(this);" type="radio" value="3"/><span>3개월</span></label>
+</div>
+<div>
+<div class="chk-group">
+<label class="chk"><input id="closeYnInc" name="closeYnInc" type="checkbox" value="Y"/><span>마감</span></label>
+</div>
+</div>
+</div>
+</td>
+</tr>
+<tr class="m-hidden p-hidden" data-show-target="searchHidden">
+<th scope="row"><span class="label-vertical">참여기간</span></th>
+<td>
+<div class="d-flex gap-20">
+<div class="rdo-group">
+<label class="rdo"><input checked="checked" id="operBe1" name="operBe" type="radio" value="1"/><span>시작일 기준</span></label>
+<label class="rdo"><input name="operBe" type="radio" value="2"/><span>마감일 기준</span></label>
+</div>
+<div class="calendar">
+<label class="blind" for="operBgde">참여기간 시작일자</label>
+<div class="ipt"><input id="operBgde" name="operBgde" placeholder="날짜입력" title="참여기간 시작일자" type="text" value=""/></div>
+<div class="form-txt">~</div>
+<label class="blind" for="operEnde">참여기간 마감일자</label>
+<div class="ipt"><input id="operEnde" name="operEnde" placeholder="날짜입력" title="참여기간 마감일자" type="text" value=""/></div>
+</div>
+<div class="rdo-group btn">
+<label class="rdo"><input name="rdoOperMonth" onchange="fn_setMonth(this);" type="radio" value="1"/><span>1개월</span></label>
+<label class="rdo"><input name="rdoOperMonth" onchange="fn_setMonth(this);" type="radio" value="3"/><span>3개월</span></label>
+</div>
+</div>
+</td>
+</tr>
+<tr class="m-hidden p-hidden" data-show-target="searchHidden">
+<th scope="row">검색결과</th>
+<td>
+<div aria-label="검색 조건 목록" class="sortable-box">
+<div class="selected-item" id="hashResult"></div>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="btn-toggle m-hidden" id="m-expendedSearchAreaDiv"><button data-show-button="searchHidden" id="m-expendedSearchAreaBtn">더 많은 검색조건 열기</button></div>
+<div class="btn-toggle p-hidden" id="p-expendedSearchAreaDiv"><button data-show-button="searchHidden" id="p-expendedSearchAreaBtn">검색조건 열기</button></div>
+<div class="btn-group">
+<button class="btn primary-line md ico-reset" onclick="fn_searchReset(1);" type="button">초기화</button>
+<button class="btn primary-color md ico-search" onclick="fn_search(1);" type="button">검색</button>
+</div>
+</div>
+<div class="list-top">
+<div class="right sort">
+<div class="d-flex flex-sm-fill">
+<label class="label" for="listCnt"><strong>목록 표시 개수</strong></label>
+<div class="sel w-100px w-lg-80px w-sm-100">
+<select id="listCnt" name="listCnt">
+<option selected="selected" value="12">12개</option>
+<option value="24">24개</option>
+<option value="36">36개</option>
+<option value="48">48개</option>
+</select>
+</div>
+</div>
+<div class="d-flex lex-sm-fill">
+<label class="label" for="sortOption"><strong>정렬 기준</strong></label>
+<div class="sel w-200px w-sm-100">
+<select id="sortOption" name="sortOption">
+<option value="A">모집마감(오름차순)</option>
+<option value="B">모집마감(내림차순)</option>
+<option selected="selected" value="C">최근모집일순</option>
+<option value="D">예전모집일순</option>
+<option value="E">모집인원(오름차순)</option>
+<option value="F">모집인원(내림차순)</option>
+<!-- 26.09.07 제거 -->
+</select>
+</div>
+</div>
+<button class="btnCon" id="type1" onclick="fn_resultSearch(this)" type="button">적용</button>
+</div>
+<div class="left total">총
+                        <strong class="blue">
+                       
+                      342
+                        </strong>건
+                        </div>
+</div>
+<ul class="card-list">
+<li>
+<div class="card">
+<div class="txt-group">
+<div class="label">
+<!-- 프로그램 유형 라벨 -->
+<i class="label-txt cat01">인턴형</i>
+<!-- 마감 -->
+<i class="label-txt d02">마감 D-10</i>
+<div class="right sort" style="display:flex; justify-content:flex-start; margin-left:auto; align-items:flex-end;">
+<!-- 공유 버튼   -->
+<button aria-label="프로그램 주소 공유" class="btn liked-line xxs" data-shtn-url="https://yw.work24.go.kr:443/d/a/prgmDtl/brPLGx3rrl" onclick="fn_copyUrl(this);" style="margin-right: 4px;" type="button">공유</button>
+<button aria-label="(국취연계형) [한국농수산식품유통공사_대구경북지역본부] 공공행정직무 5기 일경험" aria-pressed="false" class="btn liked-line xxs ico-unlike" name="liked" onclick="javascript:fn_bkmk('PG0031137202611100006','', this);" type="button">찜</button>
+</div>
+</div>
+<!-- i_vhyuklee -->
+<div class="link"><a href="javascript:fn_searchDetail('I','PG0031137202611100006');" title="(국취연계형) [한국농수산식품유통공사_대구경북지역본부] 공공행정직무 5기 일경험"><strong>(국취연계형) [한국농수산식품유통공사_대구경북지역본부] 공공행정직무 5기 일경험</strong></a></div>
+<ul class="list">
+<li><strong>직무</strong><span>​공공행정</span></li>
+<li><strong>특화유형</strong><span>​국민취업지원 연계형</span></li>
+<li><strong>지역</strong><span>​대구</span></li>
+<li><strong>모집인원</strong><span>​1명</span></li>
+<!--
+                                        <li><strong>신청인원</strong><span>&#8203;명</span></li>
+                                         -->
+<li><strong>모집기간</strong><span>
+                                         26-11-12 ~ 26-11-22​</span></li>
+<!-- 26.09.07 사전직무교육기간, 일경험 기간 추가 -->
+<li><strong>사전직무교육</strong><span>
+                                          
+                                            
+                                            
+                                            26-11-26 ~ 26-11-27​
+                                          
+                                        </span></li>
+<li><strong>일경험기간</strong><span>
+                                        
+                                        
+                                          
+                                            26-11-30
+                                            ~
+                                            27-01-22
+                                          
+                                          
+                                        
+                                        </span></li>
+<!-- 26.09.07 사전직무교육기간, 일경험 기간 추가 끝-->
+<li><strong>운영기관</strong><span><i title="㈜지에스씨넷">​㈜지에스씨넷</i></span></li>
+<li><strong>참여기업</strong><span><i title="한국농수산식품유통공사 대구경북지역본부">​한국농수산식품유통공사 대구경북지역본부</i></span></li>
+</ul>
+</div>
+<div class="btn-group">
+<a class="btn primary-color xs" href="javascript:fn_apply('PG0031137202611100006','I','1','','02','');" title="(국취연계형) [한국농수산식품유통공사_대구경북지역본부] 공공행정직무 5기 일경험">신청하기</a></div>
+</div>
+</li>
+<li>
+<div class="card">
+<div class="txt-group">
+<div class="label">
+<!-- 프로그램 유형 라벨 -->
+<i class="label-txt cat01">인턴형</i>
+<!-- 마감 -->
+<i class="label-txt d02">마감 D-10</i>
+<div class="right sort" style="display:flex; justify-content:flex-start; margin-left:auto; align-items:flex-end;">
+<!-- 공유 버튼   -->
+<button aria-label="프로그램 주소 공유" class="btn liked-line xxs" data-shtn-url="https://yw.work24.go.kr:443/d/a/prgmDtl/brPLIQOMTD" onclick="fn_copyUrl(this);" style="margin-right: 4px;" type="button">공유</button>
+<button aria-label="(국취연계형) [한국농수산식품유통공사_본사] 공공행정직무 2기 일경험" aria-pressed="false" class="btn liked-line xxs ico-unlike" name="liked" onclick="javascript:fn_bkmk('PG0031137202611100003','', this);" type="button">찜</button>
+</div>
+</div>
+<!-- i_vhyuklee -->
+<div class="link"><a href="javascript:fn_searchDetail('I','PG0031137202611100003');" title="(국취연계형) [한국농수산식품유통공사_본사] 공공행정직무 2기 일경험"><strong>(국취연계형) [한국농수산식품유통공사_본사] 공공행정직무 2기 일경험</strong></a></div>
+<ul class="list">
+<li><strong>직무</strong><span>​공공행정</span></li>
+<li><strong>특화유형</strong><span>​국민취업지원 연계형</span></li>
+<li><strong>지역</strong><span>​전남광주</span></li>
+<li><strong>모집인원</strong><span>​3명</span></li>
+<!--
+                                        <li><strong>신청인원</strong><span>&#8203;명</span></li>
+                                         -->
+<li><strong>모집기간</strong><span>
+                                         26-11-12 ~ 26-11-22​</span></li>
+<!-- 26.09.07 사전직무교육기간, 일경험 기간 추가 -->
+<li><strong>사전직무교육</strong><span>
+                                          
+                                            
+                                            
+                                            26-11-26 ~ 26-11-27​
+                                          
+                                        </span></li>
+<li><strong>일경험기간</strong><span>
+                                        
+                                        
+                                          
+                                            26-11-30
+                                            ~
+                                            27-01-22
+                                          
+                                          
+                                        
+                                        </span></li>
+<!-- 26.09.07 사전직무교육기간, 일경험 기간 추가 끝-->
+<li><strong>운영기관</strong><span><i title="㈜지에스씨넷">​㈜지에스씨넷</i></span></li>
+<li><strong>참여기업</strong><span><i title="한국농수산식품유통공사">​한국농수산식품유통공사</i></span></li>
+</ul>
+</div>
+<div class="btn-group">
+<a class="btn primary-color xs" href="javascript:fn_apply('PG0031137202611100003','I','3','','02','');" title="(국취연계형) [한국농수산식품유통공사_본사] 공공행정직무 2기 일경험">신청하기</a></div>
+</div>
+</li>
+<li>
+<div class="card">
+<div class="txt-group">
+<div class="label">
+<!-- 프로그램 유형 라벨 -->
+<i class="label-txt cat01">인턴형</i>
+<!-- 마감 -->
+<i class="label-txt d02">마감 D-10</i>
+<div class="right sort" style="display:flex; justify-content:flex-start; margin-left:auto; align-items:flex-end;">
+<!-- 공유 버튼   -->
+<button aria-label="프로그램 주소 공유" class="btn liked-line xxs" data-shtn-url="https://yw.work24.go.kr:443/d/a/prgmDtl/brPLEEjY2l" onclick="fn_copyUrl(this);" style="margin-right: 4px;" type="button">공유</button>
+<button aria-label="(국취연계형) [한국농수산식품유통공사_전남광주지역본부] 공공행정직무 4기 일경험" aria-pressed="false" class="btn liked-line xxs ico-unlike" name="liked" onclick="javascript:fn_bkmk('PG0031137202611100005','', this);" type="button">찜</button>
+</div>
+</div>
+<!-- i_vhyuklee -->
+<div class="link"><a href="javascript:fn_searchDetail('I','PG0031137202611100005');" title="(국취연계형) [한국농수산식품유통공사_전남광주지역본부] 공공행정직무 4기 일경험"><strong>(국취연계형) [한국농수산식품유통공사_전남광주지역본부] 공공행정직무 4기 일경험</strong></a></div>
+<ul class="list">
+<li><strong>직무</strong><span>​공공행정</span></li>
+<li><strong>특화유형</strong><span>​국민취업지원 연계형</span></li>
+<li><strong>지역</strong><span>​전남광주</span></li>
+<li><strong>모집인원</strong><span>​3명</span></li>
+<!--
+                                        <li><strong>신청인원</strong><span>&#8203;명</span></li>
+                                         -->
+<li><strong>모집기간</strong><span>
+                                         26-11-12 ~ 26-11-22​</span></li>
+<!-- 26.09.07 사전직무교육기간, 일경험 기간 추가 -->
+<li><strong>사전직무교육</strong><span>
+                                          
+                                            
+                                            
+                                            26-11-26 ~ 26-11-27​
+                                          
+                                        </span></li>
+<li><strong>일경험기간</strong><span>
+                                        
+                                        
+                                          
+                                            26-11-30
+                                            ~
+                                            27-01-22
+                                          
+                                          
+                                        
+                                        </span></li>
+<!-- 26.09.07 사전직무교육기간, 일경험 기간 추가 끝-->
+<li><strong>운영기관</strong><span><i title="㈜지에스씨넷">​㈜지에스씨넷</i></span></li>
+<li><strong>참여기업</strong><span><i title="한국농수산식품유통공사 전남광주지역본부">​한국농수산식품유통공사 전남광주지역본부</i></span></li>
+</ul>
+</div>
+<div class="btn-group">
+<a class="btn primary-color xs" href="javascript:fn_apply('PG0031137202611100005','I','3','','02','');" title="(국취연계형) [한국농수산식품유통공사_전남광주지역본부] 공공행정직무 4기 일경험">신청하기</a></div>
+</div>
+</li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</ul>
+<!-- PAGINATION : 현재 페이지에 li class="on" -->
+<div id="pagination">
+</div>
+<!-- // PAGINATION -->
+</form>
+</div>
+<!-- // BODY -->
+<form action="/d/a/selectItrnPrjtEsgPrgmDtal.do" id="parameterForm" method="POST">
+<input id="untyPrgmCtn" name="untyPrgmCtn" type="hidden"/>
+<input name="sortOption" type="hidden" value="C"/>
+<input name="pgnm" type="hidden" value=""/>
+<input name="mnstIssn" type="hidden" value=""/>
+<input name="operEnde" type="hidden" value=""/>
+<input name="operInstNm" type="hidden" value=""/>
+<input name="currentPageNo" type="hidden" value="1"/>
+<input name="prgmSecd" type="hidden" value=""/>
+<input name="operBgde" type="hidden" value=""/>
+<input name="rcitBe" type="hidden" value=""/>
+<input name="operBe" type="hidden" value=""/>
+<input name="listCnt" type="hidden" value=""/>
+<input name="recordCountPerPage" type="hidden" value="48"/>
+<input name="prtcInstNm" type="hidden" value=""/>
+<input name="areaCd" type="hidden" value=""/>
+<input name="rcitEnde" type="hidden" value=""/>
+<input name="dtyCd" type="hidden" value=""/>
+<input name="rcitBgde" type="hidden" value=""/>
+<input name="closeYnInc" type="hidden" value=""/>
+</form>
+<form action="/d/a/selectWkexPrgmList.do" id="resultSearchForm" method="POST">
+<input name="pgnm" type="hidden" value=""/>
+<input name="mnstIssn" type="hidden" value=""/>
+<input name="operEnde" type="hidden" value=""/>
+<input name="operInstNm" type="hidden" value=""/>
+<input name="currentPageNo" type="hidden" value="1"/>
+<input name="operBgde" type="hidden" value=""/>
+<input name="rcitBe" type="hidden" value=""/>
+<input name="operBe" type="hidden" value=""/>
+<input name="prtcInstNm" type="hidden" value=""/>
+<input name="rcitEnde" type="hidden" value=""/>
+<input name="rcitBgde" type="hidden" value=""/>
+<input name="closeYnInc" type="hidden" value=""/>
+<input id="chkPrgmSecd" name="prgmSecd" type="hidden"/>
+<input id="chkAreaCd" name="areaCd" type="hidden"/>
+<input id="chkDtyCd" name="dtyCd" type="hidden"/>
+<input id="chkRecordCountPerPage" name="recordCountPerPage" type="hidden"/>
+<input id="chkListCnt" name="listCnt" type="hidden"/>
+<input id="chkSortOption" name="sortOption" type="hidden"/>
+<input id="chkMyBkmkedYn" name="myBkmkedYn" type="hidden"/>
+<input id="chkBizYear" name="bizYear" type="hidden"/>
+</form>
+</div>
+</div>
+</main>
+<!-- FOOTER -->
+<!-- Nethru Tag Manager -->
+
+<!-- End Nethru Tag Manager -->
+<!-- FOOTER -->
+<footer class="footer-new">
+<div class="inner">
+<div class="logoNew"><img alt="청년 일경험 포털 UP" src="/static/images/commonNew/logo.png"/></div>
+<div class="footer-top-new">
+<p class="addr">(27740) 충청북도 음성군 맹동면 태정로 6 한국고용정보원</p>
+<ul class="info">
+<li><span class="bold">홈페이지 전산 이용 문의</span><a href="tel:1577-7114">1577-7114</a><p>(유료, 한국고용정보원 고객상담센터 평일 09:00~18:00)</p></li>
+<li><span class="bold">고용·노동 분야 제도 문의</span><a href="tel:1350">국번없이 1350</a><p>(유료, 고용노동부 고객상담센터 평일 09:00~18:00)</p></li>
+</ul>
+<div class="link-list">
+<a href="/a/c/selectUtzeStptInfo.do" onclick="onSpinBlockUI();" title="이용약관 바로가기">이용약관</a>
+<a class="blue" href="/a/c/selectIdifPrssPlcyInfo.do" onclick="onSpinBlockUI();" title="개인정보처리방침 바로가기"><strong>개인정보처리방침</strong></a>
+<a href="/a/c/openEmailAdrPrssPlcy.do" onclick="onSpinBlockUI();" title="이메일무단수집거부 바로가기">이메일무단수집거부</a>
+<a href="/a/c/openCpyrPoly.do" onclick="onSpinBlockUI();" title="저작권보호정책 바로가기">저작권보호정책</a>
+<a href="/h/d/selectSiteMapDtal.do" onclick="onSpinBlockUI();" title="사이트맵 바로가기">사이트맵</a>
+</div>
+<ul class="footer-bottom-new">
+<li><a href="http://www.moel.go.kr" target="_blank" title="고용노동부 홈페이지 새창열림"> <img alt="고용노동부" src="/static/images/commonNew/logo-moel.png"/>고용노동부 <i class="new-tab"></i></a></li>
+<li><a href="https://www.keis.or.kr" target="_blank" title="한국고용정보원 홈페이지 새창열림"><img alt="한국고용정보원" src="/static/images/commonNew/logo-keis.png"/> 한국고용정보원 <i class="new-tab"></i></a></li>
+</ul>
+<div class="wa"><a href="http://www.webwatch.or.kr/Situation/WA_Situation.html?MenuCD=110"><img alt="과학기술정보통신부 WEB ACCESSIBILITY 마크(웹 접근성 품질인증 마크) 2026.03.13 ~ 2027.03.12" src="/static/images/commonNew/logo-wa.png" title="국가 공인 인증기관 : 웹와치"/></a></div>
+</div>
+<div class="copyright-new"><p>Copyright © 2025 고용노동부 한국고용정보원 all rights reserved.</p></div>
+<div class="family-site-wrap">
+<div class="family-site-new">
+<button aria-controls="familySiteList" class="family-site-button" title="패밀리사이트 열기" type="button">패밀리사이트</button>
+<ul class="family-site-list" id="familySiteList">
+<li><a href="https://www.work24.go.kr" target="_blank" title="고용24 홈페이지 새창열림">고용24</a></li>
+<li><a href="https://eis.work.go.kr" target="_blank" title="고용행정통계 홈페이지 새창열림">고용행정통계</a></li>
+<li><a href="https://www.workplus.go.kr" target="_blank" title="고용복지센터 홈페이지 새창열림">고용복지센터</a></li>
+<li><a href="https://www.work.go.kr/cyberedu/main.do" target="_blank" title="사이버진로교육센터 홈페이지 새창열림">사이버진로교육센터</a></li>
+<li><a href="https://saeil.mogef.go.kr/hom/HOM_Main.do" target="_blank" title="여성새로일하기센터 홈페이지 새창열림">여성새로일하기센터</a></li>
+<li><a href="https://www.worktogether.or.kr" target="_blank" title="장애인고용포털 홈페이지 새창열림">장애인고용포털</a></li>
+<li><a href="https://www.gasarang.go.kr/hpgsMain.do" target="_blank" title="가사랑 홈페이지 새창열림">가사랑</a></li>
+<li><a href="https://www.work.go.kr/gongsi/empReportInfo/retrieveGetGongsiList.do" target="_blank" title="고용형태공시제 홈페이지 새창열림">고용형태공시제</a></li>
+<li><a href="https://www.eps.go.kr" target="_blank" title="외국인고용(외국인전용) 홈페이지 새창열림">외국인고용(외국인전용)</a></li>
+</ul>
+</div>
+</div>
+</div>
+</footer>
+<!-- // FOOTER -->
+<div id="spin"></div>
+</div>
+</body>
+</html>
