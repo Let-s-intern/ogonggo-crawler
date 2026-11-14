@@ -58,6 +58,14 @@ def main(argv: list[str] | None = None) -> int:
         "off-target", help="분류가 직군을 대상 밖으로 정한 공고를 센다. --run 이면 폐기한다"
     )
     off.add_argument("--run", action="store_true", help="세기만 하지 않고 폐기한다")
+    check_parser = sub.add_parser("source-check", help="상시 채용 원문 확인 (app/source_check/)")
+    check_sub = check_parser.add_subparsers(dest="action", required=True)
+    check_run = check_sub.add_parser(
+        "run",
+        help="원문을 열어 판정만 보여 준다. --close 면 마감으로 나온 공고를 오공고에서 마감한다",
+    )
+    check_run.add_argument("--close", action="store_true", help="판정만 하지 않고 마감한다")
+    check_run.add_argument("--limit", type=int, default=20, help="볼 공고 수 (기본 20)")
     parser.add_argument("--database", default=None, help="기본값은 DATABASE_PATH")
 
     args = parser.parse_args(argv)
@@ -71,6 +79,8 @@ def main(argv: list[str] | None = None) -> int:
             return _enrich_backlog(conn, run=args.run, limit=args.limit)
         if args.group == "discard":
             return _discard_off_target(conn, run=args.run)
+        if args.group == "source-check":
+            return _source_check(conn, close=args.close, limit=args.limit)
         if args.action == "up":
             applied = db.migrate_up(conn)
             print("적용됨: " + (", ".join(applied) if applied else "없음 (이미 최신)"))
@@ -163,3 +173,17 @@ def _discard_off_target(conn: sqlite3.Connection, *, run: bool) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _source_check(conn: sqlite3.Connection, *, close: bool, limit: int) -> int:
+    from app.source_check import runner
+
+    result = asyncio.run(runner.run_once(conn, close=close, limit=limit, report=False))
+    for item in result.checked:
+        mark = " (마감 실패: " + item.close_error + ")" if item.close_error else ""
+        print(
+            f"{item.verdict.status}\t{item.target.job_id}\t{item.target.source}"
+            f"\t{item.target.source_url}\t{item.verdict.reason}{mark}"
+        )
+    print("\n".join(runner.report_lines(result)))
+    return 1 if result.reason else 0

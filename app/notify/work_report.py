@@ -10,6 +10,7 @@
 | 부트캠프·일경험 수집 | 묶음을 다 돌았을 때 |
 | 렛츠커리어 태그 | 대상이 있었을 때 |
 | 공고 분석 | 한 번 돌 때마다 |
+| 상시 채용 원문 확인 | 시작할 때와 끝날 때 (`app/source_check/runner.py`) |
 | 분류 | 부가 워크플로우와 `POST /api/classify`. 수집 직후 분류는 위 묶음에 든다 |
 | 재정규화, AI 다시 채우기, 추가 항목 다시 채우기 | 끝날 때 |
 | 수동 1회 실행, 원문 다시 수집, 전체 다시 수집, 사이트 추가 | 끝날 때 |
@@ -40,8 +41,10 @@ from app.notify.slack import send
 logger = logging.getLogger(__name__)
 
 
-def build_text(day: datetime, name: str, lines: Sequence[str], *, ok: bool = True) -> str:
-    title = f"*{day.month}/{day.day} {name} {'완료' if ok else '실패'}*"
+def build_text(
+    day: datetime, name: str, lines: Sequence[str], *, ok: bool = True, state: str = ""
+) -> str:
+    title = f"*{day.month}/{day.day} {name} {state or ('완료' if ok else '실패')}*"
     return "\n".join([title, *(f"• {line}" for line in lines)])
 
 
@@ -50,16 +53,20 @@ async def report(
     lines: Sequence[str],
     *,
     ok: bool = True,
+    state: str = "",
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> SendResult | None:
-    """작업 결과 한 통을 보낸다. 웹훅이 비어 있으면 None 이다."""
+    """작업 결과 한 통을 보낸다. 웹훅이 비어 있으면 None 이다. `state` 를 주면 제목의
+    완료·실패 자리에 그 말을 쓴다(시작 알림)."""
     try:
         settings = get_settings()
         webhook = settings.daily_report_slack_webhook
         if not webhook:
             return None
         day = datetime.now(ZoneInfo(settings.display_timezone))
-        result = await send(webhook, build_text(day, name, lines, ok=ok), transport=transport)
+        result = await send(
+            webhook, build_text(day, name, lines, ok=ok, state=state), transport=transport
+        )
     except Exception:
         logger.exception("작업 결과를 슬랙으로 보내지 못했다: %s", name)
         return None
