@@ -64,7 +64,6 @@ from app.notify import daily_report
 from app.scheduler import get_scheduler, shutdown_scheduler
 from app.side.runs import close_orphans as close_orphan_side_runs
 from app.source_check import schedule as source_check_schedule
-from app.work_experience import schedule as work_experience_schedule
 from app.work_experience.runner import close_orphan_runs as close_orphan_work_experience_runs
 
 logger = logging.getLogger(__name__)
@@ -124,7 +123,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         work_experience_orphans = close_orphan_work_experience_runs(conn)
         if work_experience_orphans:
             logger.warning(
-                "지난 프로세스가 남긴 미완 미래내일 일경험 수집 %d건을 닫았다",
+                "지난 프로세스가 남긴 미완 미래내일 일경험 정리 %d건을 닫았다",
                 work_experience_orphans,
             )
         job_analysis_orphans = close_orphan_job_analysis_runs(conn)
@@ -136,7 +135,6 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             _seed_empty_tables(conn)
             get_scheduler().start(conn)
             bootcamp_schedule.sync(get_scheduler().scheduler, conn)
-            work_experience_schedule.sync(get_scheduler().scheduler, conn)
             job_analysis_schedule.sync(get_scheduler().scheduler, conn)
             source_check_schedule.sync(get_scheduler().scheduler)
             daily_report.sync(get_scheduler().scheduler)

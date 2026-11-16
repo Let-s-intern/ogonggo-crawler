@@ -2,8 +2,8 @@
 
 2026-10-02 결정, LC-3432.
 
-회사·제목·지역·모집인원·모집기간은 목록 카드와 상세 표에 정해진 자리가 있어 파서가 읽는다
-(`app/work_experience/portal.py`). AI 가 채우는 것은 글을 읽어야 정해지는 것이다.
+회사·제목·지역·모집인원·모집기간은 공공데이터 CSV 에 정해진 칸이 있어 그대로 읽는다
+(`app/work_experience/source.py`). AI 가 채우는 것은 글을 읽어야 정해지는 것이다.
 
 | 칸 | 어디서 |
 |---|---|
@@ -35,7 +35,7 @@ from app.llm import settings as llm_settings
 from app.llm.base import LlmCallError, Usage
 from app.llm.log import CLASSIFY, record_call
 from app.llm.providers import for_feature
-from app.work_experience.portal import Program
+from app.work_experience.source import Program
 
 logger = logging.getLogger(__name__)
 

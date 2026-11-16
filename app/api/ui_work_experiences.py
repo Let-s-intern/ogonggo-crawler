@@ -1,17 +1,18 @@
-"""미래내일 일경험 화면의 조각 라우트 (2026-10-02 결정, LC-3432).
+"""미래내일 일경험 화면의 조각 라우트 (2026-10-02 결정 LC-3432, CSV 올리기 2026-11-16 LC-3605).
 
 위 메뉴 `미래내일 일경험` 한 페이지가 조각 하나(`fragments/work_experience_panel.html`)로 돈다.
-설정 저장, 지금 수집, 지금 보내기가 모두 이 조각을 다시 그려 돌려준다. 수집·전송은
-`app/work_experience/` 가 한다. 부트캠프 화면(`app/api/ui_bootcamps.py`)과 같은 모양이다.
+설정 저장, CSV 올리기, 정리 이어 하기, 지금 보내기가 모두 이 조각을 다시 그려 돌려준다. 정리·전송은
+`app/work_experience/` 가 한다.
 """
 
 from __future__ import annotations
 
 import asyncio
 import sqlite3
+from collections.abc import Sequence
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
 from app import db
@@ -19,15 +20,16 @@ from app.api.settings import get_connection
 from app.api.ui import render
 from app.config import Settings, get_settings
 from app.deliver import settings as deliver_store
-from app.scheduler import get_gate, get_scheduler
-from app.work_experience import deliver, schedule, store
+from app.scheduler import get_gate
+from app.work_experience import deliver, source, store
 from app.work_experience import settings as work_settings
-from app.work_experience.portal import LIST_URL
-from app.work_experience.runner import MANUAL, MAX_FILLS_PER_RUN, run_all
+from app.work_experience.runner import MAX_FILLS_PER_RUN, Programs, run_all
 
 router = APIRouter(tags=["ui"], include_in_schema=False)
 
 RECENT_RUNS = 5
+# 공공데이터 CSV 는 440줄에 1MB 남짓이다. 넉넉히 받되 한없이 받지 않는다
+MAX_BYTES = 20 * 1024 * 1024
 
 
 def _panel(
@@ -45,7 +47,6 @@ def _panel(
         config=work_settings.read_config(conn),
         deliver_configured=deliver_store.read_config(conn).configured,
         key_configured=bool(settings.ogonggo_internal_api_key.strip()),
-        next_run=_iso(schedule.next_run_time(get_scheduler().scheduler)),
         runs=conn.execute(
             "SELECT * FROM work_experience_runs ORDER BY id DESC LIMIT ?", (RECENT_RUNS,)
         ).fetchall(),
@@ -60,15 +61,10 @@ def _panel(
         running=_busy(conn),
         max_attempts=deliver.MAX_ATTEMPTS,
         max_fills=MAX_FILLS_PER_RUN,
-        list_url=LIST_URL,
+        list_url=source.LIST_URL,
         message=message,
         error=error,
     )
-
-
-def _iso(value: object | None) -> str | None:
-    isoformat = getattr(value, "isoformat", None)
-    return str(isoformat()) if callable(isoformat) else None
 
 
 @router.get("/ui/work-experiences", response_class=HTMLResponse)
@@ -85,21 +81,51 @@ def update_work_experience_settings_fragment(
     request: Request,
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
     settings: Annotated[Settings, Depends(get_settings)],
-    run_time: Annotated[str, Form()] = work_settings.DEFAULT_RUN_TIME,
-    schedule_enabled: Annotated[str, Form()] = "",
     deliver_enabled: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
-    config = work_settings.WorkExperienceConfig(
-        schedule_enabled=schedule_enabled == "1",
-        run_time=run_time.strip(),
-        deliver_enabled=deliver_enabled == "1",
+    work_settings.write_config(
+        conn, work_settings.WorkExperienceConfig(deliver_enabled=deliver_enabled == "1")
     )
-    try:
-        work_settings.write_config(conn, config)
-    except work_settings.WorkExperienceSettingError as exc:
-        return _panel(request, conn, settings, error=str(exc))
-    schedule.sync(get_scheduler().scheduler, conn)
     return _panel(request, conn, settings, message="저장했다")
+
+
+@router.post("/ui/work-experiences/upload", response_class=HTMLResponse)
+async def upload_work_experiences_fragment(
+    request: Request,
+    conn: Annotated[sqlite3.Connection, Depends(get_connection)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    sheet: Annotated[UploadFile | None, File()] = None,
+) -> HTMLResponse:
+    """프로그램번호·공유주소를 붙인 CSV 를 받아 넣고, AI 정리·전송을 백그라운드로 시작한다.
+
+    새 프로그램마다 AI 를 부르므로 수십 분 걸린다. 요청 하나가 그동안 붙잡혀 있으면 프록시가 끊는다.
+    """
+    if _busy(conn):
+        return _panel(request, conn, settings, message="이미 정리하는 중이다. 끝나고 올린다")
+    if sheet is None or not sheet.filename:
+        return _panel(request, conn, settings, error="올릴 CSV 파일을 골라 주세요")
+    data = await sheet.read(MAX_BYTES + 1)
+    if len(data) > MAX_BYTES:
+        return _panel(request, conn, settings, error="파일이 20MB 를 넘는다")
+    try:
+        parsed = source.parse_csv(data)
+    except source.SourceError as exc:
+        return _panel(request, conn, settings, error=str(exc))
+    if not parsed.programs:
+        return _panel(
+            request,
+            conn,
+            settings,
+            error=f"넣을 줄이 없다. {parsed.rows}줄 모두 프로그램번호나 모집종료일이 없다",
+        )
+    _start(settings, parsed.programs, parsed.skipped)
+    skipped = f", 건너뛴 줄 {len(parsed.skipped)}개" if parsed.skipped else ""
+    return _panel(
+        request,
+        conn,
+        settings,
+        message=f"CSV {len(parsed.programs)}건을 올렸다{skipped}. 정리가 끝나면 최근 기록에 나온다",
+    )
 
 
 @router.post("/ui/work-experiences/run", response_class=HTMLResponse)
@@ -108,29 +134,31 @@ async def run_work_experiences_fragment(
     conn: Annotated[sqlite3.Connection, Depends(get_connection)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> HTMLResponse:
-    """지금 한 번 수집한다. 백그라운드에서 돌고 화면은 끝날 때까지 몇 초마다 다시 그린다.
-
-    새 프로그램마다 AI 를 부르므로 처음 수집은 수십 분 걸린다. 요청 하나가 그동안 붙잡혀 있으면
-    프록시가 끊는다.
-    """
+    """정리하지 못한 프로그램(실패·상한에 걸려 남은 것)을 이어서 정리한다. CSV 는 받지 않는다."""
     if _busy(conn):
-        return _panel(request, conn, settings, message="이미 수집하는 중이다")
-    _start(settings)
+        return _panel(request, conn, settings, message="이미 정리하는 중이다")
+    _start(settings, (), ())
     return _panel(
-        request, conn, settings, message="수집을 시작했다. 끝나면 최근 수집에 결과가 나온다"
+        request, conn, settings, message="정리를 시작했다. 끝나면 최근 기록에 결과가 나온다"
     )
 
 
 _task: asyncio.Task[None] | None = None
 
 
-def _start(settings: Settings) -> None:
+def _start(settings: Settings, programs: Programs, skipped: Sequence[str]) -> None:
     global _task
 
     async def run() -> None:
         background = db.connect()
         try:
-            await run_all(background, trigger=MANUAL, settings=settings, slot=get_gate().slot)
+            await run_all(
+                background,
+                programs=programs,
+                skipped_lines=skipped,
+                settings=settings,
+                slot=get_gate().slot,
+            )
         finally:
             background.close()
 
@@ -138,7 +166,7 @@ def _start(settings: Settings) -> None:
 
 
 def _busy(conn: sqlite3.Connection) -> bool:
-    """수집 중인가. 묶음과 묶음 사이에는 `running` 기록이 잠깐 없어 백그라운드 작업도 본다."""
+    """정리 중인가. 묶음과 묶음 사이에는 `running` 기록이 잠깐 없어 백그라운드 작업도 본다."""
     return _running(conn) or (_task is not None and not _task.done())
 
 

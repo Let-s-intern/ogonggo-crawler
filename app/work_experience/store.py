@@ -1,8 +1,8 @@
 """`work_experiences` 표를 읽고 쓴다 (`migrations/0049_work_experiences.sql`).
 
-프로그램 하나가 행 하나다. 정리까지 끝났고 목록 카드도 그대로인 프로그램(`is_current`)은 수집이
-상세를 다시 받지 않는다. 카드가 바뀌었거나 정리에 실패한 프로그램만 다시 받아 넣는데, 그사이 읽은
-값이 바뀌었으면(`page_hash`) 새 값으로 덮고 전송 시도 수를 새로 센다.
+프로그램 하나가 행 하나다. CSV 를 올리면 줄마다 넣거나 바꾼다 (`app/work_experience/source.py`).
+읽은 값이 그대로면(`page_hash`) AI 를 다시 부르지 않고, 바뀌었으면 새 값으로 덮고 정리·전송을 새로
+한다.
 """
 
 from __future__ import annotations
@@ -15,9 +15,9 @@ from datetime import date
 from typing import Any
 
 from app import companies
-from app.work_experience import portal
+from app.work_experience import source
 from app.work_experience.fill import ProgramFill
-from app.work_experience.portal import ListItem, Program
+from app.work_experience.source import ListItem, Program
 
 NEW = "new"
 CHANGED = "changed"
@@ -39,10 +39,7 @@ def page_hash(item: ListItem, program: Program) -> str:
 
 
 def upsert(conn: sqlite3.Connection, item: ListItem, program: Program) -> tuple[int, str]:
-    """프로그램을 넣거나 바꾼다. (행 id, 새로 들어왔나·바뀌었나·같은가) 를 돌려준다.
-
-    모집기간과 인원은 상세 표의 것이 먼저다. 카드는 연도를 두 자리로 적어 상세가 더 정확하다.
-    """
+    """프로그램을 넣거나 바꾼다. (행 id, 새로 들어왔나·바뀌었나·같은가) 를 돌려준다."""
     digest = page_hash(item, program)
     values: dict[str, Any] = {
         "external_id": item.program_id,
@@ -92,37 +89,44 @@ def upsert(conn: sqlite3.Connection, item: ListItem, program: Program) -> tuple[
     return int(row["id"]), CHANGED
 
 
-def is_current(conn: sqlite3.Connection, item: ListItem) -> bool:
-    """정리까지 끝났고 목록 카드도 그대로인가. 그런 프로그램은 상세를 다시 받지 않는다."""
-    row = conn.execute(
-        "SELECT card_hash, page_hash, filled_hash FROM work_experiences WHERE source_url = ?",
-        (item.source_url,),
-    ).fetchone()
-    return (
-        row is not None
-        and row["filled_hash"] == row["page_hash"]
-        and row["card_hash"] == card_hash(item)
-    )
-
-
-def touch(conn: sqlite3.Connection, item: ListItem) -> None:
-    """다시 읽지 않는 프로그램도 봤다고 적고, 카드의 공유 주소를 둔다."""
-    conn.execute(
-        "UPDATE work_experiences SET last_seen_at = datetime('now') WHERE source_url = ?",
-        (item.source_url,),
-    )
-    save_share_url(conn, item)
-
-
 def save_share_url(conn: sqlite3.Connection, item: ListItem) -> None:
-    """카드의 공유 주소를 둔다. 카드에 없으면 읽어 둔 주소를 지우지 않는다 — 버튼이 한 번 빠진 날에
-    오공고 주소가 다시 열리지 않는 상세 주소로 돌아가지 않게 한다 (LC-3615).
+    """공유 주소를 둔다. 비어 있으면 읽어 둔 주소를 지우지 않는다 — 매핑이 한 번 빠진 날에 오공고
+    주소가 열리지 않는 상세 주소로 돌아가지 않게 한다 (LC-3615).
     """
     if item.share_url:
         conn.execute(
             "UPDATE work_experiences SET share_url = ? WHERE source_url = ?",
             (item.share_url, item.source_url),
         )
+
+
+def to_fill(
+    conn: sqlite3.Connection, today: str, exclude: frozenset[int] | set[int] = frozenset()
+) -> list[sqlite3.Row]:
+    """AI 로 정리할 프로그램. 아직 정리하지 않았거나 값이 바뀐 것 중 모집이 끝나지 않은 것이다."""
+    rows = conn.execute(
+        "SELECT * FROM work_experiences"
+        " WHERE (filled_hash IS NULL OR filled_hash <> page_hash) AND recruitment_end_date >= ?"
+        " ORDER BY id",
+        (today,),
+    ).fetchall()
+    return [row for row in rows if int(row["id"]) not in exclude]
+
+
+def program_of(row: sqlite3.Row) -> Program:
+    """저장한 행을 AI 에게 줄 프로그램으로 되살린다."""
+    return Program(
+        program_id=str(row["external_id"]),
+        title=str(row["title"]),
+        type_label=str(row["type_label"] or ""),
+        region=str(row["region_label"] or ""),
+        job_and_headcount=sections_of(row).get("모집정보", {}).get("직무(모집인원)", ""),
+        recruitment_start=_day(row["recruitment_start_date"]),
+        recruitment_end=_day(row["recruitment_end_date"]),
+        work_start=_day(row["work_start_date"]),
+        work_end=_day(row["work_end_date"]),
+        sections=sections_of(row),
+    )
 
 
 def needs_fill(conn: sqlite3.Connection, row_id: int) -> bool:
@@ -172,7 +176,7 @@ def register_companies(conn: sqlite3.Connection) -> None:
     for row in conn.execute(
         "SELECT DISTINCT company FROM work_experiences WHERE company <> ''"
     ).fetchall():
-        companies.register(conn, portal.main_company(str(row["company"])), None)
+        companies.register(conn, source.main_company(str(row["company"])), None)
 
 
 def logo_url(conn: sqlite3.Connection, company: str) -> str | None:
@@ -196,3 +200,10 @@ def _program_json(program: Program) -> dict[str, Any]:
 
 def _iso(value: date | None) -> str | None:
     return value.isoformat() if value else None
+
+
+def _day(value: Any) -> date | None:
+    try:
+        return date.fromisoformat(str(value)) if value else None
+    except ValueError:
+        return None
