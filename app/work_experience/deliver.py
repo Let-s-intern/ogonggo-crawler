@@ -6,14 +6,14 @@
 크롤러가 죽었거나 DB 를 옮긴 경우다. 보낸 주소로 못 찾으면 예전에 보내던 상세 주소로 한 번
 더 찾는다.
 
-`sourceUrl` 은 카드의 공유 주소다 (2026-11-12, LC-3615). 상세 주소는 GET 으로 열리지 않아 지원하기
-버튼이 오류 화면으로 갔다. 공유 주소를 아직 못 읽은 프로그램은 상세 주소를 보낸다.
+`sourceUrl` 은 CSV 에 붙인 공유 주소다 (2026-11-12, LC-3615). 상세 주소는 GET 으로 열리지 않아
+지원하기 버튼이 오류 화면으로 갔다. 공유 주소가 없는 프로그램은 상세 주소를 보낸다.
 
 오공고 주소와 키는 공고 전송과 같은 것이다 (`app/deliver/settings.py`, `OGONGGO_INTERNAL_API_KEY`).
 
 ## 보내지 않는 프로그램
 
-- AI 가 아직 채우지 않은 프로그램(`filled_hash != page_hash`). 다음 수집이 채운다
+- AI 가 아직 채우지 않은 프로그램(`filled_hash != page_hash`). 정리가 이어서 채운다
 - 이미 지금 값으로 보낸 프로그램(`sent_hash = page_hash`). 보낸 뒤 참여기업 로고를 올렸거나
   공유 주소가 바뀌었으면(처음 읽은 것 포함) 다시 보낸다
 - 모집 마감일이 지난 프로그램. 오공고가 마감일로 모집을 닫으므로 이미 보낸 것도 다시 보내지 않는다
@@ -24,15 +24,15 @@
 | 칸 | 값 | 왜 |
 |---|---|---|
 | 고용 형태 | 미래내일 일경험(`WORK_EXPERIENCE`) | 사용자 결정 (2026-10-02) |
-| 회사 | 첫 참여기업. 카드에 없으면 운영기관 | 청년이 일하는 곳이다. 모회사는 없다 |
-| 시·도 | 카드의 지역. `지역무관` 은 전국 | 포털 지역 이름이 오공고 시·도 화면 이름과 같다 |
+| 회사 | 첫 참여기업. 없으면 운영기관 | 청년이 일하는 곳이다. 모회사는 없다 |
+| 시·도 | CSV 의 지역. `지역무관` 은 전국 | 포털 지역 이름이 오공고 시·도 화면 이름과 같다 |
 | 모집 유형 | 기간 채용, 마감일에 자동 종료 | 모집기간이 늘 있다 |
 | 채용 시 마감 | 아니다 | 마감일까지 신청을 받고 그 뒤에 서류·면접으로 뽑는다 |
 | 지원 방법 | 외부 페이지(공유 주소) | 신청은 포털에서 한다 |
 | 최소 경력 연수 | 신입이면 0, 그 밖은 비움 | 공고 정규화와 같은 규칙이다 (`settle_fields`) |
 
 채용 안내사항(`recruitmentNotice`) 앞에는 프로그램 유형·일경험 기간·사전직무교육·운영기관 연락처를
-파서가 읽은 그대로 붙인다. 청년이 신청 전에 꼭 알아야 하는데 공고 칸에는 자리가 없다.
+CSV 에서 읽은 그대로 붙인다. 청년이 신청 전에 꼭 알아야 하는데 공고 칸에는 자리가 없다.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ from app import job_roles
 from app.config import Settings, get_settings
 from app.deliver import settings as deliver_store
 from app.deliver.spring import API_KEY_HEADER, JOBS_PATH, TIMEOUT_SECONDS
-from app.work_experience import portal, store
+from app.work_experience import source, store
 from app.work_experience.fill import ProgramFill, region_name
 
 logger = logging.getLogger(__name__)
@@ -158,7 +158,7 @@ async def deliver_pending(
 def payload(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
     """오공고 AI 서버 채용공고 요청 본문. 칸 이름은 오공고 `Job` 엔티티 그대로다."""
     fill = store.fill_of(row) or ProgramFill()
-    company = portal.main_company(str(row["company"] or "")) or str(row["operator"] or "").strip()
+    company = source.main_company(str(row["company"] or "")) or str(row["operator"] or "").strip()
     job_field, job_role = job_roles.enum_names(fill.job_field or None, fill.job_role or None)
     region = region_name(str(row["region_label"] or ""))
     start = row["recruitment_start_date"]
@@ -201,7 +201,7 @@ def payload(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
 
 
 def public_url(row: sqlite3.Row) -> str:
-    """오공고에 보내는 원문 주소. 카드의 공유 주소이고, 아직 못 읽었으면 상세 주소다."""
+    """오공고에 보내는 원문 주소. 공유 주소이고, 없으면 상세 주소다."""
     return str(row["share_url"] or row["source_url"])
 
 
@@ -216,7 +216,8 @@ def _notice(row: sqlite3.Row, fill: ProgramFill) -> str:
             f"- 일경험 기간: {_day(row['work_start_date'])} ~ {_day(row['work_end_date'])}"
         )
     if training.get("사전직무교육기간"):
-        place = training.get("교육장소", "")
+        # CSV 는 교육기관 이름을 준다. 예전 포털 상세에서 모은 행은 교육장소다
+        place = training.get("교육기관") or training.get("교육장소", "")
         lines.append(
             f"- 사전직무교육: {training['사전직무교육기간']}" + (f" ({place})" if place else "")
         )

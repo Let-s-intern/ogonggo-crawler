@@ -600,7 +600,7 @@ def bootcamps_page(request: Request) -> HTMLResponse:
 
 @router.get("/work-experiences", response_class=HTMLResponse)
 def work_experiences_page(request: Request) -> HTMLResponse:
-    """미래내일 일경험 수집·전송 화면 (`app/api/ui_work_experiences.py`)."""
+    """미래내일 일경험 CSV 올리기·전송 화면 (`app/api/ui_work_experiences.py`)."""
     return render_page(request, "pages/work_experiences.html")
 
 

@@ -1,20 +1,20 @@
-"""미래내일 일경험 수집·정리·전송 (2026-10-02 결정, LC-3432).
+"""미래내일 일경험 CSV 올리기·정리·전송 (2026-11-16 결정, LC-3605).
 
-포털과 오공고를 실제로 부르지 않는다. 포털은 저장해 둔 페이지(`tests/fixtures/work-experience-*`)를
-돌려주는 가짜 fetcher 가, 오공고는 `httpx.MockTransport` 가 흉내 낸다.
+오공고와 AI 를 실제로 부르지 않는다. CSV 는 공공데이터 파일을 포털 목록과 매핑한 것의 세 줄이다
+(`tests/fixtures/work-experience-20261116.csv`, 인턴형·프로젝트형·ESG지원형). 오공고는
+`httpx.MockTransport` 가 흉내 낸다.
 
 | 확인 | 깨지면 |
 |---|---|
-| 목록 카드와 상세 표의 칸·날짜를 읽는다 | 오공고 필수 칸이 비어 거절된다 |
-| 목록·상세를 POST 폼으로 묻는다 | 포털이 `GET Parameter 조회를 지원하지 않습니다` 를 준다 |
-| 정리가 끝났고 카드가 그대로면 상세도 AI 도 다시 부르지 않는다 | 수집마다 비용이 든다 |
-| 카드의 모집기간이 바뀌면 상세를 다시 받아 다시 보낸다 | 늘어난 모집기간이 오공고에 안 간다 |
-| 목록이 비었는데 총 건수가 0 이 아니면 실패다 | 포털 틀이 바뀐 날이 성공으로 보인다 |
-| 고용 형태 미래내일 일경험·참여기업·지역·모집기간을 실어 등록한다 | 일반 공고로 섞인다 |
+| CSV 칸을 오공고 칸과 AI 에게 줄 표로 옮긴다 | 오공고 필수 칸이 비어 거절된다 |
+| 공공데이터 원본 인코딩 CP949 도 읽는다 | 받은 파일을 손으로 바꿔야 한다 |
+| 프로그램번호가 없는 CSV 는 올리지 않는다 | 매핑하지 않은 원본이 주소 없이 들어간다 |
+| 같은 CSV 를 다시 올리면 AI 를 다시 부르지 않는다 | 올릴 때마다 비용이 든다 |
+| 모집이 끝난 줄은 넣지 않는다 | 보내지도 않을 프로그램에 AI 비용이 든다 |
+| 모집기간이 늘어난 줄은 다시 정리해 같은 id 로 교체한다 | 늘어난 기간이 오공고에 안 간다 |
+| 예전 포털 수집이 보낸 프로그램은 같은 행으로 이어진다 | 오공고에 같은 공고가 두 번 생긴다 |
+| 공유 주소를 원문 주소로 보낸다 | 지원하기 버튼이 포털 오류 화면으로 간다 |
 | 409 면 원문 주소로 id 를 찾아 교체한다 | id 를 잃은 프로그램을 영영 못 보낸다 |
-| 카드의 공유 주소를 원문 주소로 보낸다 | 지원하기 버튼이 포털 오류 화면으로 간다 |
-| 보낸 프로그램은 공유 주소만 바꿔 같은 id 로 교체한다 | 상세·AI 를 또 부르거나 중복이 생긴다 |
-| 마감일이 지난 프로그램은 보내지 않는다 | 이미 끝난 프로그램이 오공고에 새로 뜬다 |
 | AI 가 다른 직군의 직무를 고르면 그 직군의 기타 직무다 | 오공고가 400 으로 거절한다 |
 """
 
@@ -29,17 +29,14 @@ from typing import Any
 
 import httpx
 import pytest
-from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
 from app import companies, db
 from app.api import settings as settings_api
 from app.config import Settings
-from app.crawler.fetcher import FetchResult
 from app.deliver.settings import DeliverConfig, write_config
 from app.main import app
-from app.scheduler import get_scheduler
-from app.work_experience import deliver, portal, schedule, store
+from app.work_experience import deliver, source, store
 from app.work_experience import settings as work_settings
 from app.work_experience.fill import (
     LlmProgramFiller,
@@ -54,83 +51,25 @@ from app.work_experience.runner import run_all, run_once
 from tests.test_selector_generator import FakeClient as FakeGeminiClient
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
-LIST_HTML = (FIXTURES / "work-experience-list-20261002.html").read_text(encoding="utf-8")
-# 공유 버튼이 있는 목록. 2026-10-02 목록에는 공유 버튼이 없다
-SHARE_LIST_HTML = (FIXTURES / "work-experience-list-20261112.html").read_text(encoding="utf-8")
-INTERN = "PG0031168202609230009"
-PROJECT = "PG0031102202609160001"
-ESG = "PG0031109202608120003"
-DETAILS = {
-    program_id: (FIXTURES / f"work-experience-detail-{program_id}-20261002.html").read_text(
-        encoding="utf-8"
-    )
-    for program_id in (INTERN, PROJECT, ESG)
-}
+CSV_BYTES = (FIXTURES / "work-experience-20261116.csv").read_bytes()
+CSV_TEXT = CSV_BYTES.decode("utf-8-sig")
+INTERN = "PG0020426202611040004"
+PROJECT = "PG0020418202610300002"
+ESG = "PG0031200202609160002"
+INTERN_SHARE = "https://yw.work24.go.kr/d/a/prgmDtl/mi6KvX9fyW"
 KEY = "test-internal-key"
 SETTINGS = Settings(gemini_api_key="테스트키", ogonggo_internal_api_key=KEY)
-# 픽스처 목록의 모집 마감은 2026-10-02 부터다. 이날을 오늘로 둔다
-TODAY = "2026-10-01"
+# 픽스처의 모집 마감은 2026-11-18 부터다
+TODAY = "2026-11-16"
 
 
-def _only(html: str, keep: int, total: int | None = None) -> str:
-    """목록에서 앞의 카드 `keep` 개만 남긴다. 상세 픽스처는 세 개뿐이다."""
-    soup = BeautifulSoup(html, "html.parser")
-    for card in soup.select("ul.card-list > li")[keep:]:
-        card.decompose()
-    counter = soup.select_one("div.total strong")
-    if total is not None and counter is not None:
-        counter.string = str(total)
-    return str(soup)
+def _programs(text: str = CSV_TEXT) -> list[tuple[source.ListItem, source.Program]]:
+    return source.parse_csv(text.encode("utf-8")).programs
 
 
-LIST_THREE = _only(LIST_HTML, 3)
-
-
-def _with_share(html: str) -> str:
-    """카드마다 공유 버튼을 붙인다. 주소는 `…/prgmDtl/S` + 프로그램 번호다."""
-    soup = BeautifulSoup(html, "html.parser")
-    for card in soup.select("ul.card-list > li"):
-        found = portal._DETAIL_CALL.search(str(card.select_one("div.link a")["href"]))
-        button = soup.new_tag("button", type="button")
-        button["data-shtn-url"] = f"https://yw.work24.go.kr:443/d/a/prgmDtl/S{found.group(2)}"
-        card.append(button)
-    return str(soup)
-
-
-def _share(program_id: str) -> str:
-    return f"https://yw.work24.go.kr/d/a/prgmDtl/S{program_id}"
-
-
-class PortalFetcher:
-    """목록 첫 쪽과 상세들을 돌려준다. 모르는 프로그램 번호에는 인턴형 상세를 준다.
-
-    둘째 쪽부터는 빈 목록(`총 0 건`)이다 — 포털이 실제로 그렇게 답한다.
-    """
-
-    def __init__(self, list_html: str = LIST_THREE) -> None:
-        self.list_html = list_html
-        self.calls: list[tuple[str, str, dict[str, Any]]] = []
-
-    async def fetch(self, url: str) -> FetchResult:
-        return await self.request(url)
-
-    async def request(
-        self, url: str, *, method: str = "GET", form_body: Any = None, **_: Any
-    ) -> FetchResult:
-        form = dict(form_body or {})
-        self.calls.append((method, url, form))
-        if url == portal.LIST_URL:
-            text = self.list_html if form.get("currentPageNo") == "1" else _EMPTY_LIST
-            return FetchResult(url=url, status_code=200, text=text)
-        program_id = form.get(portal.ID_PARAM, "")
-        return FetchResult(url=url, status_code=200, text=DETAILS.get(program_id, DETAILS[INTERN]))
-
-    @property
-    def details(self) -> list[str]:
-        return [form[portal.ID_PARAM] for _, url, form in self.calls if url == portal.DETAIL_URL]
-
-
-_EMPTY_LIST = _only(LIST_HTML, 0, total=0)
+def _replace(text: str, old: str, new: str) -> str:
+    assert old in text
+    return text.replace(old, new, 1)
 
 
 class FakeFiller:
@@ -138,7 +77,7 @@ class FakeFiller:
         self.error = error
         self.titles: list[str] = []
 
-    async def fill(self, program: portal.Program) -> ProgramFill:
+    async def fill(self, program: source.Program) -> ProgramFill:
         self.titles.append(program.title)
         if self.error is not None:
             raise self.error
@@ -190,82 +129,87 @@ def _created(ids: Iterator[int]) -> Callable[[httpx.Request], httpx.Response]:
     )
 
 
-def test_목록_카드에서_번호_유형_참여기업_모집기간을_읽는다() -> None:
-    items = portal.parse_list(LIST_HTML)
-
-    assert len(items) == 12
-    assert portal.total_count(LIST_HTML) == 384
-    first = items[0]
-    assert (first.program_id, first.type_code, first.type_label) == (INTERN, "I", "인턴형")
-    assert first.title == "(엘캠퍼스) 미래내일 일경험(제로인턴) 12기 - 경영사무(사무행정)"
-    assert (first.job, first.region, first.headcount) == ("경영·사무", "서울", 1)
-    assert (first.recruitment_start, first.recruitment_end) == (
-        date(2026, 9, 28),
-        date(2026, 10, 2),
+async def _upload(
+    conn: sqlite3.Connection, text: str = CSV_TEXT, filler: FakeFiller | None = None, **kwargs: Any
+) -> Any:
+    return await run_once(
+        conn,
+        programs=_programs(text),
+        filler=filler or FakeFiller(),
+        settings=SETTINGS,
+        **kwargs,
     )
-    assert (first.operator, first.company) == ("(주)데이원컴퍼니", "주식회사 엘캠퍼스")
-    assert first.source_url == (
+
+
+def test_CSV_칸을_고정_칸과_AI_에게_줄_표로_옮긴다() -> None:
+    parsed = source.parse_csv(CSV_BYTES)
+
+    assert (parsed.rows, parsed.skipped) == (3, [])
+    item, program = parsed.programs[0]
+    assert (item.program_id, item.type_code, item.type_label) == (INTERN, "I", "인턴형")
+    assert item.title == "[충주의료원] 경영·사무 일경험 프로그램_10기"
+    assert (item.region, item.headcount) == ("충북", 1)
+    assert (item.recruitment_start, item.recruitment_end) == (date(2026, 11, 5), date(2026, 11, 18))
+    assert (item.operator, item.company) == ("충주상공회의소", "충청북도충주의료원")
+    assert item.share_url == INTERN_SHARE
+    assert item.source_url == (
         "https://yw.work24.go.kr/d/a/selectItrnPrjtEsgPrgmDtal.do?untyPrgmCtn=" + INTERN
     )
-    assert first.share_url == ""
+    assert program.value("운영기관담당자정보", "전화번호") == "043-843-7003"
+    assert program.value("사전직무교육정보", "교육기관") == "서울현대교육재단"
+    assert program.value("모집정보", "모집기간") == "2026-11-05 ~ 2026-11-18"
+    assert program.value("모집정보", "모집내용")
+    assert [entry.type_code for entry, _ in parsed.programs] == ["I", "P", "E"]
 
 
-def test_카드의_공유_버튼_주소를_읽는다() -> None:
-    items = portal.parse_list(SHARE_LIST_HTML)
+def test_공공데이터_원본_인코딩_CP949_도_읽는다() -> None:
+    parsed = source.parse_csv(CSV_TEXT.encode("cp949", errors="replace"))
 
-    assert [(item.program_id, item.share_url) for item in items] == [
-        ("PG0031137202611100006", "https://yw.work24.go.kr/d/a/prgmDtl/brPLGx3rrl"),
-        ("PG0031137202611100003", "https://yw.work24.go.kr/d/a/prgmDtl/brPLIQOMTD"),
-        ("PG0031137202611100005", "https://yw.work24.go.kr/d/a/prgmDtl/brPLEEjY2l"),
-    ]
-    assert items[0].source_url.endswith("untyPrgmCtn=PG0031137202611100006")
+    assert [item.program_id for item, _ in parsed.programs] == [INTERN, PROJECT, ESG]
 
 
-def test_상세_표의_칸과_기간을_읽는다() -> None:
-    program = portal.parse_detail(DETAILS[PROJECT], PROJECT)
+def test_프로그램번호_칸이_없으면_매핑하지_않은_CSV_다() -> None:
+    original = "지역,프로그램명,모집종료일\n서울,인턴,2026-11-30\n"
 
-    assert program.title.startswith("[신한금융그룹 제주은행] DJ Bank")
-    assert (program.type_label, program.region, program.job_and_headcount) == (
-        "프로젝트형",
-        "지역무관",
-        "금융·회계(12)",
-    )
-    assert (program.recruitment_start, program.recruitment_end) == (
-        date(2026, 9, 18),
-        date(2026, 10, 5),
-    )
-    assert (program.work_start, program.work_end) == (date(2026, 10, 19), date(2026, 12, 13))
-    assert program.value("모집정보", "선발기준내용").startswith("■ 지원 자격\n- 만 15세 이상")
-    assert program.value("사전직무교육정보", "교육장소").endswith("경영관 204호")
-    assert program.value("운영기관담당자정보", "전화번호") == "02-450-4249"
-    assert program.value("사전직무교육정보", "전화번호") == "02-450-4248"
+    with pytest.raises(source.SourceError, match="프로그램번호"):
+        source.parse_csv(original.encode("cp949"))
 
 
-def test_틀이_바뀌어_프로그램명이_없으면_실패다() -> None:
-    with pytest.raises(portal.PortalParseError):
-        portal.parse_detail("<html><body><table></table></body></html>", INTERN)
+def test_프로그램번호가_없거나_겹치는_줄은_사유와_함께_건너뛴다() -> None:
+    header, first, *rest = CSV_TEXT.splitlines(keepends=True)
+    no_id = first.replace(INTERN, "", 1)
+
+    parsed = source.parse_csv((header + first + no_id + first + "".join(rest)).encode())
+
+    assert [item.program_id for item, _ in parsed.programs] == [INTERN, PROJECT, ESG]
+    assert parsed.skipped[0].startswith("3번째 줄: 프로그램번호가 없다")
+    assert parsed.skipped[1].startswith("4번째 줄: 앞 줄과 프로그램번호가 같다")
 
 
-def test_참여기업이_여럿이면_첫_기업이_회사다() -> None:
-    assert (
-        portal.main_company("(사)하이서울기업협회, 국립공주대학교산학협력단")
-        == "(사)하이서울기업협회"
-    )
-    assert portal.main_company("주식회사 엘캠퍼스") == "주식회사 엘캠퍼스"
+def test_공유_주소는_포털_주소만_받고_443_을_덜어_낸다() -> None:
+    text = _replace(CSV_TEXT, INTERN_SHARE, "https://yw.work24.go.kr:443/d/a/prgmDtl/mi6KvX9fyW")
+    text = _replace(text, "https://yw.work24.go.kr/d/a/prgmDtl/2eoxrKo0uO", "https://evil.test/x")
+
+    items = [item for item, _ in _programs(text)]
+
+    assert [item.share_url for item in items[:2]] == [INTERN_SHARE, ""]
 
 
-def test_AI_에게_주는_글에는_사업정보와_첨부파일이_없다() -> None:
-    text = program_text(portal.parse_detail(DETAILS[ESG], ESG))
+def test_AI_에게_주는_글에는_빈_칸이_없다() -> None:
+    _, program = _programs()[2]
 
-    assert "[모집정보]" in text and "선발 기간" in text
-    assert "사업명" not in text
-    assert "운영계획서_제품기획" not in text
+    text = program_text(program)
+
+    assert "[모집정보]" in text and "[운영기관담당자정보]" in text
+    assert "교육기관:" not in text
+    assert all(line.split(": ", 1)[-1].strip() for line in text.splitlines() if ": " in line)
 
 
 @pytest.mark.parametrize(
     ("label", "name"),
     [
         ("서울", "SEOUL"),
+        ("충북", "CHUNGBUK"),
         ("전남광주", "JEONNAM_GWANGJU"),
         ("지역무관", "NATIONWIDE"),
         ("화성", None),
@@ -295,93 +239,98 @@ def test_다른_직군의_직무를_고르면_그_직군의_기타_직무다() -
     assert fill.sub_region == ""
 
 
-async def test_목록과_상세를_POST_폼으로_묻고_새_프로그램만_AI_로_채운다(
-    conn: sqlite3.Connection,
-) -> None:
-    fetcher = PortalFetcher()
+async def test_CSV_를_넣어_AI_로_채우고_다시_올리면_건너뛴다(conn: sqlite3.Connection) -> None:
     filler = FakeFiller()
 
-    first = await run_once(conn, fetcher=fetcher, filler=filler, settings=SETTINGS)
-    second = await run_once(conn, fetcher=fetcher, filler=filler, settings=SETTINGS)
+    first = await _upload(conn, filler=filler)
+    second = await _upload(conn, filler=filler)
 
     assert (first.status, first.listed, first.new, first.filled) == ("success", 3, 3, 3)
-    assert (second.skipped, second.filled) == (3, 0)
+    assert (second.listed, second.new, second.skipped, second.filled) == (3, 0, 3, 0)
     assert len(filler.titles) == 3
-    assert len(fetcher.details) == 3
-    method, url, form = fetcher.calls[0]
-    assert (method, url) == ("POST", portal.LIST_URL)
-    assert form == {"currentPageNo": "1", "recordCountPerPage": "48", "sortOption": "C"}
-    assert all(method == "POST" for method, _, _ in fetcher.calls)
+    runs = conn.execute("SELECT status, listed_count FROM work_experience_runs").fetchall()
+    assert [tuple(row) for row in runs] == [("success", 3), ("success", 3)]
 
 
-async def test_카드의_모집기간이_바뀌면_상세를_다시_받아_다시_보낸다(
+async def test_모집이_끝난_줄은_넣지_않는다(conn: sqlite3.Connection) -> None:
+    closed = _replace(CSV_TEXT, "2026-11-18", "2026-11-15")
+
+    summary = await _upload(conn, closed)
+
+    assert (summary.new, summary.skipped, summary.filled) == (2, 1, 2)
+    ids = {row[0] for row in conn.execute("SELECT external_id FROM work_experiences")}
+    assert ids == {PROJECT, ESG}
+
+
+async def test_모집기간이_늘어난_줄은_다시_정리해_같은_id_로_교체한다(
     conn: sqlite3.Connection,
 ) -> None:
-    await run_once(conn, fetcher=PortalFetcher(), filler=FakeFiller(), settings=SETTINGS)
-    ids = iter(range(1, 100))
-    seen = _spring(_created(ids))
+    await _upload(conn)
+    seen = _spring(_created(iter(range(1, 100))))
     await deliver.deliver_pending(conn, settings=SETTINGS)
 
-    extended = LIST_THREE.replace("26-09-28 ~ 26-10-02", "26-09-28 ~ 26-10-09", 1)
-    original = DETAILS[INTERN]
-    DETAILS[INTERN] = original.replace("2026-09-28 ~ 2026-10-02", "2026-09-28 ~ 2026-10-09")
-    try:
-        fetcher = PortalFetcher(extended)
-        summary = await run_once(conn, fetcher=fetcher, filler=FakeFiller(), settings=SETTINGS)
-    finally:
-        DETAILS[INTERN] = original
+    filler = FakeFiller()
+    extended = CSV_TEXT.replace("2026-11-18", "2026-11-25")
+    summary = await _upload(conn, extended, filler=filler)
     result = await deliver.deliver_pending(conn, settings=SETTINGS)
 
-    assert fetcher.details == [INTERN]
-    assert summary.filled == 1
+    assert (summary.new, summary.skipped, summary.filled) == (0, 2, 1)
+    assert filler.titles == ["[충주의료원] 경영·사무 일경험 프로그램_10기"]
     assert result.sent == 1
-    assert seen[-1].method == "PUT"
-    assert seen[-1].url.path == "/api/v1/internal/jobs/1"
-    assert json.loads(seen[-1].content)["recruitmentEndAt"] == "2026-10-09T23:59:59"
+    assert (seen[-1].method, seen[-1].url.path) == ("PUT", "/api/v1/internal/jobs/1")
+    assert json.loads(seen[-1].content)["recruitmentEndAt"] == "2026-11-25T23:59:59"
 
 
-async def test_AI_가_실패하면_사유를_남기고_다음_수집에서_다시_채운다(
+async def test_예전_포털_수집이_보낸_프로그램은_같은_행으로_이어진다(
     conn: sqlite3.Connection,
 ) -> None:
-    failing = await run_once(
-        conn,
-        fetcher=PortalFetcher(),
-        filler=FakeFiller(ProgramFillError("AI 호출이 실패했다")),
-        settings=SETTINGS,
+    item, program = _programs()[0]
+    old_item = source.ListItem(
+        program_id=INTERN, type_code="I", title=item.title, recruitment_end=date(2026, 11, 18)
     )
-    retried = await run_once(conn, fetcher=PortalFetcher(), filler=FakeFiller(), settings=SETTINGS)
+    row_id, _ = store.upsert(conn, old_item, program)
+    store.save_fill(conn, row_id, ProgramFill())
+    conn.execute(
+        "UPDATE work_experiences SET spring_job_id = 41, sent_hash = page_hash WHERE id = ?",
+        (row_id,),
+    )
+    seen = _spring(_created(iter(range(1, 10))))
+
+    await _upload(conn)
+    await deliver.deliver_pending(conn, settings=SETTINGS)
+
+    assert conn.execute("SELECT count(*) FROM work_experiences").fetchone()[0] == 3
+    put = next(request for request in seen if request.method == "PUT")
+    assert put.url.path == "/api/v1/internal/jobs/41"
+    assert json.loads(put.content)["sourceUrl"] == INTERN_SHARE
+
+
+async def test_AI_가_실패하면_사유를_남기고_이어서_정리하면_다시_채운다(
+    conn: sqlite3.Connection,
+) -> None:
+    failing = await _upload(conn, filler=FakeFiller(ProgramFillError("AI 호출이 실패했다")))
+    retried = await run_once(conn, filler=FakeFiller(), settings=SETTINGS)
 
     assert (failing.fill_failed, failing.filled) == (3, 0)
-    assert retried.filled == 3
+    assert f"{INTERN}: AI 호출이 실패했다" in failing.notes
+    assert (retried.listed, retried.filled) == (0, 3)
     assert {row[0] for row in conn.execute("SELECT fill_error FROM work_experiences")} == {""}
-
-
-async def test_목록이_비었는데_총_건수가_있으면_실패다(conn: sqlite3.Connection) -> None:
-    broken = _only(LIST_HTML, 0)
-
-    summary = await run_once(
-        conn, fetcher=PortalFetcher(broken), filler=FakeFiller(), settings=SETTINGS
-    )
-
-    assert summary.status == "failed"
-    assert "총 384건" in summary.notes[0]
-    row = conn.execute("SELECT status FROM work_experience_runs").fetchone()
-    assert row["status"] == "failed"
 
 
 async def test_남은_프로그램이_있으면_다음_묶음이_이어서_정리한다(conn: sqlite3.Connection) -> None:
     summaries = await run_all(
-        conn, fetcher=PortalFetcher(), filler=FakeFiller(), settings=SETTINGS, max_fills=2
+        conn, programs=_programs(), filler=FakeFiller(), settings=SETTINGS, max_fills=2
     )
 
     assert [summary.filled for summary in summaries] == [2, 1]
+    assert [summary.listed for summary in summaries] == [3, 0]
     assert summaries[0].deferred == 1
 
 
 async def test_미래내일_일경험_채용공고로_등록하고_두_번_보내지_않는다(
     conn: sqlite3.Connection,
 ) -> None:
-    await run_once(conn, fetcher=PortalFetcher(), filler=FakeFiller(), settings=SETTINGS)
+    await _upload(conn)
     seen = _spring(_created(iter(range(101, 200))))
 
     first = await deliver.deliver_pending(conn, settings=SETTINGS)
@@ -392,114 +341,32 @@ async def test_미래내일_일경험_채용공고로_등록하고_두_번_보�
     assert seen[0].headers["X-Internal-Api-Key"] == KEY
     body = json.loads(seen[0].content)
     assert body["employmentType"] == "WORK_EXPERIENCE"
-    assert body["companyName"] == "주식회사 엘캠퍼스"
-    assert body["parentCompanyName"] is None
-    assert body["title"] == "(엘캠퍼스) 미래내일 일경험(제로인턴) 12기 - 경영사무(사무행정)"
-    assert (body["region"], body["subRegion"]) == ("SEOUL", None)
+    assert body["companyName"] == "충청북도충주의료원"
+    assert body["title"] == "[충주의료원] 경영·사무 일경험 프로그램_10기"
+    assert (body["region"], body["subRegion"]) == ("CHUNGBUK", None)
     assert body["recruitmentHeadcount"] == 1
-    assert body["recruitmentType"] == "PERIOD"
-    assert body["recruitmentStartAt"] == "2026-09-28T00:00:00"
-    assert body["recruitmentEndAt"] == "2026-10-02T23:59:59"
-    assert (body["closesWhenFilled"], body["autoCloseEnabled"]) == (False, True)
-    assert (body["experienceType"], body["experienceMinYears"]) == ("IRRELEVANT", None)
-    assert body["educationLevel"] == "ANY"
+    assert body["recruitmentStartAt"] == "2026-11-05T00:00:00"
+    assert body["recruitmentEndAt"] == "2026-11-18T23:59:59"
     assert body["applicationMethod"] == "EXTERNAL_PAGE"
-    assert body["sourceUrl"].endswith("untyPrgmCtn=" + INTERN)
+    assert body["sourceUrl"] == INTERN_SHARE
+    assert body["inquiryEmail"] is None
     notice = body["recruitmentNotice"]
-    assert notice.startswith("■ 미래내일 일경험 인턴형\n- 일경험 기간: 2026-10-12 ~ 2026-12-04")
-    assert "- 사전직무교육: 2026-10-07 ~ 2026-10-08 (" in notice
-    assert "- 운영기관: (주)데이원컴퍼니 (김윤경, 02-508-0375)" in notice
-    assert notice.endswith("- 운영계획서 참고")
+    assert notice.startswith("■ 미래내일 일경험 인턴형\n- 일경험 기간: ")
+    assert "- 사전직무교육: 2026-11-26 ~ " in notice and "(서울현대교육재단)" in notice
+    assert "- 운영기관: 충주상공회의소 (이*미, 043-843-7003)" in notice
+    assert json.loads(seen[2].content)["companyName"] == "목포문화방송 주식회사"
     rows = conn.execute("SELECT spring_job_id FROM work_experiences ORDER BY id").fetchall()
     assert [row[0] for row in rows] == [101, 102, 103]
 
 
-async def test_담당자_이메일은_문의_이메일로_보낸다(conn: sqlite3.Connection) -> None:
-    item = portal.ListItem(
-        program_id=ESG,
-        type_code="E",
-        title="ESG",
-        region="서울",
-        recruitment_end=date(2026, 10, 5),
-        company="소셜혁신연구소",
-    )
-    row_id, _ = store.upsert(conn, item, portal.parse_detail(DETAILS[ESG], ESG))
-    store.save_fill(conn, row_id, ProgramFill())
-
-    body = deliver.payload(conn, store.listing(conn)[0])
-
-    assert body["inquiryEmail"] == "shr@socialilab.net"
-
-
-async def test_409_면_원문_주소로_id_를_찾아_교체한다(conn: sqlite3.Connection) -> None:
-    await run_once(conn, fetcher=PortalFetcher(), filler=FakeFiller(), settings=SETTINGS)
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.method == "POST":
-            return httpx.Response(409, json={"message": "이미 등록된 원문 URL입니다."})
-        if request.method == "GET":
-            return httpx.Response(200, json={"data": {"jobId": 7}})
-        return httpx.Response(200, json={"data": None})
-
-    seen = _spring(handler)
-
-    result = await deliver.deliver_pending(conn, settings=SETTINGS)
-
-    assert result.sent == 3
-    assert [request.method for request in seen[:3]] == ["POST", "GET", "PUT"]
-    assert seen[1].url.params["sourceUrl"].startswith(portal.DETAIL_URL)
-    assert {row[0] for row in conn.execute("SELECT spring_job_id FROM work_experiences")} == {7}
-
-
-async def test_공유_주소를_원문_주소로_보낸다(conn: sqlite3.Connection) -> None:
-    await run_once(
-        conn, fetcher=PortalFetcher(_with_share(LIST_THREE)), filler=FakeFiller(), settings=SETTINGS
-    )
-    seen = _spring(_created(iter(range(1, 10))))
-
-    result = await deliver.deliver_pending(conn, settings=SETTINGS)
-
-    assert result.sent == 3
-    assert json.loads(seen[0].content)["sourceUrl"] == _share(INTERN)
-    assert deliver.pending(conn, TODAY) == []
-
-
-async def test_이미_보낸_프로그램은_공유_주소만_바꿔_같은_id_로_교체한다(
-    conn: sqlite3.Connection,
-) -> None:
-    await run_once(conn, fetcher=PortalFetcher(), filler=FakeFiller(), settings=SETTINGS)
-    seen = _spring(_created(iter(range(1, 10))))
-    await deliver.deliver_pending(conn, settings=SETTINGS)
-    assert json.loads(seen[0].content)["sourceUrl"].startswith(portal.DETAIL_URL)
-
-    fetcher = PortalFetcher(_with_share(LIST_THREE))
-    filler = FakeFiller()
-    summary = await run_once(conn, fetcher=fetcher, filler=filler, settings=SETTINGS)
-    result = await deliver.deliver_pending(conn, settings=SETTINGS)
-    # 공유 버튼이 한 번 빠져도 읽어 둔 주소로 남는다
-    await run_once(conn, fetcher=PortalFetcher(), filler=filler, settings=SETTINGS)
-
-    assert (summary.skipped, fetcher.details, filler.titles) == (3, [], [])
-    assert result.sent == 3
-    assert [(request.method, request.url.path) for request in seen[3:]] == [
-        ("PUT", "/api/v1/internal/jobs/1"),
-        ("PUT", "/api/v1/internal/jobs/2"),
-        ("PUT", "/api/v1/internal/jobs/3"),
-    ]
-    assert json.loads(seen[3].content)["sourceUrl"] == _share(INTERN)
-    assert deliver.pending(conn, TODAY) == []
-
-
 async def test_409_에_공유_주소로_못_찾으면_상세_주소로_찾는다(conn: sqlite3.Connection) -> None:
-    await run_once(
-        conn, fetcher=PortalFetcher(_with_share(LIST_THREE)), filler=FakeFiller(), settings=SETTINGS
-    )
+    await _upload(conn)
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "POST":
             return httpx.Response(409, json={"message": "이미 등록된 원문 URL입니다."})
         if request.method == "GET":
-            if request.url.params["sourceUrl"].startswith(portal.DETAIL_URL):
+            if request.url.params["sourceUrl"].startswith(source.DETAIL_URL):
                 return httpx.Response(200, json={"data": {"jobId": 7}})
             return httpx.Response(404, json={"message": "없다"})
         return httpx.Response(200, json={"data": None})
@@ -510,15 +377,16 @@ async def test_409_에_공유_주소로_못_찾으면_상세_주소로_찾는다
 
     assert result.sent == 3
     assert [request.method for request in seen[:4]] == ["POST", "GET", "GET", "PUT"]
-    assert seen[1].url.params["sourceUrl"] == _share(INTERN)
-    assert json.loads(seen[3].content)["sourceUrl"] == _share(INTERN)
+    assert seen[1].url.params["sourceUrl"] == INTERN_SHARE
+    assert json.loads(seen[3].content)["sourceUrl"] == INTERN_SHARE
+    assert {row[0] for row in conn.execute("SELECT spring_job_id FROM work_experiences")} == {7}
 
 
 async def test_마감일이_지난_프로그램은_보내지_않는다(
     conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    await run_once(conn, fetcher=PortalFetcher(), filler=FakeFiller(), settings=SETTINGS)
-    monkeypatch.setattr(deliver, "today", lambda _settings: "2026-10-03")
+    await _upload(conn)
+    monkeypatch.setattr(deliver, "today", lambda _settings: "2026-12-01")
     seen = _spring(_created(iter(range(1, 10))))
 
     result = await deliver.deliver_pending(conn, settings=SETTINGS)
@@ -527,7 +395,7 @@ async def test_마감일이_지난_프로그램은_보내지_않는다(
 
 
 async def test_거절되면_사유를_남기고_세_번까지만_자동으로_보낸다(conn: sqlite3.Connection) -> None:
-    await run_once(conn, fetcher=PortalFetcher(), filler=FakeFiller(), settings=SETTINGS)
+    await _upload(conn)
     _spring(
         lambda _: httpx.Response(400, json={"message": "[employmentType] 값이 올바르지 않습니다."})
     )
@@ -542,11 +410,11 @@ async def test_거절되면_사유를_남기고_세_번까지만_자동으로_�
     assert len(deliver.pending(conn, TODAY, retry_failed=True)) == 3
 
 
-async def test_전송을_켜_두면_수집이_끝날_때_보낸다(conn: sqlite3.Connection) -> None:
+async def test_전송을_켜_두면_정리가_끝날_때_보낸다(conn: sqlite3.Connection) -> None:
     work_settings.write_config(conn, work_settings.WorkExperienceConfig(deliver_enabled=True))
     _spring(_created(iter(range(1, 10))))
 
-    summary = await run_once(conn, fetcher=PortalFetcher(), filler=FakeFiller(), settings=SETTINGS)
+    summary = await _upload(conn)
 
     assert summary.sent == 3
 
@@ -554,28 +422,28 @@ async def test_전송을_켜_두면_수집이_끝날_때_보낸다(conn: sqlite3
 async def test_참여기업을_회사로_두고_로고를_올리면_같은_id_로_다시_보낸다(
     conn: sqlite3.Connection,
 ) -> None:
-    await run_once(conn, fetcher=PortalFetcher(), filler=FakeFiller(), settings=SETTINGS)
+    await _upload(conn)
     seen = _spring(_created(iter(range(1, 10))))
     await deliver.deliver_pending(conn, settings=SETTINGS)
-    assert companies.read(conn, "주식회사 엘캠퍼스") is not None
+    assert companies.read(conn, "충청북도충주의료원") is not None
 
-    companies.set_logo_url(conn, "주식회사 엘캠퍼스", "https://cdn.test/elcampus.png")
+    companies.set_logo_url(conn, "충청북도충주의료원", "https://cdn.test/chungju.png")
     result = await deliver.deliver_pending(conn, settings=SETTINGS)
 
-    assert result.sent == 2
-    assert [request.method for request in seen[3:]] == ["PUT", "PUT"]
-    assert json.loads(seen[3].content)["logoUrl"] == "https://cdn.test/elcampus.png"
+    assert result.sent == 1
+    assert [request.method for request in seen[3:]] == ["PUT"]
+    assert json.loads(seen[3].content)["logoUrl"] == "https://cdn.test/chungju.png"
     assert deliver.pending(conn, TODAY) == []
 
 
 async def test_AI_호출은_한_번이고_work_experience_fill_로_남는다(
     conn: sqlite3.Connection,
 ) -> None:
-    program = portal.parse_detail(DETAILS[INTERN], INTERN)
+    item, program = _programs()[0]
+    row_id, _ = store.upsert(conn, item, program)
     answer = {
         "experience_type": "NEWCOMER",
         "education_level": "ANY",
-        "sub_region": "SEOUL_GEUMCHEON_GU",
         "responsibilities": " - 사무행정 ",
         "qualifications": "",
     }
@@ -586,46 +454,18 @@ async def test_AI_호출은_한_번이고_work_experience_fill_로_남는다(
         client=client,
     )
 
-    filled = await filler.fill(program)
+    row = conn.execute("SELECT * FROM work_experiences WHERE id = ?", (row_id,)).fetchone()
+    filled = await filler.fill(store.program_of(row))
 
-    assert (filled.experience_type, filled.sub_region) == ("NEWCOMER", "SEOUL_GEUMCHEON_GU")
+    assert filled.experience_type == "NEWCOMER"
     assert filled.responsibilities == "- 사무행정"
     assert len(client.calls) == 1
     rows = conn.execute("SELECT feature, ok FROM llm_calls").fetchall()
     assert [tuple(row) for row in rows] == [("work_experience_fill", 1)]
 
 
-def test_매일_수집을_켜면_한국_시각_잡이_걸리고_끄면_떨어진다(conn: sqlite3.Connection) -> None:
-    scheduler = get_scheduler().scheduler
-    work_settings.write_config(
-        conn, work_settings.WorkExperienceConfig(schedule_enabled=True, run_time="09:30")
-    )
-    try:
-        assert schedule.sync(scheduler, conn) is True
-        job = scheduler.get_job(schedule.JOB_ID)
-        assert job is not None
-        fields = {field.name: str(field) for field in job.trigger.fields}
-        assert (fields["hour"], fields["minute"]) == ("9", "30")
-        assert str(job.trigger.timezone) == "Asia/Seoul"
-
-        work_settings.write_config(conn, work_settings.WorkExperienceConfig())
-        assert schedule.sync(scheduler, conn) is False
-        assert scheduler.get_job(schedule.JOB_ID) is None
-    finally:
-        if scheduler.get_job(schedule.JOB_ID) is not None:
-            scheduler.remove_job(schedule.JOB_ID)
-
-
-def test_수집_시각은_HH_MM_이다(conn: sqlite3.Connection) -> None:
-    with pytest.raises(work_settings.WorkExperienceSettingError):
-        work_settings.write_config(conn, work_settings.WorkExperienceConfig(run_time="25:00"))
-
-
-async def test_화면에_모은_프로그램과_보낼_값이_보인다(
-    tmp_path: pathlib.Path, conn: sqlite3.Connection
-) -> None:
-    await run_once(conn, fetcher=PortalFetcher(), filler=FakeFiller(), settings=SETTINGS)
-
+@pytest.fixture
+def client(tmp_path: pathlib.Path, conn: sqlite3.Connection) -> Iterator[TestClient]:
     def request_connection() -> Iterator[sqlite3.Connection]:
         connection = db.connect(tmp_path / "jobs.db")
         try:
@@ -635,47 +475,57 @@ async def test_화면에_모은_프로그램과_보낼_값이_보인다(
 
     app.dependency_overrides[settings_api.get_connection] = request_connection
     try:
-        client = TestClient(app)
-        page = client.get("/work-experiences")
-        panel = client.get("/ui/work-experiences")
+        yield TestClient(app)
     finally:
         app.dependency_overrides.clear()
+
+
+async def test_화면에_넣은_프로그램과_보낼_값이_보인다(
+    conn: sqlite3.Connection, client: TestClient
+) -> None:
+    await _upload(conn)
+
+    page = client.get("/work-experiences")
+    panel = client.get("/ui/work-experiences")
 
     assert page.status_code == 200
     assert 'aria-current="page"' in page.text and "미래내일 일경험" in page.text
     assert panel.status_code == 200
-    assert "모은 프로그램 3건" in panel.text
-    assert "(엘캠퍼스) 미래내일 일경험(제로인턴) 12기" in panel.text
-    assert "주식회사 엘캠퍼스" in panel.text
+    assert "넣은 프로그램 3건" in panel.text
+    assert "[충주의료원] 경영·사무 일경험 프로그램_10기" in panel.text
+    assert "CSV 올리기" in panel.text and "지금 수집" not in panel.text
 
 
-def test_지금_수집은_백그라운드로_시작한다(
-    tmp_path: pathlib.Path, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+def test_CSV_를_올리면_백그라운드로_정리를_시작한다(
+    conn: sqlite3.Connection, client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app.api import ui_work_experiences
 
-    started: list[Settings] = []
-    monkeypatch.setattr(ui_work_experiences, "_start", started.append)
+    started: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(ui_work_experiences, "_start", lambda *args: started.append(args))
 
-    def request_connection() -> Iterator[sqlite3.Connection]:
-        connection = db.connect(tmp_path / "jobs.db")
-        try:
-            yield connection
-        finally:
-            connection.close()
+    uploaded = client.post(
+        "/ui/work-experiences/upload", files={"sheet": ("mapped.csv", CSV_BYTES, "text/csv")}
+    )
+    original = client.post(
+        "/ui/work-experiences/upload",
+        files={"sheet": ("raw.csv", "프로그램명,모집종료일\n인턴,2026-11-30\n".encode("cp949"))},
+    )
+    conn.execute("INSERT INTO work_experience_runs (trigger, status) VALUES ('manual', 'running')")
+    busy = client.post(
+        "/ui/work-experiences/upload", files={"sheet": ("mapped.csv", CSV_BYTES, "text/csv")}
+    )
 
-    app.dependency_overrides[settings_api.get_connection] = request_connection
-    try:
-        client = TestClient(app)
-        first = client.post("/ui/work-experiences/run")
-        conn.execute(
-            "INSERT INTO work_experience_runs (trigger, status) VALUES ('manual', 'running')"
-        )
-        second = client.post("/ui/work-experiences/run")
-    finally:
-        app.dependency_overrides.clear()
-
-    assert "수집을 시작했다" in first.text
-    assert "이미 수집하는 중이다" in second.text
-    assert 'hx-trigger="every 5s"' in second.text
+    assert "CSV 3건을 올렸다" in uploaded.text
+    assert "프로그램번호 칸이 없다" in original.text
+    assert "이미 정리하는 중이다" in busy.text
+    assert 'hx-trigger="every 5s"' in busy.text
     assert len(started) == 1
+    assert [item.program_id for item, _ in started[0][1]] == [INTERN, PROJECT, ESG]
+
+
+def test_전송_켜기를_저장한다(conn: sqlite3.Connection, client: TestClient) -> None:
+    saved = client.put("/ui/work-experiences/settings", data={"deliver_enabled": "1"})
+
+    assert "저장했다" in saved.text
+    assert work_settings.read_config(conn).deliver_enabled is True
