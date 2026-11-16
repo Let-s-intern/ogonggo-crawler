@@ -220,3 +220,27 @@ def test_항목마다_다른_번호_클래스가_있어도_반복으로_본다()
     # 공고가 넷으로 줄어 상한 안에 든다. 줄지 않으면 상한을 넘어 메뉴로 좁혀지고 공고가 사라진다
     assert cleaned.narrowed is False
     assert len(soup.select("article a.tit")) == 4
+
+
+def test_한_자리_순번_클래스가_있어도_반복으로_본다() -> None:
+    """아모레퍼시픽(SuccessFactors) 실측(2026-11-16): 공고마다 `job-row-index-1` 이 붙었다.
+
+    세 자리 이상만 번호로 보던 때는 공고 열여섯 건이 서로 다른 태그였고, 헤더 메뉴로 좁혀
+    모델이 853자짜리 메뉴만 받았다.
+    """
+    menu = "".join(f'<li role="none"><a href="/m/{n}">메뉴 {n}</a></li>' for n in range(5))
+    tiles = "".join(
+        f'<li class="job-tile job-id-{1370000000 + n} job-row-index-{n} linkhover">'
+        f'<a class="jobTitle-link" href="/job/{n}/">공고 {n}</a><p>{"본문 " * 200}</p></li>'
+        for n in range(1, 17)
+    )
+    html = (
+        f'<body><header><ul class="dropdown-menu">{menu}</ul></header>'
+        f'<main><ul class="job-list">{tiles}</ul></main></body>'
+    )
+
+    cleaned = clean_html(html, max_chars=6_000)
+    soup = BeautifulSoup(cleaned.html, "html.parser")
+
+    assert cleaned.narrowed is False
+    assert len(soup.select("li.job-tile a.jobTitle-link")) == 4
