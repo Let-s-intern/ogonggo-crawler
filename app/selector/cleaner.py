@@ -33,8 +33,11 @@ _SIZE_TOLERANCE = 0.4
 # (`_outlier_size`). 공고 항목은 본문 길이가 달라도 요소 수가 두어 배를 넘지 않는다
 _OUTLIER_RATIO = 3
 _OUTLIER_MIN_EXTRA = 30
-# 끝이 번호인 클래스. 글·항목마다 달라 반복을 가를 때 보지 않는다 (`_key`)
-_NUMBERED_CLASS = re.compile(r"[-_]\d{3,}$")
+# 끝이 번호인 클래스. 글·항목마다 달라 반복을 가를 때 보지 않는다 (`_key`). 자릿수는 보지
+# 않는다 — 아모레퍼시픽(SuccessFactors) 실측(2026-11-16): 공고마다 `job-row-index-1`, `-2` 처럼
+# 한 자리 순번이 붙어 반복으로 잡히지 않았고, 헤더 메뉴 853자만 모델에 갔다. 형제가 모두
+# 같은 `col-md-12` 를 빼는 것은 비교 결과를 바꾸지 않는다
+_NUMBERED_CLASS = re.compile(r"[-_]\d+$")
 
 _DROP_TAGS = ("script", "style", "svg", "noscript", "iframe", "template")
 _ON_ATTR = re.compile(r"^on", re.IGNORECASE)
