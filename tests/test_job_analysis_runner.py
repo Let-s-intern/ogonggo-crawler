@@ -9,6 +9,7 @@ AI 와 오공고 서버를 부르지 않는다. 제공자는 가짜로, 서버�
 | 분석해 두고 못 보낸 공고는 AI 없이 다시 보낸다 | 전송만 실패한 공고에 토큰을 다시 쓴다 |
 | 멈춤 시각이 지나면 남은 공고를 넘긴다 | 크롤러 서버가 꺼지는 시각까지 붙잡는다 |
 | AI 가 연달아 실패하면 멈춘다 | 제공자가 죽은 날 공고마다 실패가 쌓인다 |
+| 공고를 `CONCURRENCY` 건씩 함께 분석한다 | AI 응답을 한 건씩 기다리느라 분석 시간이 모자란다 |
 | 본문이 빈 공고는 연달아 있어도 건너뛰고 간다 | 실행마다 같은 자리에서 멈춘다 |
 | 같은 본문으로 세 번 실패하면 건너뛰고, 본문이 바뀌면 다시 한다 | 안 될 공고에 매일 돈을 쓴다 |
 | 오공고 주소가 없으면 실행을 실패로 닫는다 | 실행 기록이 도는 중으로 남는다 |
@@ -16,6 +17,7 @@ AI 와 오공고 서버를 부르지 않는다. 제공자는 가짜로, 서버�
 
 from __future__ import annotations
 
+import asyncio
 import json
 import pathlib
 import sqlite3
@@ -179,6 +181,40 @@ async def test_AI_가_연달아_실패하면_멈춘다(
     assert summary.status == "failed"
     assert (summary.failed, summary.left) == (runner.MAX_FAILURES_IN_ROW, 2)
     assert store.counts(conn)["failed"] == runner.MAX_FAILURES_IN_ROW
+
+
+class SlowProvider(FakeProvider):
+    """응답 전에 쉬어 함께 부른 수를 센다."""
+
+    def __init__(self, count: int) -> None:
+        super().__init__(*[answer()] * count)
+        self.in_flight = 0
+        self.most = 0
+
+    async def call_model(self, *args: Any, **kwargs: Any) -> Any:
+        self.in_flight += 1
+        self.most = max(self.most, self.in_flight)
+        try:
+            await asyncio.sleep(0.01)
+            return await super().call_model(*args, **kwargs)
+        finally:
+            self.in_flight -= 1
+
+
+async def test_공고를_CONCURRENCY_건씩_함께_분석한다(
+    conn: sqlite3.Connection, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    count = runner.CONCURRENCY * 3
+    server = FakeOgonggo([target(n) for n in range(count)])
+    serve(monkeypatch, server)
+    provider = SlowProvider(count)
+    use(monkeypatch, provider)
+
+    summary = await runner.run_once(conn, settings=settings)
+
+    assert provider.most == runner.CONCURRENCY
+    assert (summary.analyzed, summary.sent, summary.left) == (count, count, 0)
+    assert sorted(job_id for job_id, _ in server.puts) == list(range(count))
 
 
 async def test_본문이_빈_공고는_연달아_있어도_건너뛰고_간다(

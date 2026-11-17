@@ -8,7 +8,7 @@
 스케줄러 메모리에만 남는다.
 
 크롤 워크플로우는 저마다 잡을 갖지 않는다. 매일 정해진 시각에 깨어나는 잡 하나(`DAILY_JOB_ID`)가
-그 시점의 `workflows` 를 읽어 active 인 곳을 한 곳씩 돈다 (`app/crawler/daily.py`). 서버가
+그 시점의 `workflows` 를 읽어 active 인 곳을 차례로 돈다 (`app/crawler/daily.py`). 서버가
 하루 3~4시간만 켜져 있어서, 기동 시점부터 세는 주기 잡으로는 하루 주기가 한 번도 깨어나지 않는다.
 
 `side_workflows` 에서 `active` 이면서 `interval` 인 행은 부가 잡이 된다. 한 번의 `sync()` 가
@@ -187,10 +187,12 @@ class WorkflowScheduler:
         self._scheduler.add_listener(_log_skipped_tick, EVENT_JOB_MAX_INSTANCES)
 
     async def _run_round(self) -> None:
-        """매일 한 바퀴. 오늘 아직 돌지 않은 곳을 id 순서로 한 곳씩 돈다.
+        """매일 한 바퀴. 오늘 아직 돌지 않은 곳을 id 순서로 돈다.
 
-        시작 간격은 남은 시간을 남은 곳 수로 나눈 값이다. 한 곳이 간격보다 오래 걸리면 다음
-        곳은 끝나는 대로 바로 시작한다 — 두 곳이 겹쳐 돌지 않는 것이 간격보다 우선이다.
+        시작 간격은 남은 시간을 남은 곳 수로 나눈 값이다. 앞 곳이 간격보다 오래 걸려도 다음 곳은
+        제 시각에 시작해 `concurrency` 곳까지 함께 돈다. 그만큼 돌고 있으면 하나가 끝나는 대로
+        시작한다 — 상한을 넘겨 겹치지 않는 것이 간격보다 우선이다 (2026-11-17). 크롤 동시 실행
+        상한(`get_gate`)도 그대로 걸린다.
 
         차례가 온 곳이 그 사이 중지됐으면 건너뛴다. 무엇을 돌지는 잡이 아니라 표가 정한다.
         """
@@ -209,12 +211,16 @@ class WorkflowScheduler:
         self._round_slots = daily.slots(remaining, now, end)
         self._round_busy = True
         logger.info(
-            "매일 수집 시작: %d곳을 %s 까지 한 곳씩 돈다",
+            "매일 수집 시작: %d곳을 %s 까지 %d곳씩 돈다",
             len(remaining),
             end.astimezone(daily.zone()).strftime("%H:%M"),
+            config.concurrency,
         )
+        running: set[asyncio.Task[None]] = set()
         try:
             for workflow_id in remaining:
+                while len(running) >= config.concurrency:
+                    await asyncio.wait(running, return_when=asyncio.FIRST_COMPLETED)
                 wait = (self._round_slots[workflow_id] - self._clock()).total_seconds()
                 if wait > 0:
                     await self._sleep(wait)
@@ -222,16 +228,23 @@ class WorkflowScheduler:
                 if not self._still_active(workflow_id):
                     logger.info("매일 수집: workflow %s 는 중지돼 건너뛴다", workflow_id)
                     continue
-                try:
-                    await self._runner(workflow_id)
-                except Exception:
-                    # 한 곳이 죽어도 남은 곳은 돈다. 실패는 실행 기록에 이미 남는다
-                    logger.exception("매일 수집: workflow %s 실행이 예외로 끝났다", workflow_id)
+                task = asyncio.ensure_future(self._run_in_round(workflow_id))
+                running.add(task)
+                task.add_done_callback(running.discard)
+            if running:
+                await asyncio.wait(running)
             logger.info("매일 수집 끝: %d곳", len(remaining))
             await self._finisher()
         finally:
             self._round_slots = {}
             self._round_busy = False
+
+    async def _run_in_round(self, workflow_id: int) -> None:
+        try:
+            await self._runner(workflow_id)
+        except Exception:
+            # 한 곳이 죽어도 남은 곳은 돈다. 실패는 실행 기록에 이미 남는다
+            logger.exception("매일 수집: workflow %s 실행이 예외로 끝났다", workflow_id)
 
     async def _finish_round(self) -> None:
         """남은 분류를 마치고 결과를 보낸다. 실패해도 한 바퀴는 끝난 것이다."""

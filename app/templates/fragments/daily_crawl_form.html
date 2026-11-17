@@ -22,11 +22,21 @@
       <br>
       <input id="daily-spread" name="spread_minutes" type="number" step="1" min="0"
              max="{{ max_spread }}" value="{{ config.spread_minutes }}" size="6">
+    </p>
+    <p>
+      <label for="daily-concurrency">한 번에 도는 곳 수</label>
+      <br>
+      <input id="daily-concurrency" name="concurrency" type="number" step="1" min="1"
+             max="{{ max_concurrency }}" value="{{ config.concurrency }}" size="4">
       <button type="submit">저장</button>
       {{ wait("저장하는 중") }}
     </p>
     <p>
-      지금 active 인 사이트 {{ count }}곳 — 한 곳씩 약 {{ gap }}분 간격으로 시작한다.
+      지금 active 인 사이트 {{ count }}곳 — 약 {{ gap }}분 간격으로 시작하고, 앞 곳이 끝나지 않았으면
+      {{ config.concurrency }}곳까지 함께 돈다.
+      {% if gate_limit < config.concurrency %}
+      크롤 동시 실행 상한이 {{ gate_limit }}이라 실제로는 {{ gate_limit }}곳까지만 함께 돈다.
+      {% endif %}
       {% if next_at %}다음 시작 {{ next_at | as_time }}.{% endif %}
     </p>
   </fieldset>
