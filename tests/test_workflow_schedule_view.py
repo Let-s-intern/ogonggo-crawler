@@ -211,7 +211,7 @@ def test_매일_수집을_문장으로_적는다(
 
     html = client.get("/ui/workflows").text
 
-    assert "매일 08:30부터 한 곳씩 도는 수집에 들어 있다" in html
+    assert "매일 08:30부터 도는 수집에 들어 있다" in html
 
 
 def test_다음_실행_예정_시각이_카드에_있다(

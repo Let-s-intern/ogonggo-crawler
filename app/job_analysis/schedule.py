@@ -82,10 +82,17 @@ def sync(scheduler: AsyncIOScheduler, conn: sqlite3.Connection) -> bool:
         id=JOB_ID,
         max_instances=1,
         coalesce=True,
+        # 시작 시각에 이벤트 루프가 바빠 늦게 깨어나도 멈춤 시각 전이면 그날은 돈다. 기본값(1초)이면
+        # 그날을 소리 없이 건너뛴다 (2026-11-17)
+        misfire_grace_time=_minutes(config.stop_time) * 60 - _minutes(config.start_time) * 60,
         replace_existing=True,
     )
     logger.info("공고 분석을 매일 %s 에 건다 (%s 에 멈춤)", config.start_time, config.stop_time)
     return True
+
+
+def _minutes(hhmm: str) -> int:
+    return int(hhmm[:2]) * 60 + int(hhmm[3:])
 
 
 def next_run_time(scheduler: AsyncIOScheduler) -> object | None:

@@ -2,19 +2,23 @@
 
 Gemini 를 실제로 부르지 않는다. 여기서 보는 것은 넷이다 — 이미 분류된 공고를 다시 돌지
 않는가, 한 건이 실패해도 나머지가 가는가, **분류 실패가 수집을 실패로 만들지 않는가**,
-그리고 한 번에 도는 건수에 상한이 걸리는가.
+그리고 한 번에 도는 건수에 상한이 걸리는가. 공고를 `CONCURRENCY` 건씩 함께 분류하는지도 본다
+(2026-11-17).
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import pathlib
 import sqlite3
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 
 from app import db
+from app.classify import batch
 from app.classify.batch import (
     MAX_LIMIT,
     ClassifyProgress,
@@ -26,7 +30,7 @@ from app.classify.batch import (
 from app.classify.store import pending_ids, read_classification, read_evidence
 from app.config import Settings
 from tests.classify_fakes import response
-from tests.test_selector_generator import FakeClient
+from tests.test_selector_generator import FakeClient, FakeModels, FakeResponse
 
 BODY = (
     "◆ 직원 유형\n정규직\n\n◆ 업무내용\n제휴사 데이터 연동 구조 기획\n\n"
@@ -112,6 +116,38 @@ async def test_it_classifies_the_postings_that_have_a_body(conn: sqlite3.Connect
     assert stored["responsibilities"] == "제휴사 데이터 연동 구조 기획"
     # 판정 칸을 그렇게 고른 근거가 남아 있어야 나중에 왜 그랬는지 답할 수 있다
     assert read_evidence(conn, 1)["experience_type"] == "관련 경험 5년 이상이신 분"
+
+
+class SlowModels(FakeModels):
+    """응답 전에 쉬어 함께 부른 수를 센다."""
+
+    def __init__(self, texts: list[str]) -> None:
+        super().__init__(texts)
+        self.in_flight = 0
+        self.most = 0
+
+    async def generate_content(self, *, model: str, contents: str, config: Any) -> FakeResponse:
+        self.in_flight += 1
+        self.most = max(self.most, self.in_flight)
+        try:
+            await asyncio.sleep(0.01)
+            return await super().generate_content(model=model, contents=contents, config=config)
+        finally:
+            self.in_flight -= 1
+
+
+async def test_postings_are_classified_concurrency_at_a_time(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(batch, "CONCURRENCY", 2)
+    client = FakeClient(GOOD)
+    client.models = SlowModels([GOOD])
+
+    progress = ClassifyProgress()
+    await classify_pending(conn, progress, limit=10, client=client, settings=settings_with_key())
+
+    assert client.models.most == 2
+    assert progress.processed == 3
 
 
 async def test_an_already_classified_posting_is_not_run_again(conn: sqlite3.Connection) -> None:

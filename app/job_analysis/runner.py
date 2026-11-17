@@ -1,7 +1,8 @@
 """공고 분석 한 번 (2026-10-08 결정, LC-3446).
 
 1. 오공고 서버에서 분석할 공고를 `MAX_PER_RUN` 건까지 받는다
-2. 공고마다 지금 판의 분석 방법으로 AI 를 부르고, 결과를 서버로 보낸다
+2. 공고마다 지금 판의 분석 방법으로 AI 를 부르고, 결과를 서버로 보낸다. `CONCURRENCY` 건씩 함께
+   한다 (2026-11-17)
 3. **이미 같은 본문·같은 판으로 분석해 두고 보내지 못한 공고는 AI 를 다시 부르지 않고 보내기만
    한다**
 4. 멈춤 시각이 지나면 새 공고를 부르지 않는다. 남은 공고는 다음 실행이 이어서 한다
@@ -20,8 +21,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sqlite3
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -42,6 +45,8 @@ MANUAL = "manual"
 # 쌓인 공고는 며칠에 걸쳐 나눠 돈다
 MAX_PER_RUN = 500
 MAX_FAILURES_IN_ROW = 5
+# AI 를 함께 부르는 공고 수 (2026-11-17)
+CONCURRENCY = 4
 # AI 를 부르기 전에 난 실패. 연달아 실패한 수에 세지 않는다
 NOT_AI_FAILURE = "empty_body"
 # 같은 본문으로 이만큼 실패한 공고는 실행마다 다시 하지 않고 오공고에서 숨긴다
@@ -153,65 +158,101 @@ async def _work(
     stop_at: datetime | None,
     llm_client: object | None,
 ) -> None:
+    """공고를 `CONCURRENCY` 건씩 함께 분석한다 (2026-11-17). 시간 대부분이 AI 응답을 기다리는
+    것이라 한 건씩 하면 CPU 가 논다. 멈출 때는 새 공고만 잡지 않고 잡은 공고는 끝까지 한다."""
+    pending = deque(found)
     failures_in_row = 0
-    for index, target in enumerate(found):
+    stopped = False
+
+    def should_stop() -> bool:
+        nonlocal stopped
+        if stopped:
+            return True
         if stop_at is not None and datetime.now(stop_at.tzinfo) >= stop_at:
-            summary.left = len(found) - index
+            summary.left = len(pending)
             summary.notes.append(
                 f"멈춤 시각({stop_at:%H:%M})이 되어 {summary.left}건은 다음 실행에 넘겼다"
             )
-            return
-        if failures_in_row >= MAX_FAILURES_IN_ROW:
-            summary.left = len(found) - index
+            stopped = True
+        elif failures_in_row >= MAX_FAILURES_IN_ROW:
+            summary.left = len(pending)
             summary.status = "failed"
             summary.notes.append(
                 f"AI 가 {MAX_FAILURES_IN_ROW}번 연달아 실패해 멈췄다. 설정 > AI 를 확인한다"
             )
-            return
-        row = store.get(conn, target.job_id)
-        if _given_up(row, target):
-            summary.skipped += 1
-            # 이 결정 전에 포기한 공고도 여기서 숨긴다
-            await _hide(conn, client, target, summary)
-            continue
-        reuse = _reusable(row, target, version.number)
-        store.save_target(conn, target.job_id, target.source, target.job, target.content_hash)
-        if reuse is None:
-            try:
-                result = await analyze(
-                    conn,
-                    Posting.of(target.job),
-                    version.guide,
-                    settings=settings,
-                    client=llm_client,
-                    guide_version=version.number,
-                )
-            except AnalysisError as exc:
-                store.mark(
-                    conn, target.job_id, store.FAILED, str(exc), run_id=summary.run_id, counted=True
-                )
-                summary.failed += 1
-                if exc.reason != NOT_AI_FAILURE:
-                    failures_in_row += 1
-                if exc.reason == NOT_AI_FAILURE or _given_up(
-                    store.get(conn, target.job_id), target
-                ):
-                    await _hide(conn, client, target, summary)
-                continue
-            failures_in_row = 0
-            reuse = store.Analyzed(
-                result.analysis,
-                version.number,
-                result.model,
-                result.input_tokens,
-                result.output_tokens,
+            stopped = True
+        return stopped
+
+    async def worker() -> None:
+        nonlocal failures_in_row
+        while pending and not should_stop():
+            outcome = await _one(
+                conn, client, pending.popleft(), version, summary, settings, llm_client
             )
-            store.save_analysis(conn, target.job_id, reuse, summary.run_id)
-            summary.analyzed += 1
-        if await send(conn, client, target.job_id, target.content_hash, reuse, summary.run_id):
-            summary.sent += 1
-        else:
+            if outcome == _AI_FAILED:
+                failures_in_row += 1
+            elif outcome == _AI_OK:
+                failures_in_row = 0
+
+    await asyncio.gather(*(worker() for _ in range(CONCURRENCY)))
+
+
+_AI_OK = "ai_ok"
+_AI_FAILED = "ai_failed"
+
+
+async def _one(
+    conn: sqlite3.Connection,
+    client: httpx.AsyncClient,
+    target: ogonggo.Target,
+    version: guides.GuideVersion,
+    summary: RunSummary,
+    settings: Settings | None,
+    llm_client: object | None,
+) -> str:
+    """공고 하나. AI 를 불렀으면 성공·실패를 돌려준다(연달아 실패한 수를 센다)."""
+    outcome = ""
+    row = store.get(conn, target.job_id)
+    if _given_up(row, target):
+        summary.skipped += 1
+        # 이 결정 전에 포기한 공고도 여기서 숨긴다
+        await _hide(conn, client, target, summary)
+        return outcome
+    reuse = _reusable(row, target, version.number)
+    store.save_target(conn, target.job_id, target.source, target.job, target.content_hash)
+    if reuse is None:
+        try:
+            result = await analyze(
+                conn,
+                Posting.of(target.job),
+                version.guide,
+                settings=settings,
+                client=llm_client,
+                guide_version=version.number,
+            )
+        except AnalysisError as exc:
+            store.mark(
+                conn, target.job_id, store.FAILED, str(exc), run_id=summary.run_id, counted=True
+            )
             summary.failed += 1
+            if exc.reason == NOT_AI_FAILURE or _given_up(store.get(conn, target.job_id), target):
+                await _hide(conn, client, target, summary)
+            return outcome if exc.reason == NOT_AI_FAILURE else _AI_FAILED
+        outcome = _AI_OK
+        reuse = store.Analyzed(
+            result.analysis,
+            version.number,
+            result.model,
+            result.input_tokens,
+            result.output_tokens,
+        )
+        store.save_analysis(conn, target.job_id, reuse, summary.run_id)
+        summary.analyzed += 1
+    if await send(conn, client, target.job_id, target.content_hash, reuse, summary.run_id):
+        summary.sent += 1
+    else:
+        summary.failed += 1
+    return outcome
 
 
 async def send(

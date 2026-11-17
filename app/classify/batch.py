@@ -21,6 +21,7 @@ import asyncio
 import logging
 import sqlite3
 import threading
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -57,6 +58,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_LIMIT = 50
 # 한 번에 도는 건수의 상한. 이보다 큰 값을 주면 여기로 깎는다
 MAX_LIMIT = 200
+# 한 실행 안에서 AI 를 함께 부르는 공고 수 (2026-11-17)
+CONCURRENCY = 4
 
 # 실패 사유를 몇 건까지 들고 있을지. 전부 쌓으면 키 하나가 틀렸을 때 메모리에 같은 문장이
 # 수백 줄 들어찬다
@@ -268,7 +271,7 @@ async def classify_ids(
     response_model = build_classification_model(conn)
     done: list[int] = []
 
-    for raw_job_id in raw_job_ids:
+    async def one(raw_job_id: int) -> None:
         notify(raw_job_id, JOB_RUNNING)
         # 원문이 있으면 원문, 없으면 본문이다. 옛 건에는 원문이 없다 (`app/classify/store.py`)
         source = read_source(conn, raw_job_id)
@@ -309,7 +312,7 @@ async def classify_ids(
             _note_failed_call(conn, provider.name, model, exc, prompt_version.number)
             progress.note(f"raw_jobs {raw_job_id}: {exc}")
             notify(raw_job_id, JOB_FAILED)
-            continue
+            return
 
         # 회사·모집 시작·모집 마감은 늘 따로 짚어 온다 (모집 기간 2026-10-08, 회사 2026-10-14 결정).
         # 사이트가 읽은 값을 함께 보여 주고 AI 가 고른 값을 쓴다. 공고 한 건 전체의 값이라 나눈
@@ -367,13 +370,23 @@ async def classify_ids(
             # 분류는 남았다. 규칙을 고쳐 재정규화하면 그때 반영된다
             progress.note(f"raw_jobs {raw_job_id}: 분류는 저장했으나 정규화가 실패했다: {exc}")
             notify(raw_job_id, JOB_FAILED)
-            continue
+            return
         # 운영자가 화면에서 더한 항목이 켜져 있으면 한 번 더 묻는다. 없으면 호출도 없다.
         # 실패해도 분류는 성공이다 (`app/custom_fields.py`)
         await custom_fields.fill_job(conn, raw_job_id, settings=settings)
         progress.processed += 1
         done.append(raw_job_id)
         notify(raw_job_id, JOB_DONE)
+
+    # 공고를 `CONCURRENCY` 건씩 함께 분류한다 (2026-11-17). 시간 대부분이 AI 응답을 기다리는 것이라
+    # 한 건씩 하면 CPU 가 논다. 연결은 자동 커밋이라 공고끼리 쓰기가 한 트랜잭션에 섞이지 않는다
+    queue = deque(raw_job_ids)
+
+    async def worker() -> None:
+        while queue:
+            await one(queue.popleft())
+
+    await asyncio.gather(*(worker() for _ in range(CONCURRENCY)))
 
     logger.info(
         "분류: 대상 %s건, 처리 %s건, 실패 %s건, 버린 칸 %s개, 호출 %s회, 토큰 %s",

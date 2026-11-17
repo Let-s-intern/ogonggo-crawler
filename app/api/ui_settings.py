@@ -88,6 +88,8 @@ def _daily_form(
         config=config,
         zone=get_settings().display_timezone,
         max_spread=daily.MAX_SPREAD_MINUTES,
+        max_concurrency=daily.MAX_CONCURRENCY,
+        gate_limit=store.read_int(conn, store.MAX_CONCURRENT_RUNS),
         count=count,
         gap=round(config.spread_minutes / count) if count else 0,
         next_at=next_at,
@@ -112,6 +114,7 @@ def update_daily_fragment(
     scheduler: Annotated[WorkflowScheduler, Depends(get_workflow_scheduler)],
     start_time: Annotated[str, Form()] = "",
     spread_minutes: Annotated[str, Form()] = "",
+    concurrency: Annotated[str, Form()] = "",
 ) -> HTMLResponse:
     """저장하고 매일 잡의 시각을 바로 맞춘다. 거절된 값은 저장되지 않는다."""
     try:
@@ -120,7 +123,15 @@ def update_daily_fragment(
         return _daily_form(
             request, conn, scheduler, error=f"걸쳐 도는 시간이 정수가 아니다: {spread_minutes!r}"
         )
-    config = daily.DailyConfig(start_time=start_time.strip(), spread_minutes=minutes)
+    try:
+        together = int(concurrency)
+    except ValueError:
+        return _daily_form(
+            request, conn, scheduler, error=f"한 번에 도는 곳 수가 정수가 아니다: {concurrency!r}"
+        )
+    config = daily.DailyConfig(
+        start_time=start_time.strip(), spread_minutes=minutes, concurrency=together
+    )
     try:
         daily.write_config(conn, config)
     except daily.DailySettingError as exc:
@@ -130,7 +141,10 @@ def update_daily_fragment(
         request,
         conn,
         scheduler,
-        message=f"매일 {config.start_time}부터 {config.spread_minutes}분에 걸쳐 돈다",
+        message=(
+            f"매일 {config.start_time}부터 {config.spread_minutes}분에 걸쳐"
+            f" {config.concurrency}곳씩 돈다"
+        ),
     )
 
 

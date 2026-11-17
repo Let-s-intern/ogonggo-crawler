@@ -1,4 +1,4 @@
-"""상시 채용 원문 확인 (`app/source_check/`).
+"""상시 채용 마감 여부 확인 (`app/source_check/`).
 
 사이트도 오공고도 AI 도 부르지 않는다. 페이지는 가짜 `PageSource`, 오공고는 `httpx.MockTransport`,
 AI 는 가짜 제공자가 답한다.

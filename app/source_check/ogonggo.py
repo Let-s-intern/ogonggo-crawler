@@ -1,4 +1,4 @@
-"""오공고 서버와 주고받는 상시 채용 원문 확인 API (LC-3621).
+"""오공고 서버와 주고받는 상시 채용 마감 여부 확인 API (LC-3621).
 
 ## 계약
 
@@ -44,9 +44,9 @@ async def targets(client: httpx.AsyncClient, after_id: int, size: int) -> list[T
     try:
         response = await client.get(TARGETS_PATH, params={"afterId": after_id, "size": size})
     except httpx.HTTPError as exc:
-        raise OgonggoUnavailable(f"원문 확인 대상을 받지 못했다: {exc}") from exc
+        raise OgonggoUnavailable(f"마감 여부 확인 대상을 받지 못했다: {exc}") from exc
     if response.status_code != 200:
-        raise OgonggoUnavailable(f"원문 확인 대상을 받지 못했다({response.status_code})")
+        raise OgonggoUnavailable(f"마감 여부 확인 대상을 받지 못했다({response.status_code})")
     data = response.json().get("data") or []
     found: list[Target] = []
     for item in data if isinstance(data, list) else []:

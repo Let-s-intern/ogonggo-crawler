@@ -1,8 +1,10 @@
 """매일 한 바퀴 수집의 설정과 순서. 스케줄러 잡은 `app/scheduler.py` 가 건다.
 
 크롤 워크플로우는 저마다의 주기로 돌지 않는다. 매일 정해진 시각(기본 08:30, 표시 시간대 기준)에
-한 바퀴가 시작되고, active 인 사이트를 id 순서로 **한 곳씩** 돈다. 시작 간격은 `spread_minutes`
-를 사이트 수로 나눈 값이라 전체가 그 시간에 걸쳐 흩어진다 (2026-09-28 결정).
+한 바퀴가 시작되고, active 인 사이트를 id 순서로 돈다. 시작 간격은 `spread_minutes` 를 사이트
+수로 나눈 값이라 전체가 그 시간에 걸쳐 흩어진다 (2026-09-28 결정). 앞 곳이 간격보다 오래 걸리면
+`concurrency` 곳까지 함께 돈다 (2026-11-17, 처음엔 한 곳씩이라 CPU 가 놀았다). 사이트마다 호스트가
+달라 한 사이트에 요청이 몰리지 않고, 같은 호스트의 딜레이는 공용 fetch 클라이언트가 지킨다.
 
 주기 대신 이렇게 하는 이유는 서버가 하루에 3~4시간만 켜져 있기 때문이다. 주기 잡은 프로세스가
 뜬 시점부터 세므로, 하루 주기(1440분)는 서버가 꺼지기 전에 한 번도 깨어나지 못한다.
@@ -23,14 +25,18 @@ from app.config import get_settings
 
 START_TIME = "daily_crawl_time"
 SPREAD_MINUTES = "daily_crawl_spread_minutes"
+CONCURRENCY = "daily_crawl_concurrency"
 
-KEYS: tuple[str, ...] = (START_TIME, SPREAD_MINUTES)
+KEYS: tuple[str, ...] = (START_TIME, SPREAD_MINUTES, CONCURRENCY)
 
 DEFAULT_START_TIME = "08:30"
 # 2~3시간에 걸쳐 돌린다. 서버가 켜져 있는 3~4시간 안에 끝나야 한다
 DEFAULT_SPREAD_MINUTES = 150
 # 하루를 넘기면 다음 바퀴와 겹친다
 MAX_SPREAD_MINUTES = 12 * 60
+# 한 번에 함께 도는 곳 수. 크롤 동시 실행 상한(`max_concurrent_runs`)이 이보다 작으면 그만큼만 돈다
+DEFAULT_CONCURRENCY = 3
+MAX_CONCURRENCY = 10
 
 _START_TIME = re.compile(r"([01]\d|2[0-3]):([0-5]\d)")
 
@@ -45,6 +51,8 @@ class DailyConfig:
     start_time: str = DEFAULT_START_TIME
     # 한 바퀴를 몇 분에 걸쳐 흩어 돌리는가
     spread_minutes: int = DEFAULT_SPREAD_MINUTES
+    # 한 번에 함께 도는 곳 수
+    concurrency: int = DEFAULT_CONCURRENCY
 
     def validate(self) -> None:
         if not _START_TIME.fullmatch(self.start_time):
@@ -54,6 +62,10 @@ class DailyConfig:
         if not 0 <= self.spread_minutes <= MAX_SPREAD_MINUTES:
             raise DailySettingError(
                 f"걸쳐 도는 시간은 0 부터 {MAX_SPREAD_MINUTES} 분 사이다: {self.spread_minutes}"
+            )
+        if not 1 <= self.concurrency <= MAX_CONCURRENCY:
+            raise DailySettingError(
+                f"한 번에 도는 곳 수는 1 부터 {MAX_CONCURRENCY} 사이다: {self.concurrency}"
             )
 
     @property
@@ -80,6 +92,7 @@ def read_config(conn: sqlite3.Connection) -> DailyConfig:
     config = DailyConfig(
         start_time=stored.get(START_TIME, DEFAULT_START_TIME),
         spread_minutes=_int_or(stored.get(SPREAD_MINUTES), DEFAULT_SPREAD_MINUTES),
+        concurrency=_int_or(stored.get(CONCURRENCY), DEFAULT_CONCURRENCY),
     )
     try:
         config.validate()
@@ -91,7 +104,11 @@ def read_config(conn: sqlite3.Connection) -> DailyConfig:
 
 def write_config(conn: sqlite3.Connection, config: DailyConfig) -> DailyConfig:
     config.validate()
-    values = {START_TIME: config.start_time, SPREAD_MINUTES: str(config.spread_minutes)}
+    values = {
+        START_TIME: config.start_time,
+        SPREAD_MINUTES: str(config.spread_minutes),
+        CONCURRENCY: str(config.concurrency),
+    }
     for key, value in values.items():
         conn.execute(
             "INSERT INTO app_settings (key, value) VALUES (?, ?)"

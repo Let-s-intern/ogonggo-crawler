@@ -113,7 +113,7 @@ def test_승격한_워크플로우가_목록에_나온다(client: TestClient, co
     assert rows_in(html) == [str(workflow_id)]
     assert "python.org 채용" in html  # 이름
     assert LIST_URL in html  # 대상 사이트
-    assert "매일 08:30부터 한 곳씩" in html  # 언제 도는가
+    assert "매일 08:30부터 도는 수집" in html  # 언제 도는가
     assert "실행 중" in html  # 상태 (active)
     assert "실행 기록 없음" in html  # 최근 실행
     assert "임계치 없음" in html
