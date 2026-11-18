@@ -112,7 +112,8 @@ def register(
 
 
 # 같은 회사를 다르게 적는 말. 걷어내고 견준다
-_LEGAL_FORMS = ("주식회사", "유한회사", "(주)", "㈜", "(유)")
+# 전각 괄호(`（주）`)는 고용24 회사명에 자주 나온다 (2026-11-18)
+_LEGAL_FORMS = ("주식회사", "유한회사", "(주)", "（주）", "㈜", "(유)", "（유）")
 
 
 def name_key(name: str) -> str:
@@ -221,6 +222,6 @@ def forms(name: str) -> list[str]:
     if not core:
         return [cleaned]
     spelled = [cleaned, core]
-    for form in ("(주)", "㈜", "주식회사"):
+    for form in ("(주)", "（주）", "㈜", "주식회사"):
         spelled += [f"{form}{core}", f"{form} {core}", f"{core}{form}", f"{core} {form}"]
     return list(dict.fromkeys(spelled))
