@@ -366,6 +366,25 @@ def check_input(list_url: str, company: str, detail_url: str) -> str:
     return ""
 
 
+def taken_by(conn: sqlite3.Connection, list_url: str, *, replacing: int | None = None) -> str:
+    """그 목록 주소를 이미 쓰는 크롤러나 추가 중인 사이트의 이름. 없으면 빈 문자열이다.
+
+    주소는 `crawlers.list_page_key` 로 견준다 — `www.` 하나 차이로 같은 사이트가 두 번 등록되면
+    공고가 두 번 들어간다 (2026-11-18 이삼오구). `다시 찾기` 로 바꾸는 추가(`replacing`)와 그
+    초안 크롤러는 곧 지워지므로 보지 않는다.
+    """
+    key = crawlers.list_page_key(list_url)
+    old = site_adds.get(replacing) if replacing is not None else None
+    draft = old.crawler_id if old is not None else None
+    for row in conn.execute("SELECT id, name, list_url FROM crawlers ORDER BY id"):
+        if row["id"] != draft and crawlers.list_page_key(str(row["list_url"])) == key:
+            return str(row["name"])
+    for add in site_adds.listed():
+        if add.running and add.id != replacing and crawlers.list_page_key(add.list_url) == key:
+            return add.company
+    return ""
+
+
 @router.post("/ui/sites/new", response_class=HTMLResponse)
 async def site_add_try(
     request: Request,
@@ -397,6 +416,17 @@ async def site_add_try(
     problem = check_input(list_url, company, detail_url)
     if problem:
         return _form(request, conn, step="form", error=problem, **kept)
+    replacing = int(replace_add_id) if replace_add_id.strip().isdigit() else None
+    owner = taken_by(conn, list_url, replacing=replacing)
+    if owner:
+        return _form(
+            request,
+            conn,
+            step="form",
+            error=f"이미 등록됐거나 추가 중인 목록 주소예요: {owner}",
+            replace_add_id=replace_add_id.strip(),
+            **kept,
+        )
     try:
         save_logo_file(conn, company, logo)
     except s3.StorageError as exc:
