@@ -47,7 +47,10 @@
   실린 것(현대백화점 권역 공고와 통합 공고)은 가리지 못한다. 골라 보내기는 막지 않는다.
   회사·모회사는 `(주)`·`㈜`·`주식회사` 를 걷고 견주고, 주소가 `http`·`https` 와 `www.` 만 다른
   공고는 회사·제목과 상관없이 같은 공고다 (2026-11-18). 이삼오구가 `www.2359.co.kr` 의
-  `(주)이삼오구` 와 `2359.co.kr` 의 `이삼오구` 두 사이트로 등록돼 같은 공고가 두 번 갔다
+  `(주)이삼오구` 와 `2359.co.kr` 의 `이삼오구` 두 사이트로 등록돼 같은 공고가 두 번 갔다.
+  같은 회사(오공고에 보이는 이름)의 공고는 도메인만 달라도 경로·쿼리가 같으면 같은 공고다
+  (2026-11-18, LC-3645). 바이트랩·더파운더즈·피알앤디가 채용 솔루션 주소와 자체 도메인 두 사이트로
+  등록돼 같은 공고 번호가 두 번 갔다
 
 ## 원문 HTML 도 보낸다 (2026-10-13, LC-3456)
 
@@ -318,11 +321,31 @@ _SAME_URL = """EXISTS (
      WHERE su.status = 'sent' AND su.source_url != n.source_url
        AND su.source_url IN (SELECT value FROM json_each(url_forms(n.source_url))))"""
 
+# 주소의 경로(`https://` 뒤 첫 `/` 부터 끝까지, 쿼리·`#번호` 포함). 글자 그대로
+# `migrations/0068_delivery_url_path_index.sql` 의 식 인덱스와 같아야 인덱스를 탄다
+URL_PATH_SQL = "substr({url}, instr(substr({url}, 9), '/') + 8)"
+# 경로가 이보다 짧으면(`/`, `/jobs`) 공고 번호가 없어 견주지 않는다
+_MIN_PATH = 8
+
+# 도메인만 다르고 경로가 같은, 같은 회사의 공고를 이미 보냈다 (2026-11-18, LC-3645). 바이트랩은
+# `bitelab.ninehire.site` 와 `bitelab.co.kr`, 피알앤디는 `career.heydealer.com` 과 `prnd.co.kr` 두
+# 사이트로 등록돼 같은 공고 번호가 두 번 갔다. 피알앤디는 그사이 제목까지 바뀌어 제목은 보지 않는다.
+# 회사는 오공고에 보이는 이름(회사, 없으면 모회사)을 법인 표기를 걷고 견준다
+_SHOWN_COMPANY = "company_key(coalesce({alias}.company_name, {alias}.parent_company_name))"
+_SAME_PATH = f"""EXISTS (
+    SELECT 1 FROM spring_deliveries sp
+      JOIN normalized_jobs s ON s.source_url = sp.source_url
+     WHERE {URL_PATH_SQL.format(url="sp.source_url")} = {URL_PATH_SQL.format(url="n.source_url")}
+       AND length({URL_PATH_SQL.format(url="n.source_url")}) >= {_MIN_PATH}
+       AND sp.status = 'sent' AND sp.source_url != n.source_url
+       AND {_SHOWN_COMPANY.format(alias="s")} = {_SHOWN_COMPANY.format(alias="n")})"""
+
 DUPLICATE_SQL = (
     "("
     + " OR ".join(
         (
             _SAME_URL,
+            _SAME_PATH,
             _same_posting("s.company_name IS NULL AND n.company_name IS NULL"),
             _same_posting(
                 "s.company_name IN (SELECT value FROM json_each(company_forms(n.company_name)))"
