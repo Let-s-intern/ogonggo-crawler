@@ -115,7 +115,7 @@ def register(
 _LEGAL_FORMS = ("주식회사", "유한회사", "(주)", "㈜", "(유)")
 
 
-def _key(name: str) -> str:
+def name_key(name: str) -> str:
     """표기 차이를 걷어낸 이름. `삼성전기(주)` 와 `삼성 전기` 가 같은 값이 된다."""
     text = name.casefold()
     for form in _LEGAL_FORMS:
@@ -136,14 +136,14 @@ def canonical(conn: sqlite3.Connection, name: str, parent_name: str) -> str:
     읽기 전용이다.
     """
     cleaned = name.strip()
-    key = _key(cleaned)
+    key = name_key(cleaned)
     if not key:
         return cleaned
     rows = conn.execute(
         "SELECT name FROM companies WHERE parent_name = ? OR name = ? ORDER BY id",
         (parent_name, parent_name),
     ).fetchall()
-    same = [str(row["name"]) for row in rows if _key(str(row["name"])) == key]
+    same = [str(row["name"]) for row in rows if name_key(str(row["name"])) == key]
     candidates = [*same, cleaned]
     return next((one for one in candidates if not _has_legal_form(one)), candidates[0])
 
@@ -204,3 +204,23 @@ def _from_row(row: sqlite3.Row) -> Company:
         parent_name=None if row["parent_name"] is None else str(row["parent_name"]),
         logo_url=None if row["logo_url"] is None else str(row["logo_url"]),
     )
+
+
+def forms(name: str) -> list[str]:
+    """법인 표기만 다른 같은 회사 이름들. 받은 이름이 맨 앞이다.
+
+    2026-11-18 결정. 오공고 전송의 중복 판정(`app/deliver/spring.py` 의 `DUPLICATE_SQL`)이 회사
+    칸 인덱스를 타고 `이삼오구` 와 `(주)이삼오구` 를 같은 회사로 찾게 한다. `name_key` 로 견주면
+    모든 행을 읽어야 해서 이름을 늘어놓는다. 띄어쓰기가 다른 이름(`삼성 전기`)은 여기 없다.
+    """
+    cleaned = name.strip()
+    core = cleaned
+    for form in _LEGAL_FORMS:
+        core = core.replace(form, "")
+    core = core.strip()
+    if not core:
+        return [cleaned]
+    spelled = [cleaned, core]
+    for form in ("(주)", "㈜", "주식회사"):
+        spelled += [f"{form}{core}", f"{form} {core}", f"{core}{form}", f"{core} {form}"]
+    return list(dict.fromkeys(spelled))

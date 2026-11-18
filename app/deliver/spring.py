@@ -44,7 +44,10 @@
   주소에 들어 같은 공고가 주소만 바꿔 다시 들어왔고, 회사가 같은 공고를 번호만 바꿔 두 번 올리거나
   AI 가 공고를 나누며 같은 직무를 두 번 낸 일도 있었다. 나눈 직무 이름을 함께 보는 것은 한 공고에서
   직무 이름만 다른 공고(응급의학과·안과)를 살리려는 것이다. 제목이 다른 두 페이지에 같은 직무가
-  실린 것(현대백화점 권역 공고와 통합 공고)은 가리지 못한다. 골라 보내기는 막지 않는다
+  실린 것(현대백화점 권역 공고와 통합 공고)은 가리지 못한다. 골라 보내기는 막지 않는다.
+  회사·모회사는 `(주)`·`㈜`·`주식회사` 를 걷고 견주고, 주소가 `http`·`https` 와 `www.` 만 다른
+  공고는 회사·제목과 상관없이 같은 공고다 (2026-11-18). 이삼오구가 `www.2359.co.kr` 의
+  `(주)이삼오구` 와 `2359.co.kr` 의 `이삼오구` 두 사이트로 등록돼 같은 공고가 두 번 갔다
 
 ## 원문 HTML 도 보낸다 (2026-10-13, LC-3456)
 
@@ -270,9 +273,13 @@ READY_SQL = """(trim(coalesce(n.title, '')) != ''
 _READY = READY_SQL
 
 # 이미 보낸 다른 주소의 공고와 회사·사이트 제목·마감 일시·나눈 직무 이름이 모두 같다 (2026-10-28,
-# LC-3504). 정규화 행 `n` 을 본다. 회사·마감 비교가 인덱스를 타게 `IS` 로 그대로 견준다
+# LC-3504). 정규화 행 `n` 을 본다. 회사·마감 비교가 인덱스를 타게 회사 칸을 그대로 견준다
 # (`migrations/0066_normalized_company_end_index.sql`). 사이트 제목은 수집 원본의 `title`
 # 이고, 그것이 빈 공고는 무엇과도 같다고 보지 않는다
+#
+# 회사·모회사는 법인 표기를 걷고 견준다 (2026-11-18). 이삼오구가 사이트 이름 `(주)이삼오구` 와
+# `이삼오구` 로 두 번 등록돼 같은 공고가 두 번 갔다. 회사 칸은 인덱스를 타게 표기 갈래
+# (`app.companies.forms`)로 찾고, 회사 칸이 빈 공고(회사가 하나인 사이트)는 따로 찾는다
 _SITE_TITLE = (
     "(SELECT trim(coalesce(json_extract(r.raw_data_json, '$.title'), ''))"
     " FROM raw_jobs r WHERE r.id = {alias}.raw_job_id)"
@@ -281,16 +288,49 @@ _PART_ROLE = (
     "coalesce((SELECT c.part_role FROM job_classifications c"
     " WHERE c.raw_job_id = {alias}.raw_job_id AND c.part = {alias}.part), '')"
 )
-DUPLICATE_SQL = f"""EXISTS (
+_SAME_POSTING = """EXISTS (
     SELECT 1 FROM normalized_jobs s
       JOIN spring_deliveries sd ON sd.source_url = s.source_url AND sd.status = 'sent'
-     WHERE s.company_name IS n.company_name
+     WHERE {company}
        AND s.recruitment_end_at IS n.recruitment_end_at
-       AND s.parent_company_name IS n.parent_company_name
+       AND company_key(s.parent_company_name) IS company_key(n.parent_company_name)
        AND s.source_url != n.source_url
-       AND {_SITE_TITLE.format(alias="n")} != ''
-       AND {_SITE_TITLE.format(alias="s")} = {_SITE_TITLE.format(alias="n")}
-       AND {_PART_ROLE.format(alias="s")} = {_PART_ROLE.format(alias="n")})"""
+       AND {title_n} != ''
+       AND {title_s} = {title_n}
+       AND {role_s} = {role_n})"""
+
+
+def _same_posting(company: str) -> str:
+    return _SAME_POSTING.format(
+        company=company,
+        title_n=_SITE_TITLE.format(alias="n"),
+        title_s=_SITE_TITLE.format(alias="s"),
+        role_n=_PART_ROLE.format(alias="n"),
+        role_s=_PART_ROLE.format(alias="s"),
+    )
+
+
+# 주소가 `http`·`https` 와 `www.` 만 다른 공고를 이미 보냈다 (2026-11-18). 오공고는 주소 글자가
+# 같아야 같은 공고로 본다. 회사·제목이 무엇이든 같은 공고다.
+# 갈래는 `app.crawler.canonical.url_forms`
+_SAME_URL = """EXISTS (
+    SELECT 1 FROM spring_deliveries su
+     WHERE su.status = 'sent' AND su.source_url != n.source_url
+       AND su.source_url IN (SELECT value FROM json_each(url_forms(n.source_url))))"""
+
+DUPLICATE_SQL = (
+    "("
+    + " OR ".join(
+        (
+            _SAME_URL,
+            _same_posting("s.company_name IS NULL AND n.company_name IS NULL"),
+            _same_posting(
+                "s.company_name IN (SELECT value FROM json_each(company_forms(n.company_name)))"
+            ),
+        )
+    )
+    + ")"
+)
 
 # 자동 전송이 차 있기를 바라는 칸. 공고 화면(`app/api/job_detail.py`)의 기본 정보·모집 조건에서
 # 최소 경력 연수·모집 인원·모회사를 뺀 것이다. 회사는 자회사나 모회사 중 하나, 모집 마감은 기간

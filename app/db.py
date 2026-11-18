@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from collections.abc import Iterable
@@ -13,7 +14,9 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+from app import companies
 from app.config import get_settings
+from app.crawler import canonical
 from app.normalize import loose_date
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
@@ -52,7 +55,24 @@ def connect(database_path: str | Path | None = None) -> sqlite3.Connection:
     # 글자로 적힌 날짜를 `YYYY-MM-DD` 로. 공고 목록이 AI 가 짚은 마감일과 저장된 마감일이 같은
     # 날인지 SQL 안에서 견준다 (`app/api/review_filter.py` 의 `DEADLINE_DIFF_SQL`)
     conn.create_function("loose_day", 1, _loose_day, deterministic=True)
+    # 오공고 전송의 중복 판정이 법인 표기·`www.` 만 다른 공고를 같은 공고로 찾는다
+    # (`app/deliver/spring.py` 의 `DUPLICATE_SQL`, 2026-11-18)
+    conn.create_function("company_key", 1, _company_key, deterministic=True)
+    conn.create_function("company_forms", 1, _company_forms, deterministic=True)
+    conn.create_function("url_forms", 1, _url_forms, deterministic=True)
     return conn
+
+
+def _company_key(name: object) -> str | None:
+    return companies.name_key(name) if isinstance(name, str) else None
+
+
+def _company_forms(name: object) -> str:
+    return json.dumps(companies.forms(name) if isinstance(name, str) else [], ensure_ascii=False)
+
+
+def _url_forms(url: object) -> str:
+    return json.dumps(canonical.url_forms(url) if isinstance(url, str) else [], ensure_ascii=False)
 
 
 def _loose_day(text: object) -> str | None:

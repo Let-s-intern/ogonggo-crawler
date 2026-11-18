@@ -661,6 +661,78 @@ async def test_회사_마감_사이트_제목_중_하나라도_다르면_다른_
     assert result.sent == 1
 
 
+def move_url(conn: sqlite3.Connection, raw_job_id: int, source_url: str) -> str:
+    conn.execute("UPDATE raw_jobs SET source_url = ? WHERE id = ?", (source_url, raw_job_id))
+    conn.execute(
+        "UPDATE normalized_jobs SET source_url = ? WHERE raw_job_id = ?", (source_url, raw_job_id)
+    )
+    return source_url
+
+
+@pytest.mark.parametrize(
+    ("sent", "later"),
+    [
+        ({"company_name": "(주)이삼오구"}, {"company_name": "이삼오구"}),
+        ({"company_name": "㈜이삼오구"}, {"company_name": "이삼오구 주식회사"}),
+        # 회사가 하나인 사이트는 회사 칸을 비우고 사이트 이름을 모회사 칸에 둔다
+        (
+            {"company_name": None, "parent_company_name": "(주)이삼오구"},
+            {"company_name": None, "parent_company_name": "이삼오구"},
+        ),
+    ],
+)
+async def test_법인_표기만_다른_회사의_같은_공고는_보내지_않는다(
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    sent: dict[str, str | None],
+    later: dict[str, str | None],
+) -> None:
+    """`(주)이삼오구` 와 `이삼오구` 두 사이트로 등록돼 같은 공고가 두 번 갔다 (2026-11-18)."""
+    add_job(conn, 1, title="커머스 마케터 인턴", **sent)
+    seen = mock(lambda request: created(1), monkeypatch)
+    await spring.deliver_pending(conn, settings=SETTINGS)
+    add_job(conn, 2, title="커머스 마케터 인턴", **later)
+
+    result = await spring.deliver_pending(conn, settings=SETTINGS)
+
+    assert result.sent == 0
+    assert len(seen) == 1
+    assert spring.pending_count(conn, spring.local_now(SETTINGS)) == 0
+
+
+async def test_www_만_다른_주소의_공고는_회사가_달라도_보내지_않는다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """오공고는 주소 글자가 같아야 같은 공고로 본다. `www.` 차이로 두 번 갔다 (2026-11-18)."""
+    add_job(conn, 1, title="커머스 마케터 인턴", company_name="(주)이삼오구")
+    move_url(conn, 1, "https://www.2359.co.kr/job_posting/ctDlYC8f")
+    seen = mock(lambda request: created(1), monkeypatch)
+    await spring.deliver_pending(conn, settings=SETTINGS)
+    add_job(conn, 2, title="(북미) 커머스 마케터 인턴", company_name="이삼오구 코리아")
+    again = move_url(conn, 2, "http://2359.co.kr/job_posting/ctDlYC8f")
+
+    result = await spring.deliver_pending(conn, settings=SETTINGS)
+
+    assert result.sent == 0
+    assert len(seen) == 1
+    assert delivery(conn, again) is None
+
+
+async def test_www_만_달라도_나눈_번호가_다르면_다른_공고다(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    add_job(conn, 1, title="공고 하나", company_name="가")
+    move_url(conn, 1, "https://www.2359.co.kr/job_posting/a#1")
+    mock(lambda request: created(1), monkeypatch)
+    await spring.deliver_pending(conn, settings=SETTINGS)
+    add_job(conn, 2, title="공고 둘", company_name="나")
+    move_url(conn, 2, "https://2359.co.kr/job_posting/a#2")
+
+    result = await spring.deliver_pending(conn, settings=SETTINGS)
+
+    assert result.sent == 1
+
+
 async def test_나눈_직무_이름이_다르면_제목이_같아도_다른_공고다(
     conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
