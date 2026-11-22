@@ -34,7 +34,7 @@ from app.source_check.ogonggo import Target
 
 logger = logging.getLogger(__name__)
 
-REPORT_NAME = "상시 채용 원문 확인"
+REPORT_NAME = "상시 채용 마감 여부 확인"
 CURSOR_KEY = "source_check_after_id"
 PAGE_SIZE = 100
 CONCURRENCY = 4
@@ -152,7 +152,7 @@ async def run_once(
         verdict = await task
         item = Checked(target, verdict)
         logger.info(
-            "원문 확인 job=%s %s %s — %s",
+            "마감 여부 확인 job=%s %s %s — %s",
             target.job_id,
             verdict.status,
             target.source_url,

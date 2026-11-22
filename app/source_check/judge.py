@@ -262,7 +262,7 @@ async def _ask(
             model,
             prompt,
             1,
-            "원문 확인",
+            "상시 채용 마감 여부 확인",
             response_schema=SourceCheckAnswer,
             system_instruction=_SYSTEM,
         )

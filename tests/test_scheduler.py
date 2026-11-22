@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import pathlib
 import sqlite3
 from collections.abc import Iterator
@@ -150,12 +151,52 @@ def test_잘못된_설정은_거절한다(conn: sqlite3.Connection) -> None:
         daily.write_config(conn, daily.DailyConfig(start_time="8:30"))
     with pytest.raises(daily.DailySettingError):
         daily.write_config(conn, daily.DailyConfig(spread_minutes=-1))
+    with pytest.raises(daily.DailySettingError):
+        daily.write_config(conn, daily.DailyConfig(concurrency=0))
 
 
-async def test_한_곳씩_id_순서로_간격을_두고_돈다(
+async def test_id_순서로_간격을_두고_시작한다(
+    scheduler: WorkflowScheduler, conn: sqlite3.Connection, calls: list[int], clock: Clock
+) -> None:
+    """150분을 세 곳으로 나누면 50분 간격이다. 앞 곳이 끝나기를 기다리지 않고 제 시각에 시작한다."""
+    first = add_workflow(conn, "하나")
+    second = add_workflow(conn, "둘")
+    third = add_workflow(conn, "셋")
+
+    await scheduler._run_round()
+
+    assert calls == [first, second, third]
+    assert clock.slept == [50 * 60, 50 * 60]
+
+
+async def test_한_번에_도는_곳_수를_넘겨_겹치지_않는다(
+    scheduler: WorkflowScheduler, conn: sqlite3.Connection, calls: list[int]
+) -> None:
+    daily.write_config(conn, daily.DailyConfig(spread_minutes=0, concurrency=2))
+    workflow_ids = [add_workflow(conn, f"곳 {n}") for n in range(5)]
+    running = 0
+    most = 0
+
+    async def slow(workflow_id: int) -> None:
+        nonlocal running, most
+        running += 1
+        most = max(most, running)
+        await asyncio.sleep(0.01)
+        running -= 1
+        calls.append(workflow_id)
+
+    scheduler._runner = slow
+    await scheduler._run_round()
+
+    assert most == 2
+    assert sorted(calls) == workflow_ids
+
+
+async def test_한_곳씩이면_앞_곳이_끝나야_다음_곳이_돈다(
     scheduler: WorkflowScheduler, conn: sqlite3.Connection, calls: list[int], clock: Clock
 ) -> None:
     """150분을 세 곳으로 나누면 50분 간격이다. 한 곳이 1분 걸리면 49분을 쉰다."""
+    daily.write_config(conn, daily.DailyConfig(concurrency=1))
     first = add_workflow(conn, "하나")
     second = add_workflow(conn, "둘")
     third = add_workflow(conn, "셋")
@@ -187,6 +228,8 @@ async def test_중지된_곳과_오늘_이미_돈_곳은_빠진다(
 async def test_차례가_오기_전에_중지되면_건너뛴다(
     scheduler: WorkflowScheduler, conn: sqlite3.Connection, calls: list[int]
 ) -> None:
+    # 앞 곳이 끝난 뒤에 다음 곳을 보도록 한 곳씩 돈다
+    daily.write_config(conn, daily.DailyConfig(concurrency=1))
     first = add_workflow(conn, "하나")
     second = add_workflow(conn, "둘")
 

@@ -266,7 +266,7 @@ def _schedule(item: workflows.WorkflowItem, next_run_at: datetime | None, start_
     예정 시각을 스케줄러에서 못 읽었으면 그렇다고 적는다 (`app/scheduler.py` 의
     `next_run_times`).
     """
-    every = f"매일 {start_time}부터 한 곳씩 도는 수집에 들어 있다"
+    every = f"매일 {start_time}부터 도는 수집에 들어 있다"
     if item.status != "active":
         return f"중지됨. 다음 실행 없음 — 재개하면 다시 {every}"
     if next_run_at is None:
@@ -582,7 +582,7 @@ def promote_fragment(
         conn,
         (
             f"크롤러 {created.crawler_id} 를 워크플로우 {created.id}({created.name})로 승격했다. "
-            f"매일 {daily.read_config(conn).start_time}부터 한 곳씩 도는 수집에 들어갔다"
+            f"매일 {daily.read_config(conn).start_time}부터 도는 수집에 들어갔다"
         ),
         notice_href="/workflows",
     )

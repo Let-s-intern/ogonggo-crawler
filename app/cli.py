@@ -58,7 +58,9 @@ def main(argv: list[str] | None = None) -> int:
         "off-target", help="분류가 직군을 대상 밖으로 정한 공고를 센다. --run 이면 폐기한다"
     )
     off.add_argument("--run", action="store_true", help="세기만 하지 않고 폐기한다")
-    check_parser = sub.add_parser("source-check", help="상시 채용 원문 확인 (app/source_check/)")
+    check_parser = sub.add_parser(
+        "source-check", help="상시 채용 마감 여부 확인 (app/source_check/)"
+    )
     check_sub = check_parser.add_subparsers(dest="action", required=True)
     check_run = check_sub.add_parser(
         "run",
