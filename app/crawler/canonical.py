@@ -33,3 +33,23 @@ def canonical_url(url: str) -> str:
     if len(kept) == len(pieces):
         return url
     return urlunsplit(parts._replace(query="&".join(kept)))
+
+
+def url_forms(url: str) -> list[str]:
+    """`http`·`https` 와 호스트의 `www.` 만 다른 같은 주소들. 받은 주소가 맨 앞이다.
+
+    2026-11-18 결정. 이삼오구가 `www.2359.co.kr` 과 `2359.co.kr` 두 크롤러로 등록돼 같은 공고가
+    오공고에 두 번 들어갔다 — 오공고는 주소 글자가 같아야 같은 공고로 본다. 수집 주소를 고쳐 쓰지
+    않고(이 모듈 머리말) 보낼 때 이 갈래들 중 이미 보낸 것이 있는지 본다
+    (`app/deliver/spring.py` 의 `DUPLICATE_SQL`). 경로·쿼리·`#번호` 는 그대로 둔다.
+    """
+    parts = urlsplit(url)
+    if parts.scheme.lower() not in ("http", "https") or not parts.netloc:
+        return [url]
+    host = parts.netloc
+    bare = host[4:] if host.lower().startswith("www.") else host
+    spelled = [url]
+    for scheme in ("https", "http"):
+        for name in (bare, f"www.{bare}"):
+            spelled.append(urlunsplit(parts._replace(scheme=scheme, netloc=name)))
+    return list(dict.fromkeys(spelled))

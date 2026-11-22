@@ -210,7 +210,7 @@ def parse_rows(filename: str, data: bytes) -> list[Row]:
 
 
 def _same_url(url: str) -> str:
-    return url.strip().rstrip("/").lower()
+    return crawlers.list_page_key(url)
 
 
 def registered_urls(conn: sqlite3.Connection) -> set[str]:

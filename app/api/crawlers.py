@@ -166,6 +166,20 @@ def same_page(list_url: str, detail_url: str) -> bool:
     return key(list_url) == key(detail_url)
 
 
+def list_page_key(url: str) -> str:
+    """같은 목록 페이지면 같은 값. `http`·`https`, 호스트의 `www.`, 끝의 `/`·`#…`, 대소문자는
+    보지 않는다.
+
+    이삼오구가 `www.2359.co.kr` 과 `2359.co.kr` 두 크롤러로 등록돼 같은 공고가 오공고에 두 번
+    들어갔다 (2026-11-18). 사이트 추가가 이미 등록된 목록 주소를 거를 때 이 값으로 견준다.
+    """
+    parts = urlsplit(url.strip())
+    host = parts.netloc.lower().removeprefix("www.")
+    path = parts.path.rstrip("/")
+    query = f"?{parts.query}" if parts.query else ""
+    return f"{host}{path}{query}".lower()
+
+
 class RenderModeUpdate(BaseModel):
     """`static` 과 `playwright` 둘뿐이다. 승격은 운영자가 정한다."""
 

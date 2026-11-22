@@ -245,6 +245,28 @@ def test_목록_주소와_공고_주소가_같으면_걸지_않고_목록_주소
     assert launched == []
 
 
+def test_www_만_다른_목록_주소가_이미_있으면_걸지_않는다(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    launched: list[Any],
+) -> None:
+    """이삼오구가 `www.` 하나 차이로 두 번 등록돼 같은 공고가 두 번 갔다 (2026-11-18)."""
+    install(monkeypatch, Fake(conn, found=True))
+    conn.execute(
+        "INSERT INTO crawlers (name, list_url, status)"
+        " VALUES ('(주)이삼오구', 'https://www.2359.co.kr/job_posting', 'promoted')"
+    )
+    conn.commit()
+
+    html = client.post(
+        "/ui/sites/new", data={"list_url": "http://2359.co.kr/job_posting/", "company": "이삼오구"}
+    ).text
+
+    assert "이미 등록됐거나 추가 중인 목록 주소예요: (주)이삼오구" in html
+    assert launched == []
+
+
 def test_걸면_기다리지_않고_돌아오고_목록_맨_위에_추가_중으로_보인다(
     client: TestClient,
     conn: sqlite3.Connection,
