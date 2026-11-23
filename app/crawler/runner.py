@@ -526,7 +526,7 @@ async def _crawl(
             )
         )
 
-    items = parsed.items[:limit]
+    items = _up_to_open(parsed.items, limit, collectors, rules)
     # 테스트 실행은 거르지 않는다. 남길 워크플로우가 없고, 보고 싶은 것은 셀렉터가 뽑은 값이다
     active_screener = screener if target.workflow_id is not None else None
     title_verdicts = await _screen_titles(
@@ -586,6 +586,28 @@ async def _crawl(
         elif collected.state == STORED:
             result.new_count += 1
             _normalize(conn, collected, rules, rules_error, result)
+
+
+def _up_to_open(
+    items: list[ListItem], limit: int | None, collectors: Collectors, rules: list[Rule]
+) -> list[ListItem]:
+    """앞에서부터 상세를 열 공고가 `limit` 건 찰 때까지. 그사이 건너뛸 공고도 담는다.
+
+    마감이 지났거나 인재 풀 등록인 공고는 상세를 열지 않으므로 수에 세지 않는다. 이디야·서울우유
+    실측(2026-11-23, LC-3654): 시험 수집이 앞 세 건만 봤는데 셋 다 마감이 지나 상세를 하나도
+    열지 않았고, 사이트 추가가 "수집이 실패했어요" 로 끝났다. 뒤에는 진행 중인 공고가 있었다.
+    """
+    if limit is None:
+        return list(items)
+    picked: list[ListItem] = []
+    opened = 0
+    for item in items:
+        if opened >= limit:
+            break
+        picked.append(item)
+        if not _closed_or_pool(item, collectors, rules):
+            opened += 1
+    return picked
 
 
 def _closed_or_pool(item: ListItem, collectors: Collectors, rules: list[Rule]) -> bool:

@@ -82,6 +82,7 @@ REGISTER_PROBLEMS: dict[str, str] = {
         " 확인해 주세요"
     ),
     "list_fields_not_found": "반복되는 목록은 찾았지만 공고 제목이나 링크를 읽지 못했어요",
+    "no_postings": "지금 진행 중인 공고가 없다고 나와요. 공고가 올라오면 다시 추가해 주세요",
     "robots": "사이트가 로봇 수집을 막아 둔 주소예요. 다른 주소를 써야 합니다",
     "transport": "사이트에 접속하지 못했어요. 주소를 확인해 주세요",
     "bot_challenge": (
@@ -217,6 +218,13 @@ def _tested(run: crawlers.TestRunOut) -> site_adds.Step:
     ]
     if run.error_message:
         lines.append(run.error_message)
+    if run.success_count == 0 and run.skipped_count and not run.fail_count:
+        # 실행은 성공이지만 상세를 하나도 열지 않았다. 사유 칸이 비어 "수집이 실패했어요" 만
+        # 보이던 경우다 (MPMG, 2026-11-23)
+        lines.append(
+            "목록의 공고가 모두 마감이 지났거나 인재 풀 등록이라 상세를 열어 보지 못했다. "
+            "진행 중인 공고가 올라오면 다시 추가한다"
+        )
     for item in run.items[:TRY_LIMIT]:
         body = item.fields.get("body") or ""
         lines.append(f"가져옴: {item.fields.get('title') or '제목 없음'} (본문 {len(body)}자)")

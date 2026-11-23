@@ -22,11 +22,12 @@ import logging
 from collections import Counter
 from dataclasses import dataclass, field, replace
 from typing import Any
+from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup
 
 from app.config import Settings, get_settings
-from app.crawler.fetcher import PageSource, get_fetcher
+from app.crawler.fetcher import PageSource, ResponseStatusError, get_fetcher
 from app.crawler.playwright import STATIC
 from app.llm.base import LlmCallError, Provider, Usage
 from app.llm.log import SELECTOR_GENERATE
@@ -153,15 +154,43 @@ async def generate_for_urls(
     """
     resolved_source = source or get_fetcher()
     list_html = (await resolved_source.fetch(list_url)).text
-    detail_html = (await resolved_source.fetch(detail_url)).text
+    detail = await resolved_source.fetch(detail_url)
+    if sent_back(detail_url, detail.url, list_url):
+        # 마감된 공고를 목록이나 첫 화면으로 돌려보내는 사이트다. 내려간 것과 같아 410 으로 알린다
+        # — 등록이 예시를 빼고 다시 만든다 (`app/api/crawlers.py` 의 `_sample_gone`)
+        raise ResponseStatusError(
+            f"예시 공고가 {detail.url} 로 돌려보내졌다: {detail_url}", 410, detail_url
+        )
     return await generate_from_html(
         list_html,
-        detail_html,
+        detail.text,
         list_url=list_url,
         detail_url=detail_url,
         settings=settings,
         client=client,
     )
+
+
+def sent_back(detail_url: str, final_url: str, list_url: str) -> bool:
+    """예시 공고 주소가 목록이나 사이트 첫 화면으로 넘어갔는가.
+
+    recruiter.co.kr 실측(2026-11-23, LC-3654): 마감된 공고(`/app/jobnotice/view?…`)를 열면
+    200 으로 `/app/jobnotice/list` 를 준다. 그 목록 페이지로 상세 셀렉터를 만들어 상세 제목이
+    `.list-bbs-title`, 본문이 `#divJobnoticeList` 가 됐고, 실제 공고에서는 제목을 못 읽었다
+    (투썸·휴온스·광동·본그룹·메디톡스·이디야). 통과한 르노·코스트코도 본문이 목록 전체였다.
+    """
+    if not final_url.strip() or not detail_url.strip():
+        return False
+    asked, landed, listing = urlsplit(detail_url), urlsplit(final_url), urlsplit(list_url)
+    if (asked.netloc.lower(), asked.path, asked.query) == (
+        landed.netloc.lower(),
+        landed.path,
+        landed.query,
+    ):
+        return False
+    path = landed.path.rstrip("/")
+    to_list = landed.netloc.lower() == listing.netloc.lower() and path == listing.path.rstrip("/")
+    return to_list or path == ""
 
 
 async def generate_from_html(

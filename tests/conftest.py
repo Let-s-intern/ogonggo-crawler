@@ -93,6 +93,21 @@ def static_detail_holds(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def no_empty_notice_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """목록을 못 찾은 등록이 빈 목록 문구를 보려고 목록을 다시 여는 것을 네트워크 없이 넘긴다.
+
+    그대로 두면 목록 0건 테스트마다 실사이트로 나간다. 문구를 보는 테스트는 따로 바꿔 끼운다
+    (`tests/test_api_crawlers.py`).
+    """
+    from app.api import crawlers
+
+    async def no_notice(list_url: str, render_mode: str) -> str:
+        return ""
+
+    monkeypatch.setattr(crawlers, "_empty_notice", no_notice)
+
+
+@pytest.fixture(autouse=True)
 def _no_storage_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """로컬 `.env` 의 `S3_*` 와 슬랙 웹훅이 테스트에 새지 않게 한다."""
     from app.config import get_settings

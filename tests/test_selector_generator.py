@@ -454,3 +454,24 @@ async def test_상세_페이지가_없어도_목록_칸이_비면_거절한다()
 
     assert len(client.calls) == 2
     assert any("list.title" in note for note in result.notes)
+
+
+@pytest.mark.parametrize(
+    ("final_url", "expected"),
+    [
+        # 마감된 공고를 목록으로 돌려보낸다 (recruiter.co.kr, 2026-11-23)
+        ("https://a.recruiter.co.kr/app/jobnotice/list", True),
+        ("https://a.recruiter.co.kr/", True),
+        ("https://a.recruiter.co.kr/app/jobnotice/view?systemKindCode=MRS2&jobnoticeSn=1", False),
+        # 다른 공고나 로그인으로 넘어간 것은 돌려보낸 것으로 보지 않는다
+        ("https://a.recruiter.co.kr/app/jobnotice/view?jobnoticeSn=2", False),
+        ("", False),
+    ],
+)
+def test_예시_공고가_목록이나_첫_화면으로_넘어갔는지_본다(final_url: str, expected: bool) -> None:
+    from app.selector.generator import sent_back
+
+    detail = "https://a.recruiter.co.kr/app/jobnotice/view?systemKindCode=MRS2&jobnoticeSn=1"
+    listing = "https://a.recruiter.co.kr/app/jobnotice/list"
+
+    assert sent_back(detail, final_url, listing) is expected

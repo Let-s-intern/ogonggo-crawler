@@ -59,6 +59,7 @@ from pydantic import BaseModel
 from app import db
 from app.config import Settings
 from app.crawler.collect import API, COLLECT_MODES, open_collectors
+from app.crawler.empty_list import empty_notice
 from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import (
     BotChallengeError,
@@ -444,26 +445,34 @@ def get_generator(
 
     async def generate(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
         result = await pick(list_url, detail_url, render_mode)
-        if not result.verification.list_missing or render_mode:
+        missing = result.verification.list_missing
+        if render_mode or not (missing or _links_failed(result)):
             return result
-        # 넣은 주소에 목록이 없다. 채용 사이트 첫 화면이나 회사 소개 페이지인 경우가 많아 메뉴의
-        # "채용 공고" 링크를 한 번 따라가 본다 (`app/selector/list_page.py`). 모드를 고른
-        # 등록은 고른 그대로 한 번만 만든다 — 운영자가 이 주소를 보고 정한 것이다
+        # 넣은 주소에 목록이 없거나, 목록 비슷한 것은 있는데 공고로 가는 링크가 없다. 채용
+        # 사이트 첫 화면이나 회사 소개 페이지인 경우가 많아 메뉴의 "채용 공고" 링크를 한 번
+        # 따라가 본다 (`app/selector/list_page.py`). 그리팅 첫 화면은 링크 없는 공고 카드
+        # 몇 장을 보여 주고, 나인하이어 회사 소개는 인터뷰 카드를 반복으로 잡는다 (2026-11-23).
+        # 모드를 고른 등록은 고른 그대로 한 번만 만든다 — 운영자가 이 주소를 보고 정한 것이다
         for candidate in await _list_page_links(list_url, result.render_mode):
+            if not missing and candidate.score < _SURE_LIST_LINK:
+                # 링크만 못 읽은 목록은 항목을 눌러 상세를 찾을 수도 있다 (CJ). 메뉴 글자와
+                # 경로가 함께 목록을 가리킬 때만 옮겨 본다
+                continue
             try:
                 moved = await pick(candidate.url, detail_url, render_mode)
             except FetchError as exc:
                 logger.info("목록 후보 %s 를 열지 못했다: %s", candidate.url, exc)
                 continue
-            if moved.verification.list_missing:
+            if moved.verification.list_missing or (not missing and _links_failed(moved)):
                 continue
-            logger.info("목록이 없어 메뉴 링크를 따라가 찾았다 %s -> %s", list_url, candidate.url)
+            logger.info("메뉴 링크를 따라가 목록을 찾았다 %s -> %s", list_url, candidate.url)
+            why = "공고 목록이 없어" if missing else "공고로 가는 링크를 읽지 못해"
             return replace(
                 moved,
                 list_url=candidate.url,
                 notes=[
                     *moved.notes,
-                    f"넣은 주소에 공고 목록이 없어 메뉴의 '{candidate.text}' 링크를 따라가 "
+                    f"넣은 주소에서 {why} 메뉴의 '{candidate.text}' 링크를 따라가 "
                     f"목록을 찾았다: {candidate.url}",
                 ],
             )
@@ -551,6 +560,17 @@ def get_generator(
     return generate
 
 
+async def _empty_notice(list_url: str, render_mode: str) -> str:
+    """목록을 못 찾은 페이지가 "진행 중인 공고가 없다" 고 말하는 문구. 못 열면 빈 문자열이다."""
+    try:
+        async with open_source(render_mode or STATIC, get_fetcher()) as source:
+            page = await source.fetch(list_url)
+    except FetchError as exc:
+        logger.info("빈 목록 문구를 보려고 %s 를 열지 못했다: %s", list_url, exc)
+        return ""
+    return empty_notice(page.text)
+
+
 async def _list_page_links(list_url: str, render_mode: str) -> list[Candidate]:
     """목록이 없던 페이지에서 공고 목록 페이지로 갈 링크를 고른다. 못 열면 빈 목록이다.
 
@@ -569,6 +589,11 @@ async def _list_page_links(list_url: str, render_mode: str) -> list[Candidate]:
     except FetchError as exc:
         logger.info("목록 후보를 찾으려 %s 를 열지 못했다: %s", list_url, exc)
         return []
+
+
+# 링크만 못 읽은 목록에서 메뉴로 옮겨 볼 후보의 점수. "채용 공고" 같은 글자(3)이거나,
+# "채용" 같은 글자(1)와 `/recruit` 같은 경로(2)가 함께다 (`app/selector/list_page.py`)
+_SURE_LIST_LINK = 3
 
 
 def _links_failed(result: GenerationResult) -> bool:
@@ -783,6 +808,20 @@ async def create_crawler(
             if result.render_mode == PLAYWRIGHT
             else "목록을 찾지 못했다"
         )
+        notice = await _empty_notice(payload.list_url, result.render_mode)
+        if notice:
+            # 페이지가 진행 중인 공고가 없다고 직접 말한다. 고칠 셀렉터가 아니라 기다릴 일이다
+            # — 바디프랜드·KG모빌리티 실측(2026-11-23): "진행 중인 공고가 없어요"
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "reason": "no_postings",
+                    "message": f"페이지가 진행 중인 공고가 없다고 한다: '{notice}'",
+                    "failed_fields": result.verification.failed,
+                    "matches": result.verification.summary(),
+                    "notes": result.notes,
+                },
+            )
         raise HTTPException(
             status_code=422,
             detail={

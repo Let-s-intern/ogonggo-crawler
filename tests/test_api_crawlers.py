@@ -577,6 +577,26 @@ def test_a_whole_list_miss_fails_and_stores_nothing(
     assert rows(conn) == []
 
 
+def test_목록이_없고_페이지가_공고가_없다고_하면_그렇게_알린다(
+    client: TestClient, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """바디프랜드·KG모빌리티(2026-11-23): "진행 중인 공고가 없어요" 라 목록을 못 찾았다."""
+    from app.api import crawlers as crawlers_api
+
+    async def notice(list_url: str, render_mode: str) -> str:
+        return "채용공고 목록 진행 중인 공고가 없어요."
+
+    monkeypatch.setattr(crawlers_api, "_empty_notice", notice)
+    use_generator(result_for(SHELL_GENERATED, list_html=SHELL_HTML, detail_html=SHELL_HTML))
+
+    response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["reason"] == "no_postings"
+    assert "진행 중인 공고가 없어요" in response.json()["detail"]["message"]
+    assert rows(conn) == []
+
+
 def test_the_whole_list_miss_names_the_failed_fields_and_a_next_step(
     client: TestClient,
 ) -> None:

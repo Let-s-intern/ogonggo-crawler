@@ -244,3 +244,38 @@ def test_한_자리_순번_클래스가_있어도_반복으로_본다() -> None:
 
     assert cleaned.narrowed is False
     assert len(soup.select("li.job-tile a.jobTitle-link")) == 4
+
+
+def _builder_page(posting_count: int, filler: str = "") -> str:
+    """그리팅 페이지 빌더 모양. 크기가 닮은 섹션 여덟 개 중 다섯 번째에 공고가 든다."""
+    section = '<div class="section">{}</div>'
+    others = [section.format("<p>소개</p>" * 12 + filler) for _ in range(7)]
+    items = "".join(
+        f'<a href="/ko/o/{19000 + n}"><li><span class="tit">공고 {n}</span></li></a>'
+        for n in range(posting_count)
+    )
+    postings = section.format(f"<ul>{items}</ul>")
+    return f"<body><main>{''.join(others[:4])}{postings}{''.join(others[4:])}</main></body>"
+
+
+@pytest.mark.parametrize("posting_count", [9, 2])
+def test_닮은_섹션이라도_공고_링크가_반복되는_섹션은_지우지_않는다(posting_count: int) -> None:
+    """그리팅 실측(2026-11-23): 섹션 크기가 닮아 다섯 번째 섹션이 공고째 지워졌다 (S2W, 캐럿).
+
+    캐럿은 공고가 두 건뿐이라 둘부터 공고 목록으로 본다.
+    """
+    soup = BeautifulSoup(clean_html(_builder_page(posting_count)).html, "html.parser")
+
+    assert len(soup.select('a[href^="/ko/o/"]')) == min(posting_count, 4)
+    # 공고가 없는 섹션은 그대로 줄어든다
+    assert len(soup.select("div.section")) == 5
+
+
+def test_상한을_넘으면_공고_링크가_반복되는_자리로_좁힌다() -> None:
+    """에이로봇 실측(2026-11-23): 상한을 넘어 가장 큰 반복으로 좁혔더니 공고가 빠졌다."""
+    filler = f"<div>{'회사 소개 ' * 100}</div>"
+
+    cleaned = clean_html(_builder_page(9, filler), max_chars=2_000)
+
+    assert cleaned.narrowed is True
+    assert cleaned.html.count('href="/ko/o/') == 4
