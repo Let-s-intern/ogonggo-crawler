@@ -64,6 +64,7 @@ from app.crawler.fetcher import (
     BotChallengeError,
     FetchError,
     FetchPolicy,
+    ResponseStatusError,
     RobotsDisallowedError,
     get_fetcher,
 )
@@ -87,6 +88,7 @@ from app.selector.generator import (
     generate_for_urls,
     generate_from_html,
 )
+from app.selector.list_page import Candidate, list_page_candidates
 from app.selector.path_proposal import llm_asker
 from app.selector.repair import RepairOutcome, SelectorRepairError, repair_for_urls
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
@@ -147,6 +149,18 @@ SAME_PAGE_MESSAGE = (
     "목록 주소와 공고 주소가 같아요. 목록 자리에는 공고 여러 건이 보이는 채용 목록 페이지 주소를 "
     "넣어 주세요"
 )
+
+
+def _sample_gone(detail_url: str, exc: ResponseStatusError) -> bool:
+    """넣은 예시 공고 주소가 없어졌다는 답인가. 목록이 404 인 것과 가른다.
+
+    예시 공고는 엑셀을 채운 날에 열려 있던 공고라 등록할 때쯤 마감돼 내려가 있기 쉽다. 그것
+    하나 때문에 사이트 전체를 "접속하지 못했다" 로 떨어뜨리지 않는다. 봇 확인은 내려간 것이
+    아니라 막힌 것이라 넣지 않는다.
+    """
+    if not detail_url.strip() or isinstance(exc, BotChallengeError):
+        return False
+    return exc.status_code in (404, 410) and exc.url.strip() == detail_url.strip()
 
 
 def same_page(list_url: str, detail_url: str) -> bool:
@@ -429,6 +443,33 @@ def get_generator(
     settings = llm_settings.settings_for(conn, SELECTOR_GENERATE)
 
     async def generate(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
+        result = await pick(list_url, detail_url, render_mode)
+        if not result.verification.list_missing or render_mode:
+            return result
+        # 넣은 주소에 목록이 없다. 채용 사이트 첫 화면이나 회사 소개 페이지인 경우가 많아 메뉴의
+        # "채용 공고" 링크를 한 번 따라가 본다 (`app/selector/list_page.py`). 모드를 고른
+        # 등록은 고른 그대로 한 번만 만든다 — 운영자가 이 주소를 보고 정한 것이다
+        for candidate in await _list_page_links(list_url, result.render_mode):
+            try:
+                moved = await pick(candidate.url, detail_url, render_mode)
+            except FetchError as exc:
+                logger.info("목록 후보 %s 를 열지 못했다: %s", candidate.url, exc)
+                continue
+            if moved.verification.list_missing:
+                continue
+            logger.info("목록이 없어 메뉴 링크를 따라가 찾았다 %s -> %s", list_url, candidate.url)
+            return replace(
+                moved,
+                list_url=candidate.url,
+                notes=[
+                    *moved.notes,
+                    f"넣은 주소에 공고 목록이 없어 메뉴의 '{candidate.text}' 링크를 따라가 "
+                    f"목록을 찾았다: {candidate.url}",
+                ],
+            )
+        return result
+
+    async def pick(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
         if render_mode:
             return replace(
                 await _generate(list_url, detail_url, render_mode, settings),
@@ -508,6 +549,26 @@ def get_generator(
         )
 
     return generate
+
+
+async def _list_page_links(list_url: str, render_mode: str) -> list[Candidate]:
+    """목록이 없던 페이지에서 공고 목록 페이지로 갈 링크를 고른다. 못 열면 빈 목록이다.
+
+    정적으로 먼저 본다. 메뉴까지 JS 로 그리는 사이트라 정적으로 아무것도 없고, 생성이 이미
+    렌더까지 해 본 사이트일 때만 브라우저로 한 번 더 연다.
+    """
+    try:
+        async with open_source(STATIC, get_fetcher()) as source:
+            page = await source.fetch(list_url)
+        found = list_page_candidates(page.text, page.url)
+        if found or render_mode != PLAYWRIGHT:
+            return found
+        async with open_source(PLAYWRIGHT, get_fetcher()) as source:
+            page = await source.fetch(list_url)
+        return list_page_candidates(page.text, page.url)
+    except FetchError as exc:
+        logger.info("목록 후보를 찾으려 %s 를 열지 못했다: %s", list_url, exc)
+        return []
 
 
 def _links_failed(result: GenerationResult) -> bool:
@@ -670,7 +731,24 @@ async def create_crawler(
     # 비우면 등록이 스스로 정한다. 값을 주면 그 모드로만 만들고 판정이 덮어쓰지 않는다
     requested = _requested_render_mode(payload.render_mode)
     try:
-        result = await generate(payload.list_url, payload.detail_url, requested)
+        try:
+            result = await generate(payload.list_url, payload.detail_url, requested)
+        except ResponseStatusError as exc:
+            if not _sample_gone(payload.detail_url, exc):
+                raise
+            # 예시 공고가 내려갔다. 목록은 살아 있으니 예시 없이 목록만으로 다시 만든다 —
+            # 상세로 가는 길은 판정이 목록에서 찾는다 (2026-11-22, 11/16 일괄 추가 26곳)
+            logger.info("예시 공고가 %s 라 목록만으로 등록한다: %s", exc.status_code, exc.url)
+            payload = payload.model_copy(update={"detail_url": ""})
+            result = await generate(payload.list_url, "", requested)
+            result = replace(
+                result,
+                notes=[
+                    *result.notes,
+                    f"넣은 예시 공고가 응답 {exc.status_code} 이라 빼고 목록에서 상세를 찾았다: "
+                    f"{exc.url}",
+                ],
+            )
     except RobotsDisallowedError as exc:
         # robots 가 막은 URL 은 등록 자체를 거절한다 (`.claude/rules/crawling.md`).
         raise HTTPException(
@@ -689,6 +767,10 @@ async def create_crawler(
         raise HTTPException(
             status_code=status, detail={"reason": exc.reason, "message": str(exc)}
         ) from exc
+
+    if result.list_url and result.list_url != payload.list_url:
+        # 메뉴 링크를 따라가 목록을 찾았다. 크롤러는 목록이 있는 그 주소로 만든다
+        payload = payload.model_copy(update={"list_url": result.list_url})
 
     if result.verification.list_missing:
         # 목록이 없다. 셀렉터를 손으로 고쳐도 잡을 노드가 없으므로 행을 남기지 않는다.

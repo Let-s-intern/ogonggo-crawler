@@ -128,6 +128,9 @@ class GenerationResult:
     # 채우는 것은 HTML 을 가져온 쪽이다 (`app/api/crawlers.py` 의 `get_generator`).
     # 판정이 경로를 알아내지 못했을 때 되돌아갈 값이 이것이다
     render_mode: str = STATIC
+    # 넣은 주소에 목록이 없어 메뉴 링크를 따라가 목록을 찾았으면 그 주소다. 비어 있으면 넣은
+    # 주소 그대로다. 등록은 이 주소로 크롤러를 만든다 (`app/selector/list_page.py`)
+    list_url: str = ""
 
     @property
     def ok(self) -> bool:
