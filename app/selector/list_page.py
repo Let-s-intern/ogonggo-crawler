@@ -26,7 +26,9 @@ _STRONG_TEXT = re.compile(
     r"open\s*positions?|job\s*openings?|current\s*openings?|all\s*jobs",
     re.IGNORECASE,
 )
-_WEAK_TEXT = re.compile(r"채용|공고|지원\s*하기|입사\s*지원|합류|careers?|jobs?|recruit", re.I)
+_WEAK_TEXT = re.compile(
+    r"채용|공고|지원\s*하기|입사\s*지원|합류|careers?|jobs?|recruit|apply", re.I
+)
 _PATH = re.compile(
     r"(^|/)(apply|jobs?|careers?|recruit[\w-]*|positions?|openings?|announcement|job_posting)"
     r"(/|$)",
@@ -37,7 +39,7 @@ _PATH = re.compile(
 # 따라가 투자자 공지 게시판을 목록으로 등록했다 (2026-11-24)
 _NOT_LIST = re.compile(
     r"faq|privacy|policy|개인정보|약관|login|sign-in|로그인|합격자|문의|culture|benefit|복리|"
-    r"interview|blog|뉴스|\bir\b|공시|입찰|공지\s*사항",
+    r"interview|blog|뉴스|\bir\b|investor|공시|입찰|공지\s*사항",
     re.IGNORECASE,
 )
 # 공고 한 건 주소. 목록이 아니라 그 안의 항목이다 — 끝 칸이 번호나 긴 식별자다 (그리팅

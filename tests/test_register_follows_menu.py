@@ -124,3 +124,45 @@ async def test_모드를_고른_등록은_따라가지_않는다(monkeypatch: py
     await crawlers_api.get_generator(None)(HOME, "", STATIC)
 
     assert called == [HOME]
+
+
+@pytest.mark.asyncio
+async def test_옮긴_페이지의_링크가_예시와_모양이_다르면_버린다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """네오위즈(2026-11-24): 메뉴의 "공고" 가 투자자 공시 게시판이었다."""
+    from dataclasses import replace
+
+    _install(monkeypatch, ["list.link"], Candidate(RECRUIT, "채용공고", 5))
+    original = crawlers_api._generate
+
+    async def generate(
+        list_url: str, detail_url: str, render_mode: str, settings: Any = None
+    ) -> GenerationResult:
+        result = await original(list_url, detail_url, render_mode, settings)
+        return replace(result, list_links=("https://team.example.test/investor/notice/259",))
+
+    monkeypatch.setattr(crawlers_api, "_generate", generate)
+
+    result = await crawlers_api.get_generator(None)(
+        HOME, "https://team.example.test/career/job/c977653e-1360-4c18-a48b-452af618f650", ""
+    )
+
+    assert result.list_url == ""
+
+
+def test_목록_링크가_공고_주소인데_예시와_모양이_다르면_첫_공고로_바꾼다() -> None:
+    """휴온스(2026-11-24): 예시는 옛 채용 화면, 목록 링크는 새 화면이었다."""
+    from dataclasses import replace
+
+    old = "https://h.recruiter.co.kr/app/jobnotice/view?systemKindCode=MRS2&jobnoticeSn=1"
+    new = "https://h.recruiter.co.kr/career/jobs/134345"
+    result = _result([])
+
+    assert crawlers_api._stale_sample(old, replace(result, list_links=(new,))) == new
+    # 모양이 같거나, 공고 주소처럼 보이지 않거나, 메뉴로 옮긴 목록이면 그대로 둔다
+    assert crawlers_api._stale_sample(new, replace(result, list_links=(new,))) == ""
+    products = "https://h.recruiter.co.kr/ko/products"
+    assert crawlers_api._stale_sample(old, replace(result, list_links=(products,))) == ""
+    moved = replace(result, list_links=(new,), list_url=RECRUIT)
+    assert crawlers_api._stale_sample(old, moved) == ""
