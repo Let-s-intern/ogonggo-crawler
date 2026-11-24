@@ -32,10 +32,12 @@ _PATH = re.compile(
     r"(/|$)",
     re.IGNORECASE,
 )
-# 공고 목록이 아닌 것이 확실한 페이지. 글자가 "채용" 을 담아도 건너뛴다
+# 공고 목록이 아닌 것이 확실한 페이지. 글자가 "채용" 을 담아도 건너뛴다. 투자자 공지(`IR 공고`)
+# 와 공시·입찰·공지사항은 "공고" 를 담아도 채용 공고가 아니다 — 아임웹 첫 화면에서 `IR 공고` 를
+# 따라가 투자자 공지 게시판을 목록으로 등록했다 (2026-11-24)
 _NOT_LIST = re.compile(
     r"faq|privacy|policy|개인정보|약관|login|sign-in|로그인|합격자|문의|culture|benefit|복리|"
-    r"interview|blog|뉴스",
+    r"interview|blog|뉴스|\bir\b|공시|입찰|공지\s*사항",
     re.IGNORECASE,
 )
 # 공고 한 건 주소. 목록이 아니라 그 안의 항목이다 — 끝 칸이 번호나 긴 식별자다 (그리팅

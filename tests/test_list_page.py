@@ -67,3 +67,10 @@ def test_후보는_둘까지_점수_순이다() -> None:
 
     assert len(found) == 2
     assert found[0].url == "https://innospace.career.greetinghr.com/ko/recruit"
+
+
+def test_IR_공고나_공시는_채용_공고로_보지_않는다() -> None:
+    """아임웹(2026-11-24): 메뉴의 `IR 공고` 를 따라가 투자자 공지 게시판을 목록으로 잡았다."""
+    html = _page(("/ir", "IR 공고"), ("/disclosure", "전자공시"), ("/notice", "공지사항"))
+
+    assert list_page_candidates(html, "https://team.imweb.me/career") == []
