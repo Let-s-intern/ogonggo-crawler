@@ -326,6 +326,10 @@ async def test_컨테이너가_안_되면_항목_안의_a_를_누른다() -> Non
         ("#none", "openShareLayer()", True),
         ("/#none", "goDetail(22878)", False),
         ("/jobs/21931885", "", False),
+        # 공고를 여는 함수를 부르는 `javascript:` 주소다 (크라운해태, 동화약품)
+        ("javascript:view('00702');", "", False),
+        ("javascript:view(141);", "", False),
+        ("javascript:void(0);", "", True),
     ],
 )
 def test_누르지_않을_링크_판정(href: str, onclick: str, expected: bool) -> None:

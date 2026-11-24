@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup, Comment, Tag
 
@@ -47,6 +48,8 @@ _BLANK_LINES = re.compile(r"\n\s*\n+")
 # 14만 자라 입력 상한을 혼자 다 쓰고 본문이 잘렸다 (2026-09-22)
 _MAX_ATTR_CHARS = 500
 _KEEP_ATTR_CHARS = 100
+# 공고 한 건 주소의 끝 칸. 번호이거나 긴 식별자다 (`app/selector/list_page.py` 와 같은 모양)
+_POSTING_PATH = re.compile(r"/(\d+|[0-9a-f-]{20,})/?$", re.IGNORECASE)
 _NARROW_FALLBACKS = ("main", "article", "[role=main]", "body")
 
 
@@ -149,6 +152,7 @@ def _sample_repeats(soup: BeautifulSoup, keep: int) -> tuple[Tag | None, int]:
     removed = 0
     best_count = 0
     best_region: Tag | None = None
+    keep_ids, posting_region = _link_list_holders(soup)
 
     # 문서 순서(위에서 아래)로 돌아 큰 영역을 먼저 줄인다.
     for parent in list(soup.find_all(True)):
@@ -176,10 +180,64 @@ def _sample_repeats(soup: BeautifulSoup, keep: int) -> tuple[Tag | None, int]:
                 # 남긴 블록 안의 목록은 아래로 내려가며 따로 줄인다
                 if len(extra.find_all(True)) > limit:
                     continue
+                if id(extra) in keep_ids:
+                    continue
                 extra.decompose()
                 removed += 1
 
-    return best_region, removed
+    # 공고 주소가 반복되는 자리가 있으면 그곳이 가장 큰 반복보다 공고 목록일 가능성이 높다
+    return posting_region or best_region, removed
+
+
+def _link_list_holders(soup: BeautifulSoup) -> tuple[set[int], Tag | None]:
+    """공고 목록일 법한 링크 반복을 품은 요소들과, 그중 공고 목록 자리.
+
+    품은 요소는 반복을 줄일 때 지우지 않는다. 그리팅 실측(2026-11-23, LC-3654): 페이지 빌더
+    섹션 여덟 개가 크기까지 닮아 반복으로 잡혔고, 공고 아홉 건(`<a href="/ko/o/…"><li>…</li></a>`)
+    이 다섯 번째 섹션에 있어 통째로 지워졌다. 모델은 공고가 없는 HTML 을 받아 목록이 없다고
+    답했다 (S2W, 에이로봇, 캐럿). 섹션 크기는 205로 "훨씬 큰 형제" 기준(399)에 못 미쳤다.
+
+    공고 목록은 항목마다 다른 상세 주소를 단다. 둘을 본다.
+
+    - 끝 칸이 번호나 긴 식별자인 주소(`/ko/o/195450`)가 둘 이상 반복되면 공고 목록이다. 모두
+      지키고, 가장 많은 것을 입력을 좁힐 자리로 돌려준다. 공고가 두 건뿐인 사이트(캐럿)도 있다
+    - 그런 반복이 없으면 서로 다른 주소가 가장 많은 반복 하나만 지킨다. 링크 반복을 모두 지키면
+      공고 항목 안의 태그 링크 몇 개 때문에 항목 자체가 줄지 않는다
+    """
+    postings: list[tuple[int, Tag]] = []
+    widest: list[Tag] = []
+    widest_count = _MIN_REPEAT - 1
+    for parent in soup.find_all(True):
+        if not isinstance(parent, Tag):
+            continue
+        groups: dict[tuple[str, tuple[str, ...]], list[Tag]] = {}
+        for child in parent.find_all(recursive=False):
+            groups.setdefault(_key(child), []).append(child)
+        for children in groups.values():
+            hrefs = {_first_href(child) for child in children} - {""}
+            posting = {href for href in hrefs if _POSTING_PATH.search(urlsplit(href).path)}
+            if len(posting) >= 2:
+                postings.append((len(posting), parent))
+            if len(hrefs) > widest_count:
+                widest_count, widest = len(hrefs), [parent]
+            elif len(hrefs) == widest_count and widest:
+                widest.append(parent)
+    kept = [parent for _, parent in postings] or widest
+    holders: set[int] = set()
+    for parent in kept:
+        holders.add(id(parent))
+        holders.update(id(node) for node in parent.parents)
+    region = max(postings, key=lambda item: item[0])[1] if postings else None
+    return holders, region
+
+
+def _first_href(node: Tag) -> str:
+    """항목이 가리키는 주소. 항목 자신이 링크이거나 안의 첫 링크다."""
+    anchor = node if node.name == "a" and node.get("href") else node.find("a", href=True)
+    if not isinstance(anchor, Tag):
+        return ""
+    href = str(anchor.get("href", "")).strip()
+    return "" if href.startswith(("#", "javascript:")) else href
 
 
 def _outlier_size(children: list[Tag]) -> float:

@@ -56,9 +56,11 @@ class TransportError(FetchError):
 class ResponseStatusError(FetchError):
     """재시도하지 않는 응답 상태(4xx). 4초 뒤에 다시 물어도 같은 답이 온다."""
 
-    def __init__(self, message: str, status_code: int) -> None:
+    def __init__(self, message: str, status_code: int, url: str = "") -> None:
         super().__init__(message)
         self.status_code = status_code
+        # 어느 주소가 이 답을 줬는가. 목록과 예시 공고 중 어느 쪽이 404 인지 가르는 데 쓴다
+        self.url = url
 
 
 class BotChallengeError(ResponseStatusError):
@@ -158,14 +160,24 @@ class Fetcher:
             headers={"User-Agent": self._user_agent},
             follow_redirects=True,
         )
+        # 인증서를 검사하지 않는 호스트만 이 클라이언트로 간다
+        # (`Settings.crawl_tls_unverified_hosts`)
+        self._unverified_hosts = _hosts(resolved.crawl_tls_unverified_hosts)
+        self._unverified_client = (
+            httpx.AsyncClient(
+                transport=transport,
+                timeout=httpx.Timeout(resolved.crawl_timeout_seconds),
+                headers={"User-Agent": self._user_agent},
+                follow_redirects=True,
+                verify=False,
+            )
+            if self._unverified_hosts
+            else None
+        )
         self._last_request_at: dict[str, float] = {}
         self._host_locks: dict[str, asyncio.Lock] = {}
         self._robots: dict[str, RobotFileParser | None] = {}
-        self._robots_ignored = frozenset(
-            host.strip().lower()
-            for host in resolved.crawl_robots_ignore_hosts.split(",")
-            if host.strip()
-        )
+        self._robots_ignored = _hosts(resolved.crawl_robots_ignore_hosts)
 
     async def fetch(self, url: str) -> FetchResult:
         """robots 확인을 통과한 URL 만 가져온다. 실패는 `FetchError` 로 올라온다."""
@@ -226,6 +238,8 @@ class Fetcher:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+        if self._unverified_client is not None:
+            await self._unverified_client.aclose()
 
     async def _ensure_allowed(self, url: str) -> None:
         parts = urlsplit(url)
@@ -273,6 +287,11 @@ class Fetcher:
         # 클라이언트가 들고 있는 User-Agent 위에 얹는다. 같은 이름의 헤더는 설정에서 막혀 있어
         # 여기까지 오지 않는다
         extra = dict(headers) if headers else None
+        client = (
+            self._unverified_client
+            if self._unverified_client is not None and host.lower() in self._unverified_hosts
+            else self._client
+        )
 
         async with self._lock_for(host):
             for attempt in range(self._max_retries + 1):
@@ -281,7 +300,7 @@ class Fetcher:
                 await self._respect_delay(host)
 
                 try:
-                    response = await self._client.request(
+                    response = await client.request(
                         method,
                         url,
                         json=None if json_body is None else dict(json_body),
@@ -301,11 +320,11 @@ class Fetcher:
                     )
                 if is_challenge(response.headers):
                     raise BotChallengeError(
-                        f"봇 확인에 막힘 {response.status_code}: {url}", response.status_code
+                        f"봇 확인에 막힘 {response.status_code}: {url}", response.status_code, url
                     )
                 if response.status_code < 500:
                     raise ResponseStatusError(
-                        f"응답 {response.status_code}: {url}", response.status_code
+                        f"응답 {response.status_code}: {url}", response.status_code, url
                     )
                 last_error = TransportError(f"서버 오류 {response.status_code}: {url}")
 
@@ -330,6 +349,11 @@ class Fetcher:
             lock = asyncio.Lock()
             self._host_locks[host] = lock
         return lock
+
+
+def _hosts(value: str) -> frozenset[str]:
+    """쉼표로 이은 호스트 설정을 소문자 집합으로."""
+    return frozenset(host.strip().lower() for host in value.split(",") if host.strip())
 
 
 _fetcher: Fetcher | None = None

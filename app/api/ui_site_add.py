@@ -55,6 +55,7 @@ from app.api.ui_sites import PROBLEMS, UNKNOWN_PROBLEM
 from app.crawler.fetcher import FetchPolicy
 from app.notify import work_report
 from app.scheduler import WorkflowScheduler
+from app.selector.link_shape import looks_like_posting
 from app.storage import s3
 from app.storage import settings as store
 
@@ -64,6 +65,8 @@ router = APIRouter(tags=["ui"], include_in_schema=False)
 
 # 시험 수집에서 상세까지 따라갈 공고 수
 TRY_LIMIT = 3
+# 상세 셀렉터가 실제 공고에서 제목·본문을 못 읽었다는 실패 사유의 앞부분 (`app/crawler/parser.py`)
+DETAIL_FIELDS_MISSED = "상세에서 필수 필드를 읽지 못했다"
 
 # 고를 수 있는 수집 주기(분)와 이름
 INTERVALS: tuple[tuple[int, str], ...] = (
@@ -82,6 +85,7 @@ REGISTER_PROBLEMS: dict[str, str] = {
         " 확인해 주세요"
     ),
     "list_fields_not_found": "반복되는 목록은 찾았지만 공고 제목이나 링크를 읽지 못했어요",
+    "no_postings": "지금 진행 중인 공고가 없다고 나와요. 공고가 올라오면 다시 추가해 주세요",
     "robots": "사이트가 로봇 수집을 막아 둔 주소예요. 다른 주소를 써야 합니다",
     "transport": "사이트에 접속하지 못했어요. 주소를 확인해 주세요",
     "bot_challenge": (
@@ -217,6 +221,13 @@ def _tested(run: crawlers.TestRunOut) -> site_adds.Step:
     ]
     if run.error_message:
         lines.append(run.error_message)
+    if run.success_count == 0 and run.skipped_count and not run.fail_count:
+        # 실행은 성공이지만 상세를 하나도 열지 않았다. 사유 칸이 비어 "수집이 실패했어요" 만
+        # 보이던 경우다 (MPMG, 2026-11-23)
+        lines.append(
+            "목록의 공고가 모두 마감이 지났거나 인재 풀 등록이라 상세를 열어 보지 못했다. "
+            "진행 중인 공고가 올라오면 다시 추가한다"
+        )
     for item in run.items[:TRY_LIMIT]:
         body = item.fields.get("body") or ""
         lines.append(f"가져옴: {item.fields.get('title') or '제목 없음'} (본문 {len(body)}자)")
@@ -228,6 +239,23 @@ def _tested(run: crawlers.TestRunOut) -> site_adds.Step:
 
 def _passed(run: crawlers.TestRunOut) -> bool:
     return run.status == "success" and run.success_count > 0
+
+
+def _live_sample(run: crawlers.TestRunOut, list_url: str) -> str:
+    """시험 수집이 실제 공고의 상세에서 제목·본문을 못 읽었으면 그 첫 공고 주소. 아니면 빈 값.
+
+    상세 셀렉터는 예시 공고 한 장으로 만든다. 예시가 오류 화면이거나 옛 화면이면 셀렉터가 그
+    화면에만 맞는다. 목록에서 읽은 공고 주소여야 한다 — 목록 주소 자체는 상세가 아니다.
+    """
+    for failure in run.failures:
+        if not failure.message.startswith(DETAIL_FIELDS_MISSED):
+            continue
+        url = failure.source_url.split("#", 1)[0]
+        # 공고 한 건 주소처럼 보여야 한다. 데상트처럼 목록이 상품 소개(`/ko/products`)를 잡았으면
+        # 그 페이지로 만들어 봐야 공고가 아니다
+        if url.startswith(("http://", "https://")) and url != list_url and looks_like_posting(url):
+            return url
+    return ""
 
 
 def _repaired(fixed: auto_repair.AutoRepair) -> site_adds.Step:
@@ -258,46 +286,69 @@ async def _work(
     async with site_adds.slot():
         conn = connect()
         try:
-            add.state = site_adds.FINDING
-            try:
-                created = await crawlers.create_crawler(
-                    crawlers.CrawlerCreate(
-                        list_url=add.list_url,
-                        detail_url=add.detail_url,
-                        default_company=add.company,
-                    ),
-                    conn,
-                    generate,
-                    discover,
-                )
-            except HTTPException as exc:
-                detail = error_detail(exc)
-                add.steps.append(_register_failed(detail))
-                _fail(
-                    add,
-                    REGISTER_PROBLEMS.get(detail.get("reason", ""), detail.get("message", "")),
-                    detail.get("message", ""),
-                )
-                return
+            retried = False
+            while True:
+                add.state = site_adds.FINDING
+                try:
+                    created = await crawlers.create_crawler(
+                        crawlers.CrawlerCreate(
+                            list_url=add.list_url,
+                            detail_url=add.detail_url,
+                            default_company=add.company,
+                        ),
+                        conn,
+                        generate,
+                        discover,
+                    )
+                except HTTPException as exc:
+                    detail = error_detail(exc)
+                    add.steps.append(_register_failed(detail))
+                    _fail(
+                        add,
+                        REGISTER_PROBLEMS.get(detail.get("reason", ""), detail.get("message", "")),
+                        detail.get("message", ""),
+                    )
+                    return
 
-            add.crawler_id = created.id
-            # 등록은 셀렉터를 만드는 일이라 이 칸을 모른다. 사이트 추가 창이 받은 값을 여기서 적는다
-            conn.execute(
-                "UPDATE crawlers SET has_affiliates = ? WHERE id = ?",
-                (1 if add.has_affiliates else 0, created.id),
-            )
-            conn.commit()
-            add.steps.extend(_registered(created, bool(add.detail_url)))
-            add.state = site_adds.TESTING
-            try:
-                run = await crawlers.test_run(created.id, conn, fetcher, TRY_LIMIT, "")
-            except HTTPException as exc:
-                message = error_detail(exc).get("message", "")
-                add.steps.append(site_adds.Step("공고 몇 건 시험 수집", False, [message]))
-                _fail(add, "셀렉터는 만들었지만 시험 수집을 돌리지 못했어요", message)
-                return
-            add.matched, add.success_count = run.matched, run.success_count
-            add.steps.append(_tested(run))
+                add.crawler_id = created.id
+                # 등록은 셀렉터를 만드는 일이라 이 칸을 모른다. 사이트 추가 창이 받은 값을
+                # 여기서 적는다
+                conn.execute(
+                    "UPDATE crawlers SET has_affiliates = ? WHERE id = ?",
+                    (1 if add.has_affiliates else 0, created.id),
+                )
+                conn.commit()
+                add.steps.extend(_registered(created, bool(add.detail_url)))
+                add.state = site_adds.TESTING
+                try:
+                    run = await crawlers.test_run(created.id, conn, fetcher, TRY_LIMIT, "")
+                except HTTPException as exc:
+                    message = error_detail(exc).get("message", "")
+                    add.steps.append(site_adds.Step("공고 몇 건 시험 수집", False, [message]))
+                    _fail(add, "셀렉터는 만들었지만 시험 수집을 돌리지 못했어요", message)
+                    return
+                add.matched, add.success_count = run.matched, run.success_count
+                add.steps.append(_tested(run))
+                swap = "" if retried or _passed(run) else _live_sample(run, add.list_url)
+                if not swap:
+                    break
+                # 예시 공고로 만든 상세 셀렉터가 목록의 실제 공고에서 제목·본문을 못 읽었다.
+                # 예시가 마감돼 오류 화면이거나 옛 화면이었다 — SOOP 실측(2026-11-24): 마감된
+                # 예시가 200 으로 "잠시 후 다시 시도해 주세요" 를 줬다. 목록의 첫 공고를 예시로
+                # 한 번 다시 만든다
+                add.steps.append(
+                    site_adds.Step(
+                        "예시 공고를 바꿔 다시 만들기",
+                        True,
+                        [
+                            "만든 상세 셀렉터가 목록의 실제 공고에서 제목·본문을 읽지 못해, 목록의 "
+                            f"첫 공고로 다시 만든다: {swap}"
+                        ],
+                    )
+                )
+                _drop_draft(conn, created.id)
+                add.detail_url = swap
+                retried = True
             if not _passed(run) and run.error_class in auto_repair.REPAIRABLE:
                 add.state = site_adds.REPAIRING
                 fixed = await auto_repair.repair_and_test(

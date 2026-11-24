@@ -113,7 +113,40 @@ class Settings(BaseSettings):
     # 운영자가 사이트마다 정한다 — 한진은 채용 경로를 막아 두었지만 수집하기로 했다 (2026-10-21).
     # 파이썬 3.12 의 robots 파서는 `Allow: /` 를 먼저 따라 이를 허용으로 읽었고, 표준대로 읽는
     # 3.14 부터 막힌다. 버전에 따라 조용히 바뀌지 않게 여기 적는다
-    crawl_robots_ignore_hosts: str = "www.hanjin.com"
+    #
+    # 11/16 일괄 추가에서 robots 에 막힌 곳도 수집하기로 했다 (2026-11-22, LC-3654). 예전
+    # recruiter.co.kr 목록(`/app/jobnotice/list`)은 robots 가 `/appsite/` 말고 전부 막는다.
+    # 구글 파비콘(`/s2`)은 엑셀 `로고 주소` 칸이 쓰는 곳이고, 나인하이어 이미지는 이미지뿐인
+    # 본문을 읽으려고 받는다
+    crawl_robots_ignore_hosts: str = ",".join(
+        (
+            "www.hanjin.com",
+            "www.google.com",
+            "image.ninehire.com",
+            "recruit.cuckoo.co.kr",
+            "www.dong-wha.co.kr",
+            "recruit.paradise.co.kr",
+            "twosomeplace.recruiter.co.kr",
+            "huonsgroup.recruiter.co.kr",
+            "jwholdings.recruiter.co.kr",
+            "kwangdong.recruiter.co.kr",
+            "lignex1.recruiter.co.kr",
+            "hansol.recruiter.co.kr",
+            "ediya.recruiter.co.kr",
+            "bongroup.recruiter.co.kr",
+            "jinair.recruiter.co.kr",
+            "rkm.recruiter.co.kr",
+            "medytox.recruiter.co.kr",
+            "costco.recruiter.co.kr",
+        )
+    )
+    # 인증서를 검사하지 않는 호스트. 쉼표로 잇는다. 브라우저는 열지만 파이썬이 거절하는 곳이다
+    # (2026-11-22, LC-3654). 동아쏘시오는 서버가 중간 인증서를 보내지 않고 — 브라우저는 스스로
+    # 받아 채운다 — 파마리서치는 호스트에 밑줄이 있어 파이썬이 와일드카드 인증서와 맞춰 보지
+    # 않는다. 받는 것은 누구나 보는 채용 페이지라 검사를 끄는 것으로 잃는 것이 없다
+    crawl_tls_unverified_hosts: str = (
+        "talent.dongasocio.com,pharmaresearch_hr.career.greetinghr.com"
+    )
     # 렌더 1회의 상한. 정적 타임아웃보다 길지만 무한정 기다리지 않는다
     render_timeout_seconds: float = 60.0
 

@@ -454,3 +454,71 @@ async def test_상세_페이지가_없어도_목록_칸이_비면_거절한다()
 
     assert len(client.calls) == 2
     assert any("list.title" in note for note in result.notes)
+
+
+@pytest.mark.parametrize(
+    ("final_url", "expected"),
+    [
+        # 마감된 공고를 목록으로 돌려보낸다 (recruiter.co.kr, 2026-11-23)
+        ("https://a.recruiter.co.kr/app/jobnotice/list", True),
+        ("https://a.recruiter.co.kr/", True),
+        ("https://a.recruiter.co.kr/app/jobnotice/view?systemKindCode=MRS2&jobnoticeSn=1", False),
+        # 다른 공고나 로그인으로 넘어간 것은 돌려보낸 것으로 보지 않는다
+        ("https://a.recruiter.co.kr/app/jobnotice/view?jobnoticeSn=2", False),
+        ("", False),
+    ],
+)
+def test_예시_공고가_목록이나_첫_화면으로_넘어갔는지_본다(final_url: str, expected: bool) -> None:
+    from app.selector.generator import sent_back
+
+    detail = "https://a.recruiter.co.kr/app/jobnotice/view?systemKindCode=MRS2&jobnoticeSn=1"
+    listing = "https://a.recruiter.co.kr/app/jobnotice/list"
+
+    assert sent_back(detail, final_url, listing) is expected
+
+
+def test_묶음_안을_selectors_로_한_겹_더_싼_응답을_벗긴다() -> None:
+    """닥터나우(2026-11-24): DeepSeek 가 두 번 다 `list.selectors` 로 답해 거절됐다."""
+    from app.selector.schema import parse_generated
+
+    text = json.dumps(
+        {
+            "list": {"selectors": {"item": "li", "title": "a", "link": "a", "date": ""}},
+            "detail": {
+                "title": "h1",
+                "body": "main",
+                "qualifications": "",
+                "recruitment_end_at": "",
+                "department": "",
+            },
+        }
+    )
+
+    selectors, notes = parse_generated(text)
+
+    assert selectors.list.item == "li"
+    assert any("selectors" in note for note in notes)
+
+
+def test_맨_바깥에_둔_한_묶음_칸을_제자리로_옮긴다() -> None:
+    """닥터나우(2026-11-24): DeepSeek 가 `link_template` 을 최상위에 뒀다."""
+    from app.selector.schema import parse_generated
+
+    text = json.dumps(
+        {
+            "list": {"item": "li", "title": "a", "link": "a", "date": ""},
+            "detail": {
+                "title": "h1",
+                "body": "main",
+                "qualifications": "",
+                "recruitment_end_at": "",
+                "department": "",
+            },
+            "link_template": "",
+        }
+    )
+
+    selectors, notes = parse_generated(text)
+
+    assert selectors.list.item == "li"
+    assert any("link_template" in note for note in notes)

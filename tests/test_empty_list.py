@@ -37,6 +37,8 @@ SELECTORS = validate_selectors(
         "등록된 공고가 없습니다",
         "진행 중인 포지션이 없어요",
         "검색 결과가 없습니다",
+        # 그리팅 (한양증권, 2026-11-24)
+        "채용 중인 공고 필터 일치하는 결과가 없습니다.",
         "등록된 게시물이 없습니다.",
         "There are currently no open positions.",
         "No open positions at the moment",

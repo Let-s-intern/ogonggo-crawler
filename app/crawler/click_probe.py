@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
@@ -237,10 +238,25 @@ def is_share_link(href: str, onclick: str) -> bool:
 
     현대의 SNS 공유 버튼이 이 모양이다. 누르면 공유 창이 뜨거나 아무 일도 없고, 그 결과를
     "상세에 못 갔다" 로 읽으면 사이트를 등록할 수 없다고 판정하게 된다.
+
+    `javascript:` 주소라도 함수를 부르면 누른다. 크라운해태 `javascript:view('00702');`, 동화약품
+    `javascript:view(141);` 는 공고를 여는 링크다 — 전부 공유 버튼으로 보고 건너뛰어 상세에 갈 길이
+    없다고 판정했다 (2026-11-23, LC-3654). 아무것도 부르지 않는 `javascript:void(0)` 은 그대로
+    건너뛴다.
     """
-    if href.lower().startswith("javascript:"):
+    lowered = f"{href} {onclick}".lower()
+    if any(word in lowered for word in _SHARE_WORDS):
         return True
-    return "share" in onclick.lower()
+    script = href.strip().lower()
+    if not script.startswith("javascript:") or onclick.strip():
+        return False
+    return _NO_CALL.fullmatch(script.removeprefix("javascript:").strip()) is not None
+
+
+# 공유 버튼의 함수 이름에 드는 말
+_SHARE_WORDS = ("share", "sns", "facebook", "twitter", "kakaostory")
+# 아무 함수도 부르지 않는 `javascript:` 주소의 본문. `void(0)`, `;`, 빈 값이다
+_NO_CALL = re.compile(r"(void\s*\(\s*0?\s*\)|)\s*;?\s*")
 
 
 async def _click_and_judge(

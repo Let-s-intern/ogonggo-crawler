@@ -59,11 +59,13 @@ from pydantic import BaseModel
 from app import db
 from app.config import Settings
 from app.crawler.collect import API, COLLECT_MODES, open_collectors
+from app.crawler.empty_list import empty_notice
 from app.crawler.failures import SUCCESS
 from app.crawler.fetcher import (
     BotChallengeError,
     FetchError,
     FetchPolicy,
+    ResponseStatusError,
     RobotsDisallowedError,
     get_fetcher,
 )
@@ -87,6 +89,8 @@ from app.selector.generator import (
     generate_for_urls,
     generate_from_html,
 )
+from app.selector.link_shape import looks_like_posting, matches_sample
+from app.selector.list_page import Candidate, list_page_candidates
 from app.selector.path_proposal import llm_asker
 from app.selector.repair import RepairOutcome, SelectorRepairError, repair_for_urls
 from app.selector.schema import SelectorSchemaError, SelectorSet, validate_selectors
@@ -147,6 +151,33 @@ SAME_PAGE_MESSAGE = (
     "목록 주소와 공고 주소가 같아요. 목록 자리에는 공고 여러 건이 보이는 채용 목록 페이지 주소를 "
     "넣어 주세요"
 )
+
+
+def _sample_gone(detail_url: str, exc: ResponseStatusError) -> bool:
+    """넣은 예시 공고 주소가 없어졌다는 답인가. 목록이 404 인 것과 가른다.
+
+    예시 공고는 엑셀을 채운 날에 열려 있던 공고라 등록할 때쯤 마감돼 내려가 있기 쉽다. 그것
+    하나 때문에 사이트 전체를 "접속하지 못했다" 로 떨어뜨리지 않는다. 봇 확인은 내려간 것이
+    아니라 막힌 것이라 넣지 않는다.
+    """
+    if not detail_url.strip() or isinstance(exc, BotChallengeError):
+        return False
+    return exc.status_code in (404, 410) and exc.url.strip() == detail_url.strip()
+
+
+def _stale_sample(detail_url: str, result: GenerationResult) -> str:
+    """예시 공고가 옛 화면이면 대신 쓸 목록의 첫 공고 주소. 아니면 빈 문자열.
+
+    목록 링크가 공고 주소처럼 보이고(`/career/jobs/134345`) 예시와 모양이 다를 때만이다. 공고
+    주소처럼 보이지 않으면 목록 쪽이 틀린 것이라 생성이 다시 묻는다 (`app/selector/generator.py`
+    의 `_problems`). 메뉴를 따라간 목록은 견주지 않는다 — 따라갈 때 이미 견줬다.
+    """
+    links = list(result.list_links)
+    if not detail_url.strip() or not links or result.list_url:
+        return ""
+    if matches_sample(links, detail_url) or not looks_like_posting(links[0]):
+        return ""
+    return links[0]
 
 
 def same_page(list_url: str, detail_url: str) -> bool:
@@ -429,6 +460,54 @@ def get_generator(
     settings = llm_settings.settings_for(conn, SELECTOR_GENERATE)
 
     async def generate(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
+        result = await pick(list_url, detail_url, render_mode)
+        missing = result.verification.list_missing
+        if render_mode or not (
+            missing or _links_failed(result) or _not_postings(result, detail_url)
+        ):
+            return result
+        # 넣은 주소에 목록이 없거나, 목록 비슷한 것은 있는데 공고로 가는 링크가 없다. 채용
+        # 사이트 첫 화면이나 회사 소개 페이지인 경우가 많아 메뉴의 "채용 공고" 링크를 한 번
+        # 따라가 본다 (`app/selector/list_page.py`). 그리팅 첫 화면은 링크 없는 공고 카드
+        # 몇 장을 보여 주고, 나인하이어 회사 소개는 인터뷰 카드를 반복으로 잡는다 (2026-11-23).
+        # 모드를 고른 등록은 고른 그대로 한 번만 만든다 — 운영자가 이 주소를 보고 정한 것이다
+        for candidate in await _list_page_links(list_url, result.render_mode):
+            if not missing and candidate.score < _SURE_LIST_LINK:
+                # 링크만 못 읽은 목록은 항목을 눌러 상세를 찾을 수도 있다 (CJ). 메뉴 글자와
+                # 경로가 함께 목록을 가리킬 때만 옮겨 본다
+                continue
+            try:
+                moved = await pick(candidate.url, detail_url, render_mode)
+            except FetchError as exc:
+                logger.info("목록 후보 %s 를 열지 못했다: %s", candidate.url, exc)
+                continue
+            if moved.verification.list_missing or (not missing and _links_failed(moved)):
+                continue
+            if not matches_sample(list(moved.list_links), detail_url):
+                # 옮긴 페이지의 링크가 예시 공고와 모양이 다르다. 채용 공고가 아닌 게시판이다 —
+                # 네오위즈 실측(2026-11-24): 메뉴의 "공고" 가 투자자 공시 게시판이었다
+                logger.info("목록 후보 %s 의 링크가 예시 공고와 모양이 달라 버린다", candidate.url)
+                continue
+            logger.info("메뉴 링크를 따라가 목록을 찾았다 %s -> %s", list_url, candidate.url)
+            why = (
+                "공고 목록이 없어"
+                if missing
+                else "공고로 가는 링크를 읽지 못해"
+                if _links_failed(result)
+                else "공고가 아닌 링크를 읽어"
+            )
+            return replace(
+                moved,
+                list_url=candidate.url,
+                notes=[
+                    *moved.notes,
+                    f"넣은 주소에서 {why} 메뉴의 '{candidate.text}' 링크를 따라가 "
+                    f"목록을 찾았다: {candidate.url}",
+                ],
+            )
+        return result
+
+    async def pick(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
         if render_mode:
             return replace(
                 await _generate(list_url, detail_url, render_mode, settings),
@@ -467,6 +546,11 @@ def get_generator(
         try:
             rendered = await _generate(list_url, detail_url, PLAYWRIGHT, settings)
         except FetchError as exc:
+            if isinstance(exc, ResponseStatusError) and _sample_gone(detail_url, exc):
+                # 렌더해 보니 예시 공고가 내려갔거나 목록으로 돌려보내진다. 정적 응답은 자바스크립트
+                # 로 넘기는 빈 문서라 몰랐다 — 동화약품 실측(2026-11-24). 등록이 예시를 빼고 다시
+                # 만들도록 올린다 (`create_crawler`)
+                raise
             # 브라우저가 없거나 렌더가 실패했다. 정적 결과를 그대로 올려 무엇이 안 됐는지
             # 운영자가 보게 한다 — 여기서 예외를 던지면 사유가 렌더 실패로 바뀐다
             logger.warning("렌더 생성도 실패했다 url=%s: %s", list_url, exc)
@@ -508,6 +592,54 @@ def get_generator(
         )
 
     return generate
+
+
+async def _empty_notice(list_url: str, render_mode: str) -> str:
+    """목록을 못 찾은 페이지가 "진행 중인 공고가 없다" 고 말하는 문구. 못 열면 빈 문자열이다."""
+    try:
+        async with open_source(render_mode or STATIC, get_fetcher()) as source:
+            page = await source.fetch(list_url)
+    except FetchError as exc:
+        logger.info("빈 목록 문구를 보려고 %s 를 열지 못했다: %s", list_url, exc)
+        return ""
+    return empty_notice(page.text)
+
+
+async def _list_page_links(list_url: str, render_mode: str) -> list[Candidate]:
+    """목록이 없던 페이지에서 공고 목록 페이지로 갈 링크를 고른다. 못 열면 빈 목록이다.
+
+    정적으로 먼저 본다. 메뉴까지 JS 로 그리는 사이트라 정적으로 아무것도 없고, 생성이 이미
+    렌더까지 해 본 사이트일 때만 브라우저로 한 번 더 연다.
+    """
+    try:
+        async with open_source(STATIC, get_fetcher()) as source:
+            page = await source.fetch(list_url)
+        found = list_page_candidates(page.text, page.url)
+        if found or render_mode != PLAYWRIGHT:
+            return found
+        async with open_source(PLAYWRIGHT, get_fetcher()) as source:
+            page = await source.fetch(list_url)
+        return list_page_candidates(page.text, page.url)
+    except FetchError as exc:
+        logger.info("목록 후보를 찾으려 %s 를 열지 못했다: %s", list_url, exc)
+        return []
+
+
+# 링크만 못 읽은 목록에서 메뉴로 옮겨 볼 후보의 점수. "채용 공고" 같은 글자(3)이거나,
+# "채용" 같은 글자(1)와 `/recruit` 같은 경로(2)가 함께다 (`app/selector/list_page.py`)
+_SURE_LIST_LINK = 3
+
+
+def _not_postings(result: GenerationResult, detail_url: str) -> bool:
+    """목록 링크가 예시 공고와 모양이 다르고 공고 주소처럼 보이지도 않는가.
+
+    데상트 실측(2026-11-24): 직무 소개 페이지(`/ko/roles`)의 상품 카드(`/ko/products`)를 목록으로
+    잡았다. 공고는 메뉴의 `Apply` 페이지에 있었다.
+    """
+    links = list(result.list_links)
+    return bool(detail_url.strip() and links) and not (
+        matches_sample(links, detail_url) or any(looks_like_posting(link) for link in links)
+    )
 
 
 def _links_failed(result: GenerationResult) -> bool:
@@ -670,7 +802,43 @@ async def create_crawler(
     # 비우면 등록이 스스로 정한다. 값을 주면 그 모드로만 만들고 판정이 덮어쓰지 않는다
     requested = _requested_render_mode(payload.render_mode)
     try:
-        result = await generate(payload.list_url, payload.detail_url, requested)
+        try:
+            result = await generate(payload.list_url, payload.detail_url, requested)
+        except ResponseStatusError as exc:
+            if not _sample_gone(payload.detail_url, exc):
+                raise
+            # 예시 공고가 내려갔다. 목록은 살아 있으니 예시 없이 목록만으로 다시 만든다 —
+            # 상세로 가는 길은 판정이 목록에서 찾는다 (2026-11-22, 11/16 일괄 추가 26곳)
+            logger.info("예시 공고가 %s 라 목록만으로 등록한다: %s", exc.status_code, exc.url)
+            payload = payload.model_copy(update={"detail_url": ""})
+            result = await generate(payload.list_url, "", requested)
+            result = replace(
+                result,
+                notes=[
+                    *result.notes,
+                    f"넣은 예시 공고가 응답 {exc.status_code} 이라 빼고 목록에서 상세를 찾았다: "
+                    f"{exc.url}",
+                ],
+            )
+        stale = _stale_sample(payload.detail_url, result)
+        if stale:
+            # 목록은 공고 주소를 읽었는데 예시 공고와 모양이 다르다. 사이트가 채용 화면을 옮겨
+            # 예시가 옛 화면이다 — 휴온스 실측(2026-11-24): 예시 `/app/jobnotice/view?…` 로
+            # 만든 상세 셀렉터가 목록 링크 `/career/jobs/134345` 에서 제목을 못 읽었다
+            logger.info(
+                "예시 공고가 목록 링크와 모양이 달라 목록의 첫 공고로 다시 만든다: %s", stale
+            )
+            old_sample = payload.detail_url
+            payload = payload.model_copy(update={"detail_url": stale})
+            result = await generate(payload.list_url, stale, requested)
+            result = replace(
+                result,
+                notes=[
+                    *result.notes,
+                    f"넣은 예시 공고 {old_sample} 가 목록의 공고 주소와 모양이 달라 목록의 첫 "
+                    f"공고로 상세 셀렉터를 만들었다: {stale}",
+                ],
+            )
     except RobotsDisallowedError as exc:
         # robots 가 막은 URL 은 등록 자체를 거절한다 (`.claude/rules/crawling.md`).
         raise HTTPException(
@@ -690,6 +858,10 @@ async def create_crawler(
             status_code=status, detail={"reason": exc.reason, "message": str(exc)}
         ) from exc
 
+    if result.list_url and result.list_url != payload.list_url:
+        # 메뉴 링크를 따라가 목록을 찾았다. 크롤러는 목록이 있는 그 주소로 만든다
+        payload = payload.model_copy(update={"list_url": result.list_url})
+
     if result.verification.list_missing:
         # 목록이 없다. 셀렉터를 손으로 고쳐도 잡을 노드가 없으므로 행을 남기지 않는다.
         # 렌더까지 해 보고도 없었는지는 `result.render_mode` 가 말해 준다 — 다음 수단이
@@ -701,6 +873,20 @@ async def create_crawler(
             if result.render_mode == PLAYWRIGHT
             else "목록을 찾지 못했다"
         )
+        notice = await _empty_notice(payload.list_url, result.render_mode)
+        if notice:
+            # 페이지가 진행 중인 공고가 없다고 직접 말한다. 고칠 셀렉터가 아니라 기다릴 일이다
+            # — 바디프랜드·KG모빌리티 실측(2026-11-23): "진행 중인 공고가 없어요"
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "reason": "no_postings",
+                    "message": f"페이지가 진행 중인 공고가 없다고 한다: '{notice}'",
+                    "failed_fields": result.verification.failed,
+                    "matches": result.verification.summary(),
+                    "notes": result.notes,
+                },
+            )
         raise HTTPException(
             status_code=422,
             detail={

@@ -587,3 +587,50 @@ def test_고쳐도_안_되면_되돌리고_고친_단계까지_보여_준다(
     retry = client.get("/ui/sites/new/1").text
     assert "✕ 4. AI 로 셀렉터 고쳐 다시 시험 수집" in retry
     assert "고쳐도 시험 수집이 안 돼 되돌렸다" in retry
+
+
+class StaleSample(Fake):
+    """예시 공고로 만든 상세 셀렉터가 실제 공고에서 못 읽다가, 목록의 공고로 다시 만들면 된다."""
+
+    async def run(self, crawler_id: int, conn: sqlite3.Connection, *_: Any) -> Any:
+        if self.registered[-1].detail_url == f"{LIST_URL}/7":
+            self.found = True
+            return await super().run(crawler_id, conn)
+        failed = await super().run(crawler_id, conn)
+        return failed.model_copy(
+            update={
+                "error_class": "parse",
+                "failures": [
+                    crawlers_api.RunFailure(
+                        source_url=f"{LIST_URL}/7",
+                        error_class="parse",
+                        message="상세에서 필수 필드를 읽지 못했다: title, body",
+                    )
+                ],
+            }
+        )
+
+
+def test_실제_공고에서_상세를_못_읽으면_목록의_공고로_한_번_다시_만든다(
+    client: TestClient,
+    conn: sqlite3.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    launched: list[Any],
+) -> None:
+    """SOOP(2026-11-24): 마감된 예시 공고가 200 으로 오류 화면을 줬다."""
+    fake = StaleSample(conn, found=False)
+    install(monkeypatch, fake)
+    client.post(
+        "/ui/sites/new",
+        data={"list_url": LIST_URL, "company": "예시", "detail_url": f"{LIST_URL}/old"},
+    )
+
+    finish(launched)
+
+    assert [payload.detail_url for payload in fake.registered] == [
+        f"{LIST_URL}/old",
+        f"{LIST_URL}/7",
+    ]
+    assert conn.execute("SELECT count(*) FROM workflows").fetchone()[0] == 1
+    # 처음 만든 초안은 지웠다
+    assert conn.execute("SELECT count(*) FROM crawlers").fetchone()[0] == 1

@@ -22,16 +22,19 @@ import logging
 from collections import Counter
 from dataclasses import dataclass, field, replace
 from typing import Any
+from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup
 
 from app.config import Settings, get_settings
-from app.crawler.fetcher import PageSource, get_fetcher
+from app.crawler.fetcher import PageSource, ResponseStatusError, get_fetcher
+from app.crawler.parser import list_only, parse_list
 from app.crawler.playwright import STATIC
 from app.llm.base import LlmCallError, Provider, Usage
 from app.llm.log import SELECTOR_GENERATE
 from app.llm.providers import for_feature
 from app.selector.cleaner import CleanedHtml, clean_html
+from app.selector.link_shape import looks_like_posting, matches_sample
 from app.selector.narrow import Narrowing, narrow_item_selector
 from app.selector.schema import (
     SelectorSchemaError,
@@ -128,6 +131,12 @@ class GenerationResult:
     # 채우는 것은 HTML 을 가져온 쪽이다 (`app/api/crawlers.py` 의 `get_generator`).
     # 판정이 경로를 알아내지 못했을 때 되돌아갈 값이 이것이다
     render_mode: str = STATIC
+    # 넣은 주소에 목록이 없어 메뉴 링크를 따라가 목록을 찾았으면 그 주소다. 비어 있으면 넣은
+    # 주소 그대로다. 등록은 이 주소로 크롤러를 만든다 (`app/selector/list_page.py`)
+    list_url: str = ""
+    # 만든 목록 셀렉터로 그 목록에서 읽은 상세 링크 앞 몇 건. 예시 공고 주소와 모양을 견준다
+    # (`app/selector/link_shape.py`)
+    list_links: tuple[str, ...] = ()
 
     @property
     def ok(self) -> bool:
@@ -150,15 +159,43 @@ async def generate_for_urls(
     """
     resolved_source = source or get_fetcher()
     list_html = (await resolved_source.fetch(list_url)).text
-    detail_html = (await resolved_source.fetch(detail_url)).text
+    detail = await resolved_source.fetch(detail_url)
+    if sent_back(detail_url, detail.url, list_url):
+        # 마감된 공고를 목록이나 첫 화면으로 돌려보내는 사이트다. 내려간 것과 같아 410 으로 알린다
+        # — 등록이 예시를 빼고 다시 만든다 (`app/api/crawlers.py` 의 `_sample_gone`)
+        raise ResponseStatusError(
+            f"예시 공고가 {detail.url} 로 돌려보내졌다: {detail_url}", 410, detail_url
+        )
     return await generate_from_html(
         list_html,
-        detail_html,
+        detail.text,
         list_url=list_url,
         detail_url=detail_url,
         settings=settings,
         client=client,
     )
+
+
+def sent_back(detail_url: str, final_url: str, list_url: str) -> bool:
+    """예시 공고 주소가 목록이나 사이트 첫 화면으로 넘어갔는가.
+
+    recruiter.co.kr 실측(2026-11-23, LC-3654): 마감된 공고(`/app/jobnotice/view?…`)를 열면
+    200 으로 `/app/jobnotice/list` 를 준다. 그 목록 페이지로 상세 셀렉터를 만들어 상세 제목이
+    `.list-bbs-title`, 본문이 `#divJobnoticeList` 가 됐고, 실제 공고에서는 제목을 못 읽었다
+    (투썸·휴온스·광동·본그룹·메디톡스·이디야). 통과한 르노·코스트코도 본문이 목록 전체였다.
+    """
+    if not final_url.strip() or not detail_url.strip():
+        return False
+    asked, landed, listing = urlsplit(detail_url), urlsplit(final_url), urlsplit(list_url)
+    if (asked.netloc.lower(), asked.path, asked.query) == (
+        landed.netloc.lower(),
+        landed.path,
+        landed.query,
+    ):
+        return False
+    path = landed.path.rstrip("/")
+    to_list = landed.netloc.lower() == listing.netloc.lower() and path == listing.path.rstrip("/")
+    return to_list or path == ""
 
 
 async def generate_from_html(
@@ -228,18 +265,27 @@ async def generate_from_html(
             report.summary(),
             report.failed or "없음",
         )
+        links = list_links(selectors, list_html, list_url)
         result = GenerationResult(
             selectors=selectors,
             usage=spent,
             attempts=attempt,
             verification=report,
             notes=[*_notes(cleaned_list, cleaned_detail, narrowing), *moved],
+            list_links=links,
         )
-        missed = _problems(report, selectors, list_html, detail_html)
+        missed = _problems(report, selectors, list_html, detail_html, links, detail_url)
         if not missed:
             return result
         if best is None or len(missed) < len(
-            _problems(best.verification, best.selectors, list_html, detail_html)
+            _problems(
+                best.verification,
+                best.selectors,
+                list_html,
+                detail_html,
+                best.list_links,
+                detail_url,
+            )
         ):
             best = result
         if match_retried:
@@ -325,7 +371,12 @@ def _schema_feedback(exc: SelectorSchemaError) -> str:
 
 
 def _problems(
-    report: VerificationReport, selectors: SelectorSet, list_html: str, detail_html: str
+    report: VerificationReport,
+    selectors: SelectorSet,
+    list_html: str,
+    detail_html: str,
+    links: tuple[str, ...] = (),
+    detail_url: str = "",
 ) -> list[str]:
     """생성 직후 다시 물을 거리. 한 줄이 한 칸이고, 모델에게 그대로 보인다."""
     by_name = {field.name: field for field in report.fields}
@@ -340,6 +391,18 @@ def _problems(
             f"{sample}). 조회수나 순번 칸이다. 모집 기간이나 마감일이 적힌 칸을 고르고, 없으면 "
             "빈 문자열로 둔다"
         )
+    if (
+        links
+        and not matches_sample(list(links), detail_url)
+        and not any(looks_like_posting(link) for link in links)
+    ):
+        # 목록 링크가 예시 공고와 모양이 다르고 공고 주소처럼 보이지도 않는다. 공고가 아닌 반복
+        # (상품 소개 카드, 메뉴)을 항목으로 골랐다 — 데상트 실측(2026-11-24): `/ko/products`
+        lines.append(
+            f"- list.link: 항목에서 읽은 주소(예: {links[0]})가 공고 예시 {detail_url} 와 모양이 "
+            "다르다. 공고가 아닌 반복을 항목으로 골랐다. 예시 공고와 같은 모양의 주소로 가는 "
+            "링크를 담은 반복 요소를 항목으로 고른다"
+        )
     repeated = _repeated_title(selectors, list_html)
     if repeated is not None:
         text, count, total = repeated
@@ -349,6 +412,22 @@ def _problems(
             "요소를 항목으로 고르고, 제목과 링크는 그 안에서 공고 제목 칸을 고른다"
         )
     return lines
+
+
+# 모양을 견줄 목록 링크 수
+_LINK_SAMPLE = 10
+
+
+def list_links(selectors: SelectorSet, list_html: str, list_url: str) -> tuple[str, ...]:
+    """만든 목록 셀렉터로 읽은 상세 링크 앞 몇 건. 읽지 못하면 빈 값이다."""
+    if not list_url or list_only(selectors.list):
+        return ()
+    try:
+        parsed = parse_list(list_html, selectors.list, list_url)
+    except Exception:  # 0개 매칭·문법 오류는 검증이 따로 적는다
+        return ()
+    links = [item.link for item in parsed.items if item.link and item.link != list_url]
+    return tuple(dict.fromkeys(links))[:_LINK_SAMPLE]
 
 
 def _repeated_title(selectors: SelectorSet, list_html: str) -> tuple[str, int, int] | None:

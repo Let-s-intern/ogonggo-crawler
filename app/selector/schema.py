@@ -258,6 +258,14 @@ def relocate_misplaced(data: Any) -> tuple[Any, list[str]]:
         return data, []
     moved = {section: dict(value) for section, value in data.items() if isinstance(value, Mapping)}
     notes: list[str] = []
+    for section, value in moved.items():
+        # 묶음 안을 `selectors` 로 한 겹 더 싼 응답이다. 닥터나우 실측(2026-11-24): DeepSeek 가
+        # 두 번 다 `list.selectors` 로 답해 등록이 거절됐다. 벗겨서 제자리에 합친다
+        wrapped = value.get("selectors")
+        if isinstance(wrapped, Mapping):
+            value.pop("selectors")
+            moved[section] = {**dict(wrapped), **value}
+            notes.append(f"모델이 `{section}` 안을 `selectors` 로 한 겹 더 싸서 벗겼다")
     for outer, inner in (("detail", "list"), ("list", "detail")):
         # 묶음 하나를 옆 묶음 안에 통째로 넣은 응답이다. 카페스 실측(2026-09-22): DeepSeek 가
         # `detail` 안에 `list` 를 넣어 등록이 거절됐다. 꺼내서 제자리에 합친다
@@ -271,8 +279,28 @@ def relocate_misplaced(data: Any) -> tuple[Any, list[str]]:
             if not (isinstance(current, str) and current.strip()):
                 home[name] = value
         notes.append(f"모델이 `{outer}` 안에 넣은 `{inner}` 를 밖으로 꺼냈다")
+    lifted: set[str] = set()
+    for name, value in data.items():
+        # 한 묶음에만 있는 칸을 맨 바깥에 둔 응답이다. 닥터나우 실측(2026-11-24): DeepSeek 가
+        # `link_template` 을 최상위에 둬 등록이 거절됐다. 양쪽에 다 있는 이름(`title`)은 어디
+        # 것인지 모르니 그대로 두어 검증이 거절하게 한다
+        if name in ("list", "detail") or not isinstance(value, str):
+            continue
+        in_list, in_detail = name in LIST_FIELDS, name in DETAIL_FIELDS
+        if in_list == in_detail:
+            continue
+        home = moved.setdefault("list" if in_list else "detail", {})
+        lifted.add(name)
+        current = home.get(name)
+        if not (isinstance(current, str) and current.strip()):
+            home[name] = value
+        notes.append(
+            f"모델이 맨 바깥에 둔 `{name}` 을 `{'list' if in_list else 'detail'}` 로 옮겼다"
+        )
+    if lifted:
+        data = {key: value for key, value in data.items() if key not in lifted}
     if "list" not in moved or "detail" not in moved:
-        return data, []
+        return ({**data, **moved}, notes) if lifted else (data, [])
     for source, target, fields in (
         ("detail", "list", LIST_FIELDS),
         ("list", "detail", DETAIL_FIELDS),

@@ -191,7 +191,8 @@ async def test_렌더로도_목록이_없으면_렌더한_결과를_올린다(
 
     result = await generate(LIST_URL, DETAIL_URL, "")
 
-    assert modes == [STATIC, PLAYWRIGHT]
+    # 그 뒤는 목록 페이지로 갈 메뉴 링크를 찾으려 다시 연 것이다 (`app/selector/list_page.py`)
+    assert modes[:2] == [STATIC, PLAYWRIGHT]
     assert result.render_mode == PLAYWRIGHT
     assert result.verification.list_missing is True
 
@@ -214,7 +215,8 @@ async def test_브라우저가_없으면_정적_결과를_사유와_함께_올�
 
     result = await generate(LIST_URL, DETAIL_URL, "")
 
-    assert modes == [STATIC, PLAYWRIGHT]
+    # 그 뒤는 목록 페이지로 갈 메뉴 링크를 찾으려 다시 연 것이다 (`app/selector/list_page.py`)
+    assert modes[:2] == [STATIC, PLAYWRIGHT]
     assert result.render_mode == STATIC
     assert any("렌더로 다시 만들지도 못했다" in note for note in result.notes)
 
@@ -284,7 +286,8 @@ async def test_렌더해도_링크를_못_읽으면_정적_결과를_둔다(
 
     result = await generate(LIST_URL, DETAIL_URL, "")
 
-    assert modes == [STATIC, PLAYWRIGHT]
+    # 셋째 정적 열기는 메뉴에서 목록 링크를 찾는 것이다 (`app/selector/list_page.py`)
+    assert modes[:2] == [STATIC, PLAYWRIGHT]
     assert result.render_mode == STATIC
     assert "렌더로도 만들어 봤지만 나아지지 않았다" in result.notes[-1]
 

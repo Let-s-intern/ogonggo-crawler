@@ -17,7 +17,12 @@ from fastapi.testclient import TestClient
 
 from app import db
 from app.api import crawlers as crawlers_api
-from app.crawler.fetcher import RobotsDisallowedError, TransportError
+from app.crawler.fetcher import (
+    BotChallengeError,
+    ResponseStatusError,
+    RobotsDisallowedError,
+    TransportError,
+)
 from app.main import app
 from app.selector.detail_path import document_path
 from app.selector.discovery import Discovery
@@ -254,6 +259,49 @@ def test_robots_disallow_refuses_registration(client: TestClient, conn: sqlite3.
 
     assert response.status_code == 400
     assert response.json()["detail"]["reason"] == "robots"
+    assert rows(conn) == []
+
+
+def test_예시_공고가_내려가_404면_예시를_빼고_목록만으로_등록한다(
+    client: TestClient, conn: sqlite3.Connection
+) -> None:
+    """11/16 일괄 추가(2026-11-22): 엑셀의 예시 공고가 마감돼 404 라 26곳이 접속 실패로 떨어졌다."""
+    calls: list[str] = []
+
+    async def generate(list_url: str, detail_url: str, render_mode: str) -> GenerationResult:
+        calls.append(detail_url)
+        if detail_url:
+            raise ResponseStatusError(f"응답 404: {detail_url}", 404, detail_url)
+        return result_for(GENERATED)
+
+    app.dependency_overrides[crawlers_api.get_generator] = lambda: generate
+    stub_discoverer()
+
+    response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
+
+    assert response.status_code == 201
+    # 그다음 호출은 판정이 목록에서 찾은 상세로 상세 셀렉터를 채우는 것이다
+    assert calls[:2] == [DETAIL_URL, ""]
+    assert len(rows(conn)) == 1
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ResponseStatusError(f"응답 404: {LIST_URL}", 404, LIST_URL),
+        ResponseStatusError(f"응답 403: {DETAIL_URL}", 403, DETAIL_URL),
+        BotChallengeError(f"봇 확인에 막힘 404: {DETAIL_URL}", 404, DETAIL_URL),
+    ],
+)
+def test_목록이_404거나_예시가_막힌_것이면_다시_시도하지_않는다(
+    client: TestClient, conn: sqlite3.Connection, error: ResponseStatusError
+) -> None:
+    called = use_generator(error)
+
+    response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
+
+    assert response.status_code == 502
+    assert len(called) == 1
     assert rows(conn) == []
 
 
@@ -526,6 +574,26 @@ def test_a_whole_list_miss_fails_and_stores_nothing(
 
     assert response.status_code == 422
     assert response.json()["detail"]["reason"] == "list_not_found"
+    assert rows(conn) == []
+
+
+def test_목록이_없고_페이지가_공고가_없다고_하면_그렇게_알린다(
+    client: TestClient, conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """바디프랜드·KG모빌리티(2026-11-23): "진행 중인 공고가 없어요" 라 목록을 못 찾았다."""
+    from app.api import crawlers as crawlers_api
+
+    async def notice(list_url: str, render_mode: str) -> str:
+        return "채용공고 목록 진행 중인 공고가 없어요."
+
+    monkeypatch.setattr(crawlers_api, "_empty_notice", notice)
+    use_generator(result_for(SHELL_GENERATED, list_html=SHELL_HTML, detail_html=SHELL_HTML))
+
+    response = client.post("/api/crawlers", json={"list_url": LIST_URL, "detail_url": DETAIL_URL})
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["reason"] == "no_postings"
+    assert "진행 중인 공고가 없어요" in response.json()["detail"]["message"]
     assert rows(conn) == []
 
 

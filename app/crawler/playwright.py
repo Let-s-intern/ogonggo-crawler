@@ -583,10 +583,10 @@ class Renderer:
         status = _status(response)
         if status >= 400 and is_challenge(getattr(response, "headers", None) or {}):
             # 기본 User-Agent 로도 챌린지다. 사람이 풀어야 하는 문이라 더 열지 않는다
-            raise BotChallengeError(f"브라우저로도 봇 확인에 막힘 {status}: {url}", status)
+            raise BotChallengeError(f"브라우저로도 봇 확인에 막힘 {status}: {url}", status, url)
         if status >= 400:
             # 정적 경로와 같은 판정이다. 4xx·5xx 는 렌더된 껍데기가 아니라 실패다
-            raise ResponseStatusError(f"응답 {status}: {url}", status)
+            raise ResponseStatusError(f"응답 {status}: {url}", status, url)
 
         logger.info("렌더 완료 url=%s status=%s chars=%d", url, status, len(html))
         return FetchResult(url=final_url or url, status_code=status, text=html)

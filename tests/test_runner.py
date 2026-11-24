@@ -302,3 +302,19 @@ async def test_페이지가_공고가_없다고_말하면_실패가_아니라_�
     assert "채용이 없" in run["error_message"]
     # 상세는 열지 않는다
     assert site.requests == [LIST_URL]
+
+
+def test_시험_수집은_건너뛸_공고를_세지_않고_다음_공고로_채운다() -> None:
+    """이디야·서울우유(2026-11-23): 앞 세 건이 인재 풀·마감이라 상세를 하나도 열지 않았다."""
+    from app.crawler.collect import Collectors
+    from app.crawler.parser import ListItem
+    from app.crawler.runner import _up_to_open
+
+    titles = ["상시 인재풀 등록", "인재 Pool 등록", "바리스타 채용", "인재풀", "점장 채용", "본사"]
+    items = [ListItem(index=n, title=t, link=f"/j/{n}", date="") for n, t in enumerate(titles)]
+    collectors = Collectors(list_mode="static", detail_mode="static", list=None, detail=None)  # type: ignore[arg-type]
+
+    picked = _up_to_open(items, 2, collectors, [])
+
+    assert [item.title for item in picked] == titles[:5]
+    assert _up_to_open(items, None, collectors, []) == items
